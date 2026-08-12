@@ -1,0 +1,7 @@
+{
+  "python.analysis.extraPaths": ["./backend"],
+  "python.analysis.autoSearchPaths": true,
+  "python.analysis.typeCheckingMode": "basic",
+  "python.analysis.diagnosticMode": "openFilesOnly",
+  "python.defaultInterpreterPath": "${workspaceFolder}/backend/.venv/bin/python"
+}

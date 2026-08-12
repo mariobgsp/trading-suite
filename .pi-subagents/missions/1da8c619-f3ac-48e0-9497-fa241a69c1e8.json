@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "id": "1da8c619-f3ac-48e0-9497-fa241a69c1e8",
+  "title": "Quick focused research (single angle only): find any current (2025-2026) benchmarks or production...",
+  "objective": "Quick focused research (single angle only): find any current (2025-2026) benchmarks or production reports comparing TanStack Start SSR performance on Bun vs Node (requests/sec, cold start, memory), OR TanStack Start load/SSR performance vs Next.js App Router for a client-heavy dashboard. Do NOT edit files. Sources: TanStack GitHub issues/discussions, Inngest/Railway migration blogs, Bun blog, Hono benchmark pages.\nReturn concise findings: source links with dates, exact numbers if found, confidence, and if NO comparative benchmark exists, say so explicitly (that is a valid answer — it confirms the gap). Under 300 words.",
+  "status": "completed",
+  "createdAt": "2026-08-11T15:59:36.078Z",
+  "updatedAt": "2026-08-11T16:06:44.814Z",
+  "runs": [
+    {
+      "runId": "0c663c4b-9f67-40e6-8658-9f513240d3e4",
+      "mode": "workflow",
+      "asyncDir": "/tmp/pi-subagents-uid-1000/async-subagent-runs/0c663c4b-9f67-40e6-8658-9f513240d3e4",
+      "status": "complete",
+      "startedAt": "2026-08-11T15:59:36.079Z",
+      "completedAt": "2026-08-11T16:06:44.814Z"
+    }
+  ],
+  "workflowChildren": [
+    {
+      "workflowRunId": "0c663c4b-9f67-40e6-8658-9f513240d3e4",
+      "key": "benchmark-angle",
+      "status": "completed",
+      "startedAt": "2026-08-11T15:59:36.117Z",
+      "updatedAt": "2026-08-11T16:06:44.809Z",
+      "artifactPaths": [
+        "/home/mariobgsp/Project/github/trading-suite/.pi-subagents/artifacts/outputs/c914e025/research.md",
+        "/home/mariobgsp/.pi/agent/sessions/--home-mariobgsp-Project-github-trading-suite--/2026-08-11T15-27-48-740Z_019ff16f-e004-7f74-8683-84efb0924822/c914e025/run-0/session.jsonl"
+      ],
+      "runId": "c914e025",
+      "agent": "researcher",
+      "task": "Quick focused research (single angle only): find any current (2025-2026) benchmarks or production reports comparing TanStack Start SSR performance on Bun vs Node (requests/sec, cold start, memory), OR TanStack Start load/SSR performance vs Next.js App Router for a client-heavy dashboard. Do NOT edit files. Sources: TanStack GitHub issues/discussions, Inngest/Railway migration blogs, Bun blog, Hono benchmark pages.\nReturn concise findings: source links with dates, exact numbers if found, confidence, and if NO comparative benchmark exists, say so explicitly (that is a valid answer — it confirms the gap). Under 300 words.",
+      "completedAt": "2026-08-11T16:06:44.809Z",
+      "sessionPath": "/home/mariobgsp/.pi/agent/sessions/--home-mariobgsp-Project-github-trading-suite--/2026-08-11T15-27-48-740Z_019ff16f-e004-7f74-8683-84efb0924822/c914e025/run-0/session.jsonl",
+      "heartbeat": {
+        "updatedAt": "2026-08-11T16:06:44.809Z",
+        "status": "completed"
+      }
+    }
+  ],
+  "decisions": [],
+  "artifacts": [
+    {
+      "kind": "status",
+      "path": "/tmp/pi-subagents-uid-1000/async-subagent-runs/0c663c4b-9f67-40e6-8658-9f513240d3e4/status.json"
+    },
+    {
+      "kind": "other",
+      "path": "/tmp/pi-subagents-uid-1000/async-subagent-runs/0c663c4b-9f67-40e6-8658-9f513240d3e4/events.jsonl",
+      "description": "Lifecycle events"
+    },
+    {
+      "kind": "output",
+      "path": "/home/mariobgsp/Project/github/trading-suite/.pi-subagents/artifacts/outputs/c914e025/research.md"
+    }
+  ],
+  "receipts": [],
+  "cwd": "/home/mariobgsp/Project/github/trading-suite",
+  "ownerSessionId": "/home/mariobgsp/.pi/agent/sessions/--home-mariobgsp-Project-github-trading-suite--/2026-08-11T15-27-48-740Z_019ff16f-e004-7f74-8683-84efb0924822.jsonl",
+  "summary": "Workflow completed with 1 child run(s). Return: {\n  \"key\": \"benchmark-angle\",\n  \"ok\": true,\n  \"agent\": \"researcher\",\n  \"runId\": \"c914e025\",\n  \"output\": \"# Research: TanStack Start SSR Performance — Bun vs Node, and vs Next.js (2025–2026)\\n\\n## Summary\\n\\n**No comparative benchmark of TanStack Start on Bun vs Node exists as of mid-2026** — no req/s, cold-start, or memory head-to-head was found in TanStack GitHub issues, Bun docs/issues, or production blogs. The gap is confirmed. However, several high-quality benchmarks compare TanStack Start SSR vs Next.js App Router (all on Node), which is directly relevant to a client-heavy dashboard.\\n\\n## Findings\\n\\n1. **TanStack Start vs Next.js (Platformatic / Matteo Collina, Feb–Mar 2026)** — Same eCommerce app, 1,000 req/s, 3 min, AWS EKS, no compression. TanStack Start outperformed the field \\\"by a wide margin\\\"; corrected v2: ~25% higher throughput and ~35% lower latency than React Router; Next.js v15 could not hold 1,000 req/s (avg ~8,000–11,000 ms, ~60% success, p95 = 10 s timeout). High Trace: 2 event(s)."
+}

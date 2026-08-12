@@ -1,0 +1,160 @@
+{
+  "runId": "64e42007",
+  "agent": "researcher",
+  "task": "Research the CURRENT (2025-2026) state of migrating a Next.js 16 App Router app to TanStack Start, Hono, and Bun. Repo context only: it is a React 19 + TypeScript + Tailwind 4 trading dashboard (Next.js 16.3.0) that calls a FastAPI backend via REST + SSE. Do NOT edit files — research only.\nInvestigate:\n1. TanStack Start production-readiness today: current version, what it runs on (Vinxi/Nitro), Router + server functions + SSR story, SSR streaming, middleware, data loading (loaders), how it compares to Next.js App Router for a data-heavy dashboard with charts (lightweight-charts) and SSE streams.\n2. Hono as the server layer: current version, JSX/server components story, streaming, SSE/WebSocket support, middleware ecosystem, deployment targets (Bun, Node, Deno, Cloudflare Workers, edge), and whether it is typically used standalone or inside TanStack Start.\n3. Bun as runtime: current version, Bun.serve, Bun as a Next.js-compatible runtime (can Bun run next dev / next start in 2026?), Bun vs Node for Hono performance benchmarks (requests/sec, cold start), known production issues (npm compat, native modules, node: compat gaps).\n4. Migration evidence: official migration guides (TanStack Start from Next.js, Hono from Express/Next API routes), real-world blog posts/issue threads on migrating Next.js apps to TanStack Start or Hono+Bun in 2025-2026, common pain points (router differences, server functions model, file conventions, auth, i18n, image optimization, caching).\n5. Anything about running SSE through Hono/TanStack Start and whether Bun handles long-lived connections well.\nReturn CONCISE findings with evidence: source links (official docs, GitHub issues, benchmarks, blog posts) with dates, exact package versions you verified, confidence level per finding, and gaps in the evidence. End with a recommended migration posture (full swap vs staged) based on what you found. Keep it under 900 words.\n\n---\n**Output:**\nWrite your findings to exactly this path: /home/mariobgsp/Project/github/trading-suite/.pi-subagents/artifacts/outputs/64e42007/research.md\nThis path is authoritative for this run.\nIgnore any other output filename or output path mentioned elsewhere, including output destinations in the base agent prompt, system prompt, or task instructions.",
+  "exitCode": 0,
+  "processSignal": "SIGTERM",
+  "usage": {
+    "input": 50038,
+    "output": 11600,
+    "cacheRead": 190080,
+    "cacheWrite": 0,
+    "cost": 0.0053927720000000005,
+    "turns": 9
+  },
+  "model": "opencode-go/deepseek-v4-flash:medium",
+  "attemptedModels": [
+    "opencode-go/deepseek-v4-flash:medium"
+  ],
+  "modelAttempts": [
+    {
+      "model": "opencode-go/deepseek-v4-flash:medium",
+      "success": true,
+      "exitCode": 0,
+      "usage": {
+        "input": 50038,
+        "output": 11600,
+        "cacheRead": 190080,
+        "cacheWrite": 0,
+        "cost": 0.0053927720000000005,
+        "turns": 9
+      }
+    }
+  ],
+  "durationMs": 956176,
+  "toolCount": 14,
+  "launchContractDigest": "039e45306fa82d6ff2e9b21dea76b766bae07af303f7218a8fafe45badf64d8b",
+  "launchResolvedExtensions": {
+    "version": 1,
+    "source": "launch-resolved",
+    "disableAmbientExtensions": false,
+    "runtime": [
+      "sha256:45f29538491169fc"
+    ],
+    "configured": [],
+    "effective": [
+      "sha256:45f29538491169fc"
+    ],
+    "omitted": {
+      "runtime": 0,
+      "configured": 0,
+      "effective": 0
+    }
+  },
+  "acceptance": {
+    "status": "attested",
+    "evidenceStatus": "attested",
+    "explicit": false,
+    "effectiveAcceptance": {
+      "level": "attested",
+      "explicit": false,
+      "inferredReason": [
+        "read-only/reviewer-style agent"
+      ],
+      "criteria": [
+        {
+          "id": "criterion-1",
+          "must": "Return concrete findings with file paths and severity when applicable",
+          "evidence": [
+            "review-findings",
+            "residual-risks"
+          ],
+          "severity": "required"
+        }
+      ],
+      "evidence": [
+        "review-findings",
+        "residual-risks"
+      ],
+      "verify": [],
+      "stopRules": []
+    },
+    "inferredReason": [
+      "read-only/reviewer-style agent"
+    ],
+    "criteria": [
+      {
+        "id": "criterion-1",
+        "must": "Return concrete findings with file paths and severity when applicable",
+        "evidence": [
+          "review-findings",
+          "residual-risks"
+        ],
+        "severity": "required"
+      }
+    ],
+    "runtimeChecks": [],
+    "verifyRuns": [],
+    "childReport": {
+      "criteriaSatisfied": [
+        {
+          "id": "criterion-1",
+          "status": "satisfied",
+          "evidence": "Returned concrete, dated findings with source URLs and verified package versions (TanStack Start v1.0 on 2026-03-18, current ~1.168.35; Hono v4.13.0 on 2026-08-03 and SSE-security-fixed v4.12.4; Bun 1.3.14 with 1.4 Rust rewrite in canary; Next.js 16 baseline 2025-10-21). No files in the repo were edited — output written only to .pi-subagents/artifacts/outputs/64e42007/research.md (the authoritative output path), where all 15 numbered findings carry confidence levels (high/medium) and severity-bearing SSE gotchas (bun idleTimeout ~10s default, Hono streamSSE close-without-sleep, GHSA-p6xx-57qc-3wxr injection fix)."
+        }
+      ],
+      "changedFiles": [
+        ".pi-subagents/artifacts/outputs/64e42007/research.md"
+      ],
+      "testsAddedOrUpdated": [],
+      "commandsRun": [
+        {
+          "command": "web_search (4 batches, 15 queries across 5 research angles: TanStack Start/Hono/Bun versions, benchmarks, migration evidence, SSE)",
+          "result": "passed",
+          "summary": "Synthesized answers with primary-source citations returned for every angle; follow-up verification searches confirmed v1.0 date, current versions, and Railway/Inngest claims"
+        },
+        {
+          "command": "fetch_content (github honojs/hono releases, bun docs nextjs, nitro SSR example, inngest blog, hono benchmarks)",
+          "result": "passed",
+          "summary": "Extracted release notes (Hono v4.13.0 perf/QUERY; v4.12.4 SSE CRLF security fix), Bun+Next.js guide, Nitro SSR evidence, Inngest 83% dev-time reduction numbers, benchmark tables"
+        },
+        {
+          "command": "get_search_content (bounded slices of fetched Hono releases, Bun Next.js page, Inngest blog, Hono benchmarks)",
+          "result": "passed",
+          "summary": "Confirmed primary numbers: ~64k vs ~27k req/s Bun-vs-Node (third-party), ~85k req/s @hono/node-server, 10-12s to 2-3s local page loads"
+        },
+        {
+          "command": "write research.md to .pi-subagents/artifacts/outputs/64e42007/research.md",
+          "result": "passed",
+          "summary": "10910 bytes written; markdownlint auto-fix applied (MD029 ol-prefix, advisory only); file verified on disk"
+        }
+      ],
+      "validationOutput": [
+        "pi-lens automated check: no blockers; 2 advisory MD029 ordered-list warnings in research.md, no action required",
+        "Word count of brief body under 900-word target (~780 words excluding sources list)"
+      ],
+      "residualRisks": [
+        "No production reports of TanStack Start + Hono + Bun as a combined stack exist — evidence covers pairs (Inngest: Next→Start; Hono+Bun benchmarks standalone; Hono-in-Start is a community pattern only)",
+        "Bun 1.4.0 (Zig→Rust rewrite, canary as of 2026-07-08, Anthropic acquisition Dec 2025) could change runtime behavior/performance — versions and benchmarks cited may shift",
+        "TanStack Start weekly release cadence (~1.168.x in Aug 2026) means pinned versions will age quickly",
+        "SSE numbers (Bun idleTimeout ~10s default) are from GitHub issues and community posts, not official benchmarks; proxy-layer idle limits (Fly.io) are deployment-specific",
+        "Railway migration is to TanStack Router SPA, not Start SSR — does not validate Start SSR at scale"
+      ],
+      "noStagedFiles": true,
+      "diffSummary": "Research-only run: single artifact created at .pi-subagents/artifacts/outputs/64e42007/research.md; no repo source files read or modified (repo context consumed only as reference)",
+      "reviewFindings": [
+        "no blockers — all 15 findings carry dated source URLs and explicit confidence levels; gaps section lists unverifiable claims (combined-stack benchmarks, i18n, ISR-equivalent caching) instead of asserting them"
+      ],
+      "manualNotes": "Recommended posture in brief: staged, frontend-first migration — keep FastAPI backend unchanged, optionally run Next 16.3 dev on Bun now, pilot TanStack Start on 1-2 dashboard routes, defer full Bun commitment until 1.4 Rust rewrite stabilizes. Next.js 16 baseline (2025-10-21, stable Turbopack + Cache Components) means the incumbent is also newer than the repo's 16.3 suggests."
+    }
+  },
+  "effects": {
+    "fileMutation": {
+      "status": "not-applicable",
+      "expected": false,
+      "attempted": true
+    }
+  },
+  "transcriptPath": "/home/mariobgsp/Project/github/trading-suite/.pi-subagents/artifacts/64e42007_researcher_0_transcript.jsonl",
+  "timestamp": 1786463359610
+}

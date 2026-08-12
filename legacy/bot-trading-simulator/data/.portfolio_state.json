@@ -1,0 +1,12 @@
+{
+  "initial_capital": 5000000,
+  "equity": 5000000,
+  "total_realized_pnl": 0,
+  "total_unrealized_pnl": 0,
+  "total_market_value": 0,
+  "portfolio_heat_pct": 0.0,
+  "win_rate": 0.0,
+  "total_return_pct": 0.0,
+  "positions": {},
+  "closed_trades": []
+}

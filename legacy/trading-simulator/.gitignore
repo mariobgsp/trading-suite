@@ -1,0 +1,18 @@
+# Local engine output (production uses data-cache branch)
+output/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Node / Dashboard
+dashboard/node_modules/
+dashboard/dist/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets
+.env

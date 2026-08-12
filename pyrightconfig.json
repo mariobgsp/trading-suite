@@ -1,0 +1,14 @@
+{
+  "venvPath": "backend",
+  "venv": ".venv",
+  "include": ["backend"],
+  "exclude": ["node_modules", "src", "backend/data", "backend/logs", "backend/.venv"],
+  "ignore": ["backend/app/services", "backend/core", "backend/config"],
+  "executionEnvironments": [
+    {
+      "root": "backend",
+      "extraPaths": ["backend"]
+    }
+  ],
+  "pythonVersion": "3.12"
+}

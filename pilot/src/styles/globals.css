@@ -1,0 +1,433 @@
+@import "tailwindcss";
+
+/* ── Design tokens ──────────────────────────────────────────── */
+:root {
+	--bg: #0a0e14;
+	--panel: #10141d;
+	--panel-2: #151b27;
+	--border: #1e2635;
+	--border-strong: #2a3548;
+	--text: #e6eaf2;
+	--text-dim: #8b95a9;
+	--text-faint: #79849a;
+	--accent: #38bdf8;
+	--accent-dim: rgba(56, 189, 248, 0.35);
+	--up: #34d399;
+	--down: #f87171;
+	--gold: #fbbf24;
+	--violet: #a78bfa;
+	/* Launcher elevation ramp + borders (dark desk register) */
+	--line: rgba(232, 237, 240, 0.1);
+	--line-2: rgba(232, 237, 240, 0.2);
+	--elev: 0 18px 46px -26px rgba(0, 0, 0, 0.62);
+	--elev-hi: 0 28px 64px -28px rgba(0, 0, 0, 0.72);
+}
+
+/*
+ * Tailwind v4: generate utilities (bg-panel, text-ink-2, shadow-elev, …)
+ * from the semantic tokens above. `inline` makes the utilities resolve to
+ * the *referenced* variable at runtime instead of snapshotting its value,
+ * so a future light-mode override stays a one-liner on :root.
+ */
+@theme inline {
+	--color-canvas: var(--bg);
+	--color-panel: var(--panel);
+	--color-panel-2: var(--panel-2);
+	--color-line: var(--line);
+	--color-line-2: var(--line-2);
+	--color-ink: var(--text);
+	--color-ink-2: var(--text-dim);
+	--color-ink-3: var(--text-faint);
+	--color-accent: var(--accent);
+	--color-accent-dim: var(--accent-dim);
+	--color-up: var(--up);
+	--color-down: var(--down);
+	--color-gold: var(--gold);
+	--color-violet: var(--violet);
+	--radius-card: 10px;
+	--radius-control: 8px;
+	--shadow-elev: var(--elev);
+	--shadow-elev-hi: var(--elev-hi);
+	--font-display: "Space Grotesk Variable";
+	--font-jetbrains: "JetBrains Mono Variable";
+	--font-sans:
+		var(--font-display), "Inter", ui-sans-serif, system-ui, -apple-system,
+		"Segoe UI", sans-serif;
+	--font-mono:
+		var(--font-jetbrains), ui-monospace, "SF Mono", SFMono-Regular, Menlo,
+		monospace;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html,
+body {
+	background: var(--bg);
+	color: var(--text);
+	font-family: var(--font-sans);
+	-webkit-font-smoothing: antialiased;
+}
+
+.font-mono,
+.tabular {
+	font-family: var(--font-mono);
+	font-variant-numeric: tabular-nums;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar {
+	width: 8px;
+	height: 8px;
+}
+::-webkit-scrollbar-track {
+	background: transparent;
+}
+::-webkit-scrollbar-thumb {
+	background: var(--border-strong);
+	border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+	background: #3a4a63;
+}
+
+/* Panels & cards */
+.panel {
+	background: var(--panel);
+	border: 1px solid var(--border);
+	border-radius: 10px;
+}
+.panel-2 {
+	background: var(--panel-2);
+	border: 1px solid var(--border);
+	border-radius: 8px;
+}
+
+/* Ticker flash for live updates */
+@keyframes flash-up {
+	from {
+		background-color: rgba(52, 211, 153, 0.18);
+	}
+	to {
+		background-color: transparent;
+	}
+}
+@keyframes flash-down {
+	from {
+		background-color: rgba(248, 113, 113, 0.18);
+	}
+	to {
+		background-color: transparent;
+	}
+}
+.flash-up {
+	animation: flash-up 1.2s ease-out;
+}
+.flash-down {
+	animation: flash-down 1.2s ease-out;
+}
+
+/* Blinking cursor for terminal aesthetics */
+@keyframes blink {
+	50% {
+		opacity: 0;
+	}
+}
+.cursor-blink {
+	animation: blink 1.1s step-end infinite;
+}
+
+/* Skeleton loading */
+@keyframes shimmer {
+	0% {
+		background-position: -400px 0;
+	}
+	100% {
+		background-position: 400px 0;
+	}
+}
+.skeleton {
+	background: linear-gradient(
+		90deg,
+		var(--panel-2) 25%,
+		#1b2333 37%,
+		var(--panel-2) 63%
+	);
+	background-size: 800px 100%;
+	animation: shimmer 1.4s infinite linear;
+	border-radius: 6px;
+}
+
+/* Focus rings */
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+button:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 1px;
+}
+
+/* Subtle grid texture on hero panels */
+.grid-texture {
+	background-image:
+		linear-gradient(rgba(56, 189, 248, 0.03) 1px, transparent 1px),
+		linear-gradient(90deg, rgba(56, 189, 248, 0.03) 1px, transparent 1px);
+	background-size: 32px 32px;
+}
+
+/* ── App launcher (klinikpenyesalan-style launchpad) ───────── */
+
+/* Section eyebrow */
+.eyebrow {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	font-family: var(--font-mono);
+	font-size: 11px;
+	letter-spacing: 0.16em;
+	text-transform: uppercase;
+	color: var(--accent);
+}
+.eyebrow::before {
+	content: "";
+	width: 7px;
+	height: 7px;
+	background: var(--accent);
+	flex-shrink: 0;
+}
+
+/* Tool card — whole card is a link */
+.tool-card {
+	border: 1px solid var(--line);
+	background: var(--panel-2);
+	box-shadow: var(--elev);
+	transition:
+		transform 0.25s ease,
+		border-color 0.3s ease,
+		box-shadow 0.3s ease;
+}
+.tool-card:hover {
+	transform: translateY(-4px);
+	border-color: var(--line-2);
+	box-shadow: var(--elev-hi);
+}
+.tool-card:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: -2px;
+}
+
+/* Viz header */
+.viz-head {
+	font-family: var(--font-mono);
+	font-size: 10px;
+	letter-spacing: 0.12em;
+	text-transform: uppercase;
+	color: var(--text-faint);
+}
+.viz-badge {
+	font-family: var(--font-mono);
+	font-size: 10px;
+	letter-spacing: 0.08em;
+	color: var(--accent);
+}
+.viz-live {
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	background: var(--accent);
+	animation: kp-blink 1.4s steps(1) infinite;
+}
+
+/* Equalizer bars (Overview / Sentiment) */
+.viz-eq {
+	display: flex;
+	align-items: flex-end;
+	gap: 6px;
+	height: 100%;
+}
+.viz-eq-bar {
+	width: 7px;
+	border-radius: 1px;
+	transform-origin: bottom;
+	animation: kp-eq 1.6s ease-in-out infinite;
+}
+.viz-eq-bar:nth-child(even) {
+	animation-name: kp-eq2;
+}
+@keyframes kp-eq {
+	0%,
+	100% {
+		transform: scaleY(0.45);
+	}
+	50% {
+		transform: scaleY(1);
+	}
+}
+@keyframes kp-eq2 {
+	0%,
+	100% {
+		transform: scaleY(1);
+	}
+	50% {
+		transform: scaleY(0.5);
+	}
+}
+
+/* Flat bars (Markets) */
+.viz-bars {
+	display: flex;
+	align-items: flex-end;
+	gap: 8px;
+	height: 100%;
+}
+.viz-bar {
+	width: 12px;
+	border-radius: 1px;
+}
+
+/* Meters (Portfolio / Screener / Validator) */
+.viz-meters {
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	gap: 14px;
+	height: 100%;
+}
+.meter-row {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+}
+.meter-label {
+	flex-shrink: 0;
+	width: 74px;
+	font-family: var(--font-mono);
+	font-size: 10px;
+	letter-spacing: 0.06em;
+	color: var(--text-faint);
+}
+.meter-track {
+	position: relative;
+	flex: 1;
+	height: 5px;
+	background: var(--line);
+	overflow: hidden;
+}
+.meter-fill {
+	position: absolute;
+	inset: 0 auto 0 0;
+	width: var(--w, 50%);
+	background: var(--accent);
+}
+.meter-fill.dim {
+	background: var(--accent-dim);
+}
+.meter-fill::after {
+	content: "";
+	position: absolute;
+	inset: 0;
+	background: linear-gradient(
+		90deg,
+		transparent,
+		rgba(255, 255, 255, 0.26),
+		transparent
+	);
+	transform: translateX(-100%);
+	animation: kp-flow 2.8s ease-in-out infinite;
+}
+.meter-val {
+	flex-shrink: 0;
+	width: 34px;
+	text-align: right;
+	font-family: var(--font-mono);
+	font-size: 10px;
+	color: var(--text-dim);
+}
+@keyframes kp-flow {
+	0% {
+		transform: translateX(-100%);
+	}
+	55%,
+	100% {
+		transform: translateX(100%);
+	}
+}
+
+/* Big stat + segmented bar (Backtest / Regime) */
+.viz-stat {
+	font-family: var(--font-sans);
+	font-size: 54px;
+	font-weight: 500;
+	letter-spacing: -0.02em;
+	line-height: 1;
+	color: var(--text);
+}
+.viz-stat-unit {
+	font-family: var(--font-mono);
+	font-size: 11px;
+	letter-spacing: 0.1em;
+	color: var(--text-faint);
+}
+.viz-seg {
+	display: flex;
+	height: 13px;
+	overflow: hidden;
+	background: var(--line);
+}
+.viz-seg-fill {
+	position: relative;
+	background: var(--accent);
+}
+.viz-seg-fill::after {
+	content: "";
+	position: absolute;
+	inset: 0;
+	background: linear-gradient(
+		90deg,
+		transparent,
+		rgba(255, 255, 255, 0.26),
+		transparent
+	);
+	transform: translateX(-100%);
+	animation: kp-flow 2.8s ease-in-out infinite;
+}
+.viz-seg-locked {
+	background: repeating-linear-gradient(
+		45deg,
+		rgba(232, 237, 240, 0.16) 0 4px,
+		transparent 4px 8px
+	);
+	animation: kp-stripe 0.9s linear infinite;
+}
+@keyframes kp-stripe {
+	from {
+		background-position: 0 0;
+	}
+	to {
+		background-position: 11.31px 0;
+	}
+}
+@keyframes kp-blink {
+	0%,
+	55% {
+		opacity: 1;
+	}
+	56%,
+	100% {
+		opacity: 0.25;
+	}
+}
+
+/* Accessibility: kill all decorative motion */
+@media (prefers-reduced-motion: reduce) {
+	.viz-eq-bar,
+	.meter-fill::after,
+	.viz-seg-fill::after,
+	.viz-seg-locked,
+	.viz-live,
+	.tool-card {
+		animation: none !important;
+		transition: none !important;
+	}
+}

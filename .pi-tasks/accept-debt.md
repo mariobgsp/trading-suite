@@ -1,0 +1,1 @@
+TASK_0001	work did not verify: — task diff modified forbidden paths: backend/app/market.py, backend/app/routers/summary.py, backend/app/screener.py, backend/app/services/fifo_engine.py, pilot/src/lib/useAiSummary.ts (spec forbids touching anything under backend/ and useAiSummary.ts; no exception covers format

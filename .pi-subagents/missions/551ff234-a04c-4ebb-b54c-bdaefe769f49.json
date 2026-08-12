@@ -1,0 +1,109 @@
+{
+  "schemaVersion": 1,
+  "id": "551ff234-a04c-4ebb-b54c-bdaefe769f49",
+  "title": "Research the CURRENT (2025-2026) state of migrating a Next.js 16 App Router app to TanStack Start...",
+  "objective": "Research the CURRENT (2025-2026) state of migrating a Next.js 16 App Router app to TanStack Start, Hono, and Bun. Repo context only: it is a React 19 + TypeScript + Tailwind 4 trading dashboard (Next.js 16.3.0) that calls a FastAPI backend via REST + SSE. Do NOT edit files — research only.\nInvestigate:\n1. TanStack Start production-readiness today: current version, what it runs on (Vinxi/Nitro), Router + server functions + SSR story, SSR streaming, middleware, data loading (loaders), how it compares to Next.js App Router for a data-heavy dashboard with charts (lightweight-charts) and SSE streams.\n2. Hono as the server layer: current version, JSX/server components story, streaming, SSE/WebSocket support, middleware ecosystem, deployment targets (Bun, Node, Deno, Cloudflare Workers, edge), and whether it is typically used standalone or inside TanStack Start.\n3. Bun as runtime: current version, Bun.serve, Bun as a Next.js-compatible runtime (can Bun run next dev / next start in 2026?), Bun vs Node for Hono performance benchmarks (requests/sec, cold start), known production issues (npm compat, native modules, node: compat gaps).\n4. Migration evidence: official migration guides (TanStack Start from Next.js, Hono from Express/Next API routes), real-world blog posts/issue threads on migrating Next.js apps to TanStack Start or Hono+Bun in 2025-2026, common pain points (router differences, server functions model, file conventions, auth, i18n, image optimization, caching).\n5. Anything about running SSE through Hono/TanStack Start and whether Bun handles long-lived connections well.\nReturn CONCISE findings with evidence: source links (official docs, GitHub issues, benchmarks, blog posts) with dates, exact package versions you verified, confidence level per finding, and gaps in the evidence. End with a recommended migration posture (full swap vs staged) based on what you found. Keep it under 900 words.",
+  "status": "completed",
+  "createdAt": "2026-08-11T15:33:23.369Z",
+  "updatedAt": "2026-08-11T16:00:50.217Z",
+  "runs": [
+    {
+      "runId": "6813b2b2-89c9-44ce-afef-75addba1c335",
+      "mode": "workflow",
+      "asyncDir": "/tmp/pi-subagents-uid-1000/async-subagent-runs/6813b2b2-89c9-44ce-afef-75addba1c335",
+      "status": "complete",
+      "startedAt": "2026-08-11T15:33:23.370Z",
+      "completedAt": "2026-08-11T16:00:50.217Z"
+    }
+  ],
+  "workflowChildren": [
+    {
+      "workflowRunId": "6813b2b2-89c9-44ce-afef-75addba1c335",
+      "key": "external",
+      "status": "completed",
+      "startedAt": "2026-08-11T15:33:23.403Z",
+      "updatedAt": "2026-08-11T15:49:19.611Z",
+      "artifactPaths": [
+        "/home/mariobgsp/Project/github/trading-suite/.pi-subagents/artifacts/outputs/64e42007/research.md",
+        "/home/mariobgsp/.pi/agent/sessions/--home-mariobgsp-Project-github-trading-suite--/2026-08-11T15-27-48-740Z_019ff16f-e004-7f74-8683-84efb0924822/64e42007/run-0/session.jsonl"
+      ],
+      "runId": "64e42007",
+      "agent": "researcher",
+      "task": "Research the CURRENT (2025-2026) state of migrating a Next.js 16 App Router app to TanStack Start, Hono, and Bun. Repo context only: it is a React 19 + TypeScript + Tailwind 4 trading dashboard (Next.js 16.3.0) that calls a FastAPI backend via REST + SSE. Do NOT edit files — research only.\nInvestigate:\n1. TanStack Start production-readiness today: current version, what it runs on (Vinxi/Nitro), Router + server functions + SSR story, SSR streaming, middleware, data loading (loaders), how it compares to Next.js App Router for a data-heavy dashboard with charts (lightweight-charts) and SSE streams.\n2. Hono as the server layer: current version, JSX/server components story, streaming, SSE/WebSocket support, middleware ecosystem, deployment targets (Bun, Node, Deno, Cloudflare Workers, edge), and whether it is typically used standalone or inside TanStack Start.\n3. Bun as runtime: current version, Bun.serve, Bun as a Next.js-compatible runtime (can Bun run next dev / next start in 2026?), Bun vs Node for Hono performance benchmarks (requests/sec, cold start), known production issues (npm compat, native modules, node: compat gaps).\n4. Migration evidence: official migration guides (TanStack Start from Next.js, Hono from Express/Next API routes), real-world blog posts/issue threads on migrating Next.js apps to TanStack Start or Hono+Bun in 2025-2026, common pain points (router differences, server functions model, file conventions, auth, i18n, image optimization, caching).\n5. Anything about running SSE through Hono/TanStack Start and whether Bun handles long-lived connections well.\nReturn CONCISE findings with evidence: source links (official docs, GitHub issues, benchmarks, blog posts) with dates, exact package versions you verified, confidence level per finding, and gaps in the evidence. End with a recommended migration posture (full swap vs staged) based on what you found. Keep it under 900 words.",
+      "completedAt": "2026-08-11T15:49:19.611Z",
+      "sessionPath": "/home/mariobgsp/.pi/agent/sessions/--home-mariobgsp-Project-github-trading-suite--/2026-08-11T15-27-48-740Z_019ff16f-e004-7f74-8683-84efb0924822/64e42007/run-0/session.jsonl",
+      "heartbeat": {
+        "updatedAt": "2026-08-11T15:49:19.611Z",
+        "status": "completed"
+      }
+    },
+    {
+      "workflowRunId": "6813b2b2-89c9-44ce-afef-75addba1c335",
+      "key": "local",
+      "status": "completed",
+      "startedAt": "2026-08-11T15:33:23.440Z",
+      "updatedAt": "2026-08-11T15:39:35.432Z",
+      "artifactPaths": [
+        "/home/mariobgsp/Project/github/trading-suite/.pi-subagents/artifacts/outputs/8a580647/context.md",
+        "/home/mariobgsp/.pi/agent/sessions/--home-mariobgsp-Project-github-trading-suite--/2026-08-11T15-27-48-740Z_019ff16f-e004-7f74-8683-84efb0924822/8a580647/run-0/session.jsonl"
+      ],
+      "runId": "8a580647",
+      "agent": "scout",
+      "task": "Recon the repo at /home/mariobgsp/Project/github/trading-suite (a Next.js 16 + FastAPI trading dashboard) to assess a migration to TanStack Start + Hono + Bun. Read-only — do NOT edit files.\nReport:\n1. Frontend surface: inventory src/app/ routes and pages, src/components/ (Shell, Sidebar, MarketChart, ui), and src/lib/ (api client, polling/SSE hooks). For each, note Next.js-specific APIs used (useSearchParams, server components, the use client directive, next/image, next/link, caching, revalidation, route handlers, middleware, env vars like NEXT_PUBLIC_*).\n2. Config surface: what next.config.ts contains (rewrites/proxies to the FastAPI backend? images config? headers?), how the frontend reaches the backend (proxy vs direct URL, SSE endpoints used, polling intervals), and anything in tsconfig.json / postcss / eslint that ties to Next.\n3. Deployment/ops: Dockerfile(s), docker-compose.yml, scripts/run.sh, scripts/import_history.sh — how the app is built and run today, what ports, how the backend is started, any nginx/proxy layer.\n4. Migration blast radius: which files would break first if the Next app were swapped (everything importing next/*, layout conventions, route conventions), which are framework-agnostic (lib/api client, chart components, pure UI), and any tests that cover frontend behavior.\nGive file paths with approximate line ranges and a rough LOC count per area. End with: which parts are framework-clean vs framework-locked, and the cheapest staging path (e.g., what would let the app run under Bun/Hono with the least change). Keep it under 900 words.",
+      "completedAt": "2026-08-11T15:39:35.432Z",
+      "sessionPath": "/home/mariobgsp/.pi/agent/sessions/--home-mariobgsp-Project-github-trading-suite--/2026-08-11T15-27-48-740Z_019ff16f-e004-7f74-8683-84efb0924822/8a580647/run-0/session.jsonl",
+      "heartbeat": {
+        "updatedAt": "2026-08-11T15:39:35.432Z",
+        "status": "completed"
+      }
+    },
+    {
+      "workflowRunId": "6813b2b2-89c9-44ce-afef-75addba1c335",
+      "key": "tradeoffs",
+      "status": "completed",
+      "startedAt": "2026-08-11T15:33:23.460Z",
+      "updatedAt": "2026-08-11T16:00:50.212Z",
+      "artifactPaths": [
+        "/home/mariobgsp/Project/github/trading-suite/.pi-subagents/artifacts/outputs/0532b7db/research.md",
+        "/home/mariobgsp/.pi/agent/sessions/--home-mariobgsp-Project-github-trading-suite--/2026-08-11T15-27-48-740Z_019ff16f-e004-7f74-8683-84efb0924822/0532b7db/run-0/session.jsonl"
+      ],
+      "runId": "0532b7db",
+      "agent": "researcher",
+      "task": "Research the PRACTICAL TRADEOFFS of three migration targets for a Next.js 16 trading dashboard (React 19, lightweight-charts, SSE from a FastAPI backend): (a) full swap to TanStack Start, (b) Hono+Bun replacing only the server/runtime while keeping React on top (e.g., Vite + TanStack Router + Hono), (c) staged: adopt Bun as runtime for Next.js first, then Hono as a thin API gateway in front of FastAPI, keep Next for UI. Do NOT edit files — research only.\nCover:\n1. Migration cost and risk per option: breaking changes, router paradigm shift (file-based vs TanStack Router code-based routes), server function/data loading model, SSR streaming for a dashboard, image optimization and static assets, middleware/auth, caching and revalidation semantics.\n2. SSE and long-lived connections: how each target handles Server-Sent Events (Bun.serve, Hono streamSSE, TanStack Start SSR), known buffering/proxy issues, and whether Bun is production-stable for many concurrent long-lived connections.\n3. Ecosystem and maintenance: npm/registry compat of Bun, ecosystem maturity of TanStack Start vs Next vs plain Hono, hiring/docs/community size, deployment targets (Docker, VPS, serverless) for each, and bundle/build tooling (Vite vs Next compiler vs Nitro/Vinxi).\n4. How to VALIDATE cheaply: what a pilot would look like (e.g., run bun next dev today, or port ONE page to Hono+TanStack Router, or use Hono as a proxy) and what success metrics would tell you the migration is worth it.\nCompare the three options in a short table plus prose. Give source links with dates and confidence. End with a clear recommendation for a dashboard app that is client-heavy, chart-heavy, and already depends on a separate Python API. Keep it under 900 words.",
+      "completedAt": "2026-08-11T16:00:50.212Z",
+      "sessionPath": "/home/mariobgsp/.pi/agent/sessions/--home-mariobgsp-Project-github-trading-suite--/2026-08-11T15-27-48-740Z_019ff16f-e004-7f74-8683-84efb0924822/0532b7db/run-0/session.jsonl",
+      "heartbeat": {
+        "updatedAt": "2026-08-11T16:00:50.212Z",
+        "status": "completed"
+      }
+    }
+  ],
+  "decisions": [],
+  "artifacts": [
+    {
+      "kind": "status",
+      "path": "/tmp/pi-subagents-uid-1000/async-subagent-runs/6813b2b2-89c9-44ce-afef-75addba1c335/status.json"
+    },
+    {
+      "kind": "other",
+      "path": "/tmp/pi-subagents-uid-1000/async-subagent-runs/6813b2b2-89c9-44ce-afef-75addba1c335/events.jsonl",
+      "description": "Lifecycle events"
+    },
+    {
+      "kind": "output",
+      "path": "/home/mariobgsp/Project/github/trading-suite/.pi-subagents/artifacts/outputs/64e42007/research.md"
+    },
+    {
+      "kind": "output",
+      "path": "/home/mariobgsp/Project/github/trading-suite/.pi-subagents/artifacts/outputs/8a580647/context.md"
+    },
+    {
+      "kind": "output",
+      "path": "/home/mariobgsp/Project/github/trading-suite/.pi-subagents/artifacts/outputs/0532b7db/research.md"
+    }
+  ],
+  "receipts": [],
+  "cwd": "/home/mariobgsp/Project/github/trading-suite",
+  "ownerSessionId": "/home/mariobgsp/.pi/agent/sessions/--home-mariobgsp-Project-github-trading-suite--/2026-08-11T15-27-48-740Z_019ff16f-e004-7f74-8683-84efb0924822.jsonl",
+  "summary": "Workflow completed with 3 child run(s). Return: {\n  \"external\": \"MISSING\",\n  \"local\": \"MISSING\",\n  \"tradeoffs\": \"MISSING\"\n} Trace: 6 event(s)."
+}

@@ -1,0 +1,14 @@
+# ── Backend runtime deps ─────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+.venv/
+venv/
+data/
+logs/
+.pytest_cache/
+*.egg-info/
+
+# ── Frontend build ───────────────────────────────────────────────────────────
+node_modules/
+.next/
+out/

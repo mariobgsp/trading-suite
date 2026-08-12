@@ -1,0 +1,48 @@
+{
+  "sources": [
+    {
+      "name": "CNBC Indonesia - Market",
+      "url": "https://www.cnbcindonesia.com/market/rss",
+      "type": "rss",
+      "region": "ID"
+    },
+    {
+      "name": "Detik Finance",
+      "url": "https://finance.detik.com/rss",
+      "type": "rss",
+      "region": "ID"
+    },
+    {
+      "name": "CNN Indonesia - Ekonomi",
+      "url": "https://www.cnnindonesia.com/ekonomi/rss",
+      "type": "rss",
+      "region": "ID"
+    },
+    {
+      "name": "Kompas Bisnis",
+      "url": "https://money.kompas.com/rss",
+      "type": "rss",
+      "region": "ID"
+    },
+    {
+      "name": "Antara News - Ekonomi",
+      "url": "https://www.antaranews.com/rss/ekonomi.xml",
+      "type": "rss",
+      "region": "ID"
+    },
+    {
+      "name": "Yahoo Finance",
+      "url": "https://finance.yahoo.com/news/rssindex",
+      "type": "rss",
+      "region": "Global"
+    },
+    {
+      "name": "Investing.com",
+      "url": "https://www.investing.com/rss/news_25.rss",
+      "type": "rss",
+      "region": "Global"
+    }
+  ],
+  "keywords": ["FED", "Earnings", "IPO", "Acquisition", "Inflation", "Rates", "IHSG", "IDX", "Saham"],
+  "update_interval_minutes": 15
+}

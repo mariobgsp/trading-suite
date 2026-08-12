@@ -1,0 +1,21 @@
+2026-08-12T11:46:00.284Z run: start phase=refine
+2026-08-12T11:46:00.292Z phase:refine: start
+2026-08-12T11:46:24.400Z phase:refine: done ms=24108
+2026-08-12T11:46:28.836Z phase:research: start
+2026-08-12T11:46:30.701Z orientation: pre-supplied 34 core files
+2026-08-12T11:46:30.701Z phase:research: worker deadline = no-progress, ceiling 1200000ms
+2026-08-12T11:46:30.702Z worker:files: start
+2026-08-12T11:51:54.919Z worker:files: done exit=0 wait=708ms work=323508ms attempts=1 total=324216ms
+2026-08-12T11:51:54.920Z worker:apis: start
+2026-08-12T11:55:18.771Z worker:apis: done exit=0 wait=816ms work=203034ms attempts=1 total=203850ms
+2026-08-12T11:55:18.772Z worker:context: start
+2026-08-12T11:59:42.595Z worker:context: done exit=0 wait=701ms work=263122ms attempts=1 total=263823ms
+2026-08-12T11:59:42.599Z worker:tooling: start
+2026-08-12T12:01:16.927Z worker:tooling: done exit=0 wait=708ms work=93620ms attempts=1 total=94328ms
+2026-08-12T12:02:20.299Z phase:research: done ms=951463
+2026-08-12T12:02:20.308Z phase:grill: start
+2026-08-12T12:09:43.491Z phase:grill: done ms=443183
+2026-08-12T12:09:43.501Z phase:compose: start
+2026-08-12T12:15:23.638Z phase:compose: done ms=340137
+2026-08-12T12:15:23.648Z phase:critique: start
+2026-08-12T12:26:24.499Z phase:critique: done ms=660851

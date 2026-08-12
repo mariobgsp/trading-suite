@@ -1,0 +1,8 @@
+{
+  "venvPath": ".",
+  "venv": ".venv",
+  "include": ["app", "core", "config"],
+  "exclude": ["data", "logs", ".venv"],
+  "ignore": ["app/services", "core", "config"],
+  "pythonVersion": "3.12"
+}

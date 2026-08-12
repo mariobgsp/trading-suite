@@ -1,0 +1,67 @@
+# ============================================================
+# Serverless Git-Ops Trading Simulator — GitHub Actions Engine
+# ============================================================
+# Triggers:
+#   1. On push to main (journal.json or watchlist.json changed)
+#   2. Cron: 03:00, 12:00, 17:00 WIB → 20:00, 05:00, 10:00 UTC
+# ============================================================
+
+name: "📊 Trading Engine"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "journal.json"
+      - "watchlist.json"
+      - "pending_orders.json"
+
+  schedule:
+    # 03:00 WIB = 20:00 UTC (previous day)
+    - cron: "0 20 * * *"
+    # 12:00 WIB = 05:00 UTC
+    - cron: "0 5 * * *"
+    # 17:00 WIB = 10:00 UTC
+    - cron: "0 10 * * *"
+
+  workflow_dispatch: {}  # manual trigger
+
+permissions:
+  contents: write
+
+jobs:
+  run-engine:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      # ── 1. Checkout both branches ─────────────────────────────
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── 2. Set up Python ──────────────────────────────────────
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # ── 3. Install dependencies ───────────────────────────────
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install yfinance
+
+      # ── 4. Run the engine ─────────────────────────────────────
+      - name: Run trading engine
+        env:
+          GITHUB_ACTIONS: "true"
+        run: python engine.py
+
+      # ── 5. Push results (handled inside engine.py, but we
+      #       ensure git is configured for the job) ──────────────
+      - name: Verify completion
+        run: echo "✅ Engine execution complete."

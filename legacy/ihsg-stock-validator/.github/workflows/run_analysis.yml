@@ -1,0 +1,68 @@
+name: Auto-Run Stock Analysis
+
+on:
+  push:
+    branches: 
+      - "run-analysis"
+    paths:
+      - 'main.py'             
+      - 'requirements.txt'   
+      - '.github/workflows/**' 
+  workflow_dispatch:
+
+jobs:
+  build-and-analyze:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    # Python 3.10 is rock solid for pandas/numpy
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v3
+      with:
+        python-version: "3.10"
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip setuptools wheel
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+    # Analyze with Custom Flag
+    - name: Analyze Stock 1
+      run: python main.py LEAD
+    - name: Analyze Stock 2
+      run: python main.py MBMA
+    - name: Analyze Stock 3
+      run: python main.py IPTV
+    - name: Analyze Stock 4
+      run: python main.py AVIA
+    - name: Analyze Stock 5
+      run: python main.py HRUM
+    - name: Analyze Stock 6
+      run: python main.py WINR
+    - name: Analyze Stock 7
+      run: python main.py KBLV
+    - name: Analyze Stock 8
+      run: python main.py ADMR
+    - name: Analyze Stock 9
+      run: python main.py ASLC
+    - name: Analyze Stock 10
+      run: python main.py SGER
+    - name: Analyze Stock 11
+      run: python main.py SPRE
+    - name: Analyze Stock 12
+      run: python main.py MEDC
+    - name: Analyze Stock 13
+      run: python main.py BOAT
+    - name: Analyze Stock 14
+      run: python main.py KLAS
+    - name: Analyze Stock 15
+      run: python main.py SMKM
+    - name: Analyze Stock 16
+      run: python main.py SMDR
+    - name: Analyze Stock 17
+      run: python main.py BULL
+ 
+
+

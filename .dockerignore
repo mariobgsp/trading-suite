@@ -1,0 +1,19 @@
+# ── Frontend build context excludes ──────────────────────────────────────────
+node_modules/
+.next/
+out/
+.git/
+legacy/
+backend/
+.gitignore
+README.md
+
+# keep for the Docker build
+!package.json
+!package-lock.json
+!next.config.ts
+!tsconfig.json
+!postcss.config.mjs
+!eslint.config.mjs
+!src/**
+!public/**

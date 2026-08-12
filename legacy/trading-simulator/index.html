@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Trading Simulator — Quick View</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0b0e17;--card:rgba(17,21,35,.72);--border:rgba(99,115,175,.18);--text:#e8ecf4;--text2:#8892a8;--text3:#555e72;
+--accent:#6c8cff;--green:#34d399;--red:#f87171;--yellow:#fbbf24;--r:14px}
+body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellipse 80% 50% at 50% -20%,rgba(108,140,255,.12),transparent);pointer-events:none}
+.app{position:relative;z-index:1;max-width:1400px;margin:0 auto;padding:24px 20px 60px}
+.top{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:24px}
+.logo{font-size:1.3rem;font-weight:800;background:linear-gradient(135deg,var(--accent),var(--green));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.ts{font-size:.75rem;color:var(--text3);font-family:'JetBrains Mono',monospace}
+.cfg{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.inp{background:rgba(15,18,30,.9);border:1px solid var(--border);color:var(--text);padding:7px 12px;border-radius:8px;font-size:.8rem;font-family:'JetBrains Mono',monospace;width:280px}
+.inp:focus{outline:none;border-color:var(--accent)}
+.btn{border:1px solid var(--border);background:var(--card);color:var(--text2);padding:8px 16px;border-radius:8px;cursor:pointer;font-size:.8rem;font-weight:500;transition:all .25s;font-family:inherit}
+.btn:hover{border-color:var(--accent);color:var(--accent)}
+.sgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:22px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:20px 24px;backdrop-filter:blur(16px)}
+.ct{font-size:.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:10px}
+.val{font-size:1.5rem;font-weight:800;line-height:1.2}.sub{font-size:.75rem;color:var(--text2);margin-top:4px;font-family:'JetBrains Mono',monospace}
+.ico{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1rem;margin-bottom:10px}
+.mgrid{display:grid;grid-template-columns:1fr 300px;gap:18px}
+@media(max-width:960px){.mgrid{grid-template-columns:1fr}}
+.mcol{display:flex;flex-direction:column;gap:18px}
+.tw{overflow-x:auto;margin-top:4px}
+table{width:100%;border-collapse:collapse;font-size:.8rem}
+th{text-align:left;font-weight:600;color:var(--text3);font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;padding:8px 10px;border-bottom:1px solid var(--border);white-space:nowrap}
+td{padding:9px 10px;border-bottom:1px solid rgba(99,115,175,.08);white-space:nowrap;font-variant-numeric:tabular-nums}
+.m{font-family:'JetBrains Mono',monospace;font-size:.76rem}
+.gp{color:var(--green);font-weight:600}.gn{color:var(--red);font-weight:600}
+.bg{display:inline-block;padding:2px 8px;border-radius:20px;font-size:.66rem;font-weight:600}
+.bg-g{background:rgba(52,211,153,.1);color:var(--green);border:1px solid rgba(52,211,153,.25)}
+.bg-r{background:rgba(248,113,113,.1);color:var(--red);border:1px solid rgba(248,113,113,.25)}
+.tn{font-weight:700}.bt{font-size:.6rem;background:rgba(108,140,255,.15);color:var(--accent);padding:1px 6px;border-radius:4px;margin-left:6px;font-weight:600}
+.wi{display:flex;align-items:center;justify-content:space-between;padding:11px 0;border-bottom:1px solid rgba(99,115,175,.08)}
+.wi:last-child{border-bottom:none}
+.wt{font-weight:700;font-size:.86rem}.wp{font-family:'JetBrains Mono',monospace;font-size:.8rem;color:var(--text2)}
+.wc{font-size:.76rem;font-weight:600;font-family:'JetBrains Mono',monospace}
+.ld{text-align:center;padding:36px;color:var(--text3)}
+.sp{display:inline-block;width:26px;height:26px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;margin-bottom:8px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.em{text-align:center;padding:20px;color:var(--text3);font-size:.82rem}
+.note{background:rgba(108,140,255,.08);border:1px solid rgba(108,140,255,.2);border-radius:8px;padding:14px 18px;margin-bottom:20px;font-size:.82rem;color:var(--text2)}
+.note a{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="app">
+<div class="top">
+  <div><div class="logo">📈 Trading Simulator — Quick View</div><div class="ts" id="ts">Enter your repo to load cached data</div></div>
+  <div class="cfg">
+    <input id="repo" class="inp" placeholder="owner/repo">
+    <button class="btn" onclick="go()">Load</button>
+    <button class="btn" onclick="fetchAll()">↻</button>
+  </div>
+</div>
+<div class="note">This is the <strong>quick-open view</strong> using cached data from the <code>data-cache</code> branch. For live trading, run <code>cd dashboard && npm run dev</code>.</div>
+<div class="sgrid" id="sg">
+  <div class="card"><div class="ico" style="background:rgba(108,140,255,.12);color:var(--accent)">💰</div><div class="ct">Cash</div><div class="val" id="vC">—</div></div>
+  <div class="card"><div class="ico" style="background:rgba(52,211,153,.12);color:var(--green)">📊</div><div class="ct">Portfolio</div><div class="val" id="vP">—</div></div>
+  <div class="card"><div class="ico" style="background:rgba(251,191,36,.12);color:var(--yellow)">⚡</div><div class="ct">Realized Gains</div><div class="val" id="vG">—</div><div class="sub" id="vGS"></div></div>
+  <div class="card"><div class="ico" style="background:rgba(248,113,113,.12);color:var(--red)">🌐</div><div class="ct">USD/IDR</div><div class="val" id="vF">—</div><div class="sub" id="vN"></div></div>
+</div>
+<div class="mgrid">
+  <div class="mcol">
+    <div class="card"><div class="ct">Active Portfolio</div><div class="tw" id="tP"><div class="ld"><div class="sp"></div><br>Waiting…</div></div></div>
+    <div class="card"><div class="ct">Capital Gains — Closed Trades</div><div class="tw" id="tG"><div class="ld"><div class="sp"></div><br>Waiting…</div></div></div>
+  </div>
+  <div class="mcol">
+    <div class="card"><div class="ct">Watchlist</div><div id="tW"><div class="ld"><div class="sp"></div></div></div></div>
+  </div>
+</div>
+<div class="card" id="btCard" style="display:none; margin-top:18px;">
+  <div class="ct">5Y Backtest & JCI Correlation <span id="btTicker" style="color:var(--accent);font-weight:700;margin-left:8px;"></span></div>
+  <div class="tw" id="tBT"></div>
+</div>
+</div>
+<script>
+const K='ts_repo';let R=localStorage.getItem(K)||'';
+document.getElementById('repo').value=R;
+function raw(f){return`https://raw.githubusercontent.com/${R}/data-cache/${f}?t=${Date.now()}`}
+function go(){const v=document.getElementById('repo').value.trim();if(!v||!v.includes('/'))return alert('owner/repo');R=v;localStorage.setItem(K,R);fetchAll()}
+function idr(n){if(n==null)return'—';const neg=n<0;return(neg?'-':'')+'Rp '+Math.abs(Math.round(n)).toLocaleString('id-ID')}
+function pct(n){if(n==null)return'—';return(n>=0?'+':'')+n.toFixed(2)+'%'}
+async function fetchAll(){
+  if(!R)return;document.getElementById('ts').textContent='Fetching…';
+  try{
+    const[ps,pm,wd,bt]=await Promise.all([fetch(raw('portfolio_state.json')).then(r=>r.json()),fetch(raw('performance_metrics.json')).then(r=>r.json()),fetch(raw('watchlist_data.json')).then(r=>r.json()),fetch(raw('backtest_results.json')).then(r=>r.ok?r.json():null).catch(e=>null)]);
+    document.getElementById('vC').textContent=idr(ps.cash_idr);
+    document.getElementById('vP').textContent=idr(ps.total_portfolio_value_idr);
+    const g=document.getElementById('vG');g.textContent=idr(pm.total_realized_pnl_idr);g.className='val '+(pm.total_realized_pnl_idr>=0?'gp':'gn');
+    document.getElementById('vGS').textContent=pm.total_trades_closed+' trade(s)';
+    document.getElementById('vF').textContent='Rp '+Math.round(ps.live_forex_usdidr).toLocaleString('id-ID');
+    document.getElementById('vN').textContent='Net Worth: '+idr(ps.net_worth_idr);
+    document.getElementById('ts').textContent='Updated: '+(ps.generated_at||'—');
+    // Portfolio table
+    const c1=document.getElementById('tP');
+    if(!ps.positions||!ps.positions.length){c1.innerHTML='<div class="em">No positions</div>';}
+    else{let h='<table><thead><tr><th>Ticker</th><th>Qty</th><th>Avg Buy</th><th>Current</th><th>Value</th><th>PnL</th></tr></thead><tbody>';
+    for(const p of ps.positions){const cl=p.unrealized_pnl_idr>=0?'gp':'gn';const bc=p.unrealized_pnl_pct>=0?'bg bg-g':'bg bg-r';
+    h+=`<tr><td class="tn">${p.ticker}</td><td class="m">${p.qty}</td><td class="m">${p.avg_buy_price_native?.toLocaleString('en-US')}<br><span style="color:var(--text3);font-size:.68rem">${idr(p.avg_buy_price_idr)}</span></td><td class="m">${p.current_price_native?.toLocaleString('en-US')??'—'}<br><span style="color:var(--text3);font-size:.68rem">${idr(p.current_price_idr)}</span></td><td class="m">${idr(p.total_value_idr)}</td><td class="m ${cl}">${idr(p.unrealized_pnl_idr)}<br><span class="${bc}">${pct(p.unrealized_pnl_pct)}</span></td></tr>`}
+    h+='</tbody></table>';c1.innerHTML=h;}
+    // Gains table
+    const c2=document.getElementById('tG');
+    if(!pm.trades||!pm.trades.length){c2.innerHTML='<div class="em">No closed trades</div>';}
+    else{let h='<table><thead><tr><th>Date</th><th>Ticker</th><th>Qty</th><th>Sell</th><th>Cost</th><th>PnL</th></tr></thead><tbody>';
+    for(const t of pm.trades){const cl=t.realized_pnl_idr>=0?'gp':'gn';const bot=t.system_generated?'<span class="bt">BOT</span>':'';
+    h+=`<tr><td class="m">${t.date}</td><td class="tn">${t.ticker}${bot}</td><td class="m">${t.qty}</td><td class="m">${t.sell_price_native?.toLocaleString('en-US')} ${t.currency}</td><td class="m">${idr(t.cost_basis_idr)}</td><td class="m ${cl}">${idr(t.realized_pnl_idr)}</td></tr>`}
+    h+='</tbody></table>';c2.innerHTML=h;}
+    // Watchlist
+    const c3=document.getElementById('tW');
+    if(!wd.items||!wd.items.length){c3.innerHTML='<div class="em">Empty</div>';}
+    else{let h='';for(const w of wd.items){const cl=w.daily_change_pct!=null?(w.daily_change_pct>=0?'gp':'gn'):'';const cur=w.native_currency==='IDR'?'':' '+w.native_currency;
+    h+=`<div class="wi"><div><div class="wt">${w.ticker}</div><div class="wp">${idr(w.current_price_idr)}</div></div><div style="text-align:right"><div class="wp">${w.current_price_native?.toLocaleString('en-US')??'—'}${cur}</div><div class="wc ${cl}">${pct(w.daily_change_pct)}</div></div></div>`}
+    c3.innerHTML=h;}
+    // Backtest
+    if(bt){
+      document.getElementById('btCard').style.display='block';
+      document.getElementById('btTicker').textContent=bt.ticker;
+      const c4=document.getElementById('tBT');
+      const rc = bt.jci_correlation.resilience_pct;
+      const rcCl = rc >= 50 ? 'bg-g' : (rc >= 30 ? '' : 'bg-r');
+      let h=`<div style="margin-bottom:16px;font-size:0.8rem;">
+        <span class="bg ${rcCl}">JCI Resilience: ${rc.toFixed(1)}%</span> 
+        <span style="color:var(--text2);margin-left:8px;">(Up/Unchanged ${bt.jci_correlation.stock_up_days} vs ${bt.jci_correlation.stock_down_days} Down when JCI drops)</span>
+      </div>
+      <table><thead><tr><th>Strategy</th><th>Trades</th><th>Win Rate</th><th>Avg Profit</th><th>Avg Loss</th></tr></thead><tbody>`;
+      for(const [name, stats] of [['MACD', bt.macd_stats], ['RSI', bt.rsi_stats], ['Stoch', bt.stoch_stats]]){
+        const wrCl = stats.win_rate >= 50 ? 'gp' : (stats.win_rate >= 40 ? '' : 'gn');
+        h+=`<tr>
+          <td class="tn">${name}</td>
+          <td class="m">${stats.total_trades}</td>
+          <td class="m ${wrCl}">${stats.win_rate.toFixed(1)}%</td>
+          <td class="m gp">${stats.avg_profit_pct > 0 ? '+' : ''}${stats.avg_profit_pct.toFixed(2)}%</td>
+          <td class="m gn">${stats.avg_loss_pct.toFixed(2)}%</td>
+        </tr>`;
+      }
+      h+='</tbody></table>';
+      c4.innerHTML=h;
+    } else {
+      document.getElementById('btCard').style.display='none';
+    }
+  }catch(e){document.getElementById('ts').textContent='❌ '+e.message;console.error(e);}
+}
+fetchAll();
+</script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+{
+  "ignore": [
+    "legacy/**",
+    "backend/core/**",
+    "backend/config/**",
+    "backend/app/services/**",
+    "backend/data/**",
+    "backend/logs/**",
+    "backend/.venv/**",
+    "node_modules/**",
+    ".next/**"
+  ]
+}

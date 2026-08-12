@@ -1,0 +1,18 @@
+pandas>=2.0
+numpy>=1.24
+yfinance>=0.2.36
+pyarrow>=14.0
+scikit-learn>=1.3
+requests>=2.31
+python-dotenv>=1.0
+
+# ML4T Enhancement dependencies
+PyWavelets>=1.5
+pykalman>=0.9.7
+xgboost>=2.0
+joblib>=1.3
+
+# Optional heavy ML dependencies (required for full ML4T pipeline)
+# Uncomment if running model training or Bayesian risk estimation
+# tensorflow>=2.15
+# pymc>=5.10

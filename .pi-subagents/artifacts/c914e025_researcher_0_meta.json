@@ -1,0 +1,155 @@
+{
+  "runId": "c914e025",
+  "agent": "researcher",
+  "task": "Quick focused research (single angle only): find any current (2025-2026) benchmarks or production reports comparing TanStack Start SSR performance on Bun vs Node (requests/sec, cold start, memory), OR TanStack Start load/SSR performance vs Next.js App Router for a client-heavy dashboard. Do NOT edit files. Sources: TanStack GitHub issues/discussions, Inngest/Railway migration blogs, Bun blog, Hono benchmark pages.\nReturn concise findings: source links with dates, exact numbers if found, confidence, and if NO comparative benchmark exists, say so explicitly (that is a valid answer — it confirms the gap). Under 300 words.\n\n---\n**Output:**\nWrite your findings to exactly this path: /home/mariobgsp/Project/github/trading-suite/.pi-subagents/artifacts/outputs/c914e025/research.md\nThis path is authoritative for this run.\nIgnore any other output filename or output path mentioned elsewhere, including output destinations in the base agent prompt, system prompt, or task instructions.",
+  "exitCode": 0,
+  "processSignal": "SIGTERM",
+  "usage": {
+    "input": 40038,
+    "output": 6007,
+    "cacheRead": 110976,
+    "cacheWrite": 0,
+    "cost": 0.0037990064000000003,
+    "turns": 13
+  },
+  "model": "opencode-go/deepseek-v4-flash:medium",
+  "attemptedModels": [
+    "opencode-go/deepseek-v4-flash:medium"
+  ],
+  "modelAttempts": [
+    {
+      "model": "opencode-go/deepseek-v4-flash:medium",
+      "success": true,
+      "exitCode": 0,
+      "usage": {
+        "input": 40038,
+        "output": 6007,
+        "cacheRead": 110976,
+        "cacheWrite": 0,
+        "cost": 0.0037990064000000003,
+        "turns": 13
+      }
+    }
+  ],
+  "durationMs": 428664,
+  "toolCount": 10,
+  "launchContractDigest": "53cba8d91a7d2c5648dfec9999f4c1ad9e6d848a0a49202c9b2d27d01f34020e",
+  "launchResolvedExtensions": {
+    "version": 1,
+    "source": "launch-resolved",
+    "disableAmbientExtensions": false,
+    "runtime": [
+      "sha256:45f29538491169fc"
+    ],
+    "configured": [],
+    "effective": [
+      "sha256:45f29538491169fc"
+    ],
+    "omitted": {
+      "runtime": 0,
+      "configured": 0,
+      "effective": 0
+    }
+  },
+  "acceptance": {
+    "status": "attested",
+    "evidenceStatus": "attested",
+    "explicit": false,
+    "effectiveAcceptance": {
+      "level": "attested",
+      "explicit": false,
+      "inferredReason": [
+        "read-only/reviewer-style agent"
+      ],
+      "criteria": [
+        {
+          "id": "criterion-1",
+          "must": "Return concrete findings with file paths and severity when applicable",
+          "evidence": [
+            "review-findings",
+            "residual-risks"
+          ],
+          "severity": "required"
+        }
+      ],
+      "evidence": [
+        "review-findings",
+        "residual-risks"
+      ],
+      "verify": [],
+      "stopRules": []
+    },
+    "inferredReason": [
+      "read-only/reviewer-style agent"
+    ],
+    "criteria": [
+      {
+        "id": "criterion-1",
+        "must": "Return concrete findings with file paths and severity when applicable",
+        "evidence": [
+          "review-findings",
+          "residual-risks"
+        ],
+        "severity": "required"
+      }
+    ],
+    "runtimeChecks": [],
+    "verifyRuns": [],
+    "childReport": {
+      "criteriaSatisfied": [
+        {
+          "id": "criterion-1",
+          "status": "satisfied",
+          "evidence": "Concrete findings with paths, dates, and exact numbers written to /home/mariobgsp/Project/github/trading-suite/.pi-subagents/artifacts/outputs/c914e025/research.md. Bun-vs-Node gap explicitly confirmed (valid answer). TanStack-vs-Next.js evidence: Platformatic v1/v2 (blog.platformatic.dev, Feb-Mar 2026, 1,000 req/s AWS EKS, TanStack ~25% throughput/+35% latency vs React Router, Next.js v15 ~60% success); TanStack blog 5x SSR (Mar 17 2026, 427->2357 req/s, p99 6558->928ms); point0-benchmarks (github.com/1gr14/point0-benchmarks, TanStack 2,921 vs Next 521 req/s, 103ms vs 765ms cold start); bun#30317 (~10x slower Next.js standalone under Bun, May 2026)."
+        }
+      ],
+      "changedFiles": [
+        "/home/mariobgsp/Project/github/trading-suite/.pi-subagents/artifacts/outputs/c914e025/research.md"
+      ],
+      "testsAddedOrUpdated": [],
+      "commandsRun": [
+        {
+          "command": "web_search (4 query groups: Bun vs Node TanStack; TanStack vs Next.js; Bun SSR req/s 2025; production reports)",
+          "result": "passed",
+          "summary": "Located Platformatic v1/v2 benchmark, TanStack 5x SSR blog, point0-benchmarks, bun#30317, Xavier Geerinck Bun compile report"
+        },
+        {
+          "command": "fetch_content / get_search_content verification of primary sources",
+          "result": "passed",
+          "summary": "Verified exact numbers and dates from TanStack blog and point0 repo; Platformatic v2 and Reddit full-page extractions failed and were cross-corroborated via search-synthesized content of the same posts plus yceffort summary"
+        },
+        {
+          "command": "write .pi-subagents/artifacts/outputs/c914e025/research.md",
+          "result": "passed",
+          "summary": "Brief written under 300 words with sources, dates, confidence, and explicit gap statement; file re-read after auto-format to confirm integrity"
+        }
+      ],
+      "validationOutput": [
+        "No trading-suite repo files edited; only the designated research artifact path was written. Brief body ~290 words. All numbers/dates attributed to fetched or search-verified sources."
+      ],
+      "residualRisks": [
+        "Platformatic v2 exact per-framework req/s figures not fully extractable (full-page fetch error); v2 figures (25% throughput, 35% latency) are from search-synthesized content of the same post and may lack precision",
+        "Platformatic benchmark used Next.js v15.5.5; v16 canary improved throughput ~2x per their own post, so results may not hold against Next 16 stable",
+        "point0-benchmarks is single-author, self-published; reproducible and parity-gated but not independently audited",
+        "No TanStack Start Bun-vs-Node data exists anywhere; bun#30317 (Next.js regression under Bun) is only an indirect signal"
+      ],
+      "noStagedFiles": true,
+      "diffSummary": "Single new research artifact written to .pi-subagents/artifacts/outputs/c914e025/research.md; no repo source files touched",
+      "reviewFindings": [
+        "no blockers: gap explicitly confirmed — no TanStack Start Bun-vs-Node benchmark exists (valid answer per task)",
+        "finding: best available SSR comparison is TanStack Start vs Next.js on Node (Platformatic v2, point0); both favor TanStack Start on throughput and cold start",
+        "finding: Bun-specific risk signal — Next.js 16 standalone under Bun is ~10x slower than under Node (oven-sh/bun#30317, May 2026), so Bun-runtime SSR regressions are plausible for other Node-targeted frameworks incl. TanStack Start (Nitro bun preset)"
+      ],
+      "manualNotes": "Adjacent dashboard-relevant risk: TanStack/router#5289 reports linear memory growth with SSR streaming under load (reproduced on Bun runtime). Platformatic Watt post claims Watt ~= single-process Node throughput with +10% tail-latency gains at 10k req/s for TanStack Start if multi-core is needed. Suggested next step if the parent wants the gap closed: autocannon run of the same TanStack Start app under nitro preset 'bun' vs node, mirroring Platformatic's methodology."
+    }
+  },
+  "effects": {
+    "fileMutation": {
+      "status": "not-applicable",
+      "expected": false,
+      "attempted": true
+    }
+  },
+  "transcriptPath": "/home/mariobgsp/Project/github/trading-suite/.pi-subagents/artifacts/c914e025_researcher_0_transcript.jsonl",
+  "timestamp": 1786464404808
+}

@@ -1,0 +1,15 @@
+[
+  {
+    "date": "2026-04-30",
+    "ticker": "CASH",
+    "action": "DEPOSIT",
+    "qty": 1,
+    "price": 10000000,
+    "currency": "IDR",
+    "sl_price": 0,
+    "tp_price": 0,
+    "trailing_stop_pct": 0,
+    "reason": "Manual topup",
+    "system_generated": false
+  }
+]

@@ -1,0 +1,156 @@
+{
+  "runId": "0532b7db",
+  "agent": "researcher",
+  "task": "Research the PRACTICAL TRADEOFFS of three migration targets for a Next.js 16 trading dashboard (React 19, lightweight-charts, SSE from a FastAPI backend): (a) full swap to TanStack Start, (b) Hono+Bun replacing only the server/runtime while keeping React on top (e.g., Vite + TanStack Router + Hono), (c) staged: adopt Bun as runtime for Next.js first, then Hono as a thin API gateway in front of FastAPI, keep Next for UI. Do NOT edit files — research only.\nCover:\n1. Migration cost and risk per option: breaking changes, router paradigm shift (file-based vs TanStack Router code-based routes), server function/data loading model, SSR streaming for a dashboard, image optimization and static assets, middleware/auth, caching and revalidation semantics.\n2. SSE and long-lived connections: how each target handles Server-Sent Events (Bun.serve, Hono streamSSE, TanStack Start SSR), known buffering/proxy issues, and whether Bun is production-stable for many concurrent long-lived connections.\n3. Ecosystem and maintenance: npm/registry compat of Bun, ecosystem maturity of TanStack Start vs Next vs plain Hono, hiring/docs/community size, deployment targets (Docker, VPS, serverless) for each, and bundle/build tooling (Vite vs Next compiler vs Nitro/Vinxi).\n4. How to VALIDATE cheaply: what a pilot would look like (e.g., run bun next dev today, or port ONE page to Hono+TanStack Router, or use Hono as a proxy) and what success metrics would tell you the migration is worth it.\nCompare the three options in a short table plus prose. Give source links with dates and confidence. End with a clear recommendation for a dashboard app that is client-heavy, chart-heavy, and already depends on a separate Python API. Keep it under 900 words.\n\n---\n**Output:**\nWrite your findings to exactly this path: /home/mariobgsp/Project/github/trading-suite/.pi-subagents/artifacts/outputs/0532b7db/research.md\nThis path is authoritative for this run.\nIgnore any other output filename or output path mentioned elsewhere, including output destinations in the base agent prompt, system prompt, or task instructions.",
+  "exitCode": 0,
+  "processSignal": "SIGTERM",
+  "usage": {
+    "input": 37022,
+    "output": 6702,
+    "cacheRead": 132864,
+    "cacheWrite": 0,
+    "cost": 0.0037158295999999997,
+    "turns": 7
+  },
+  "model": "opencode-go/deepseek-v4-flash:medium",
+  "attemptedModels": [
+    "opencode-go/deepseek-v4-flash:medium"
+  ],
+  "modelAttempts": [
+    {
+      "model": "opencode-go/deepseek-v4-flash:medium",
+      "success": true,
+      "exitCode": 0,
+      "usage": {
+        "input": 37022,
+        "output": 6702,
+        "cacheRead": 132864,
+        "cacheWrite": 0,
+        "cost": 0.0037158295999999997,
+        "turns": 7
+      }
+    }
+  ],
+  "durationMs": 1646731,
+  "toolCount": 11,
+  "launchContractDigest": "12f7b7c1683ff645e4d755efff0e92d2b9239eb65a7a7de899a13053fcba02df",
+  "launchResolvedExtensions": {
+    "version": 1,
+    "source": "launch-resolved",
+    "disableAmbientExtensions": false,
+    "runtime": [
+      "sha256:45f29538491169fc"
+    ],
+    "configured": [],
+    "effective": [
+      "sha256:45f29538491169fc"
+    ],
+    "omitted": {
+      "runtime": 0,
+      "configured": 0,
+      "effective": 0
+    }
+  },
+  "acceptance": {
+    "status": "attested",
+    "evidenceStatus": "attested",
+    "explicit": false,
+    "effectiveAcceptance": {
+      "level": "attested",
+      "explicit": false,
+      "inferredReason": [
+        "read-only/reviewer-style agent"
+      ],
+      "criteria": [
+        {
+          "id": "criterion-1",
+          "must": "Return concrete findings with file paths and severity when applicable",
+          "evidence": [
+            "review-findings",
+            "residual-risks"
+          ],
+          "severity": "required"
+        }
+      ],
+      "evidence": [
+        "review-findings",
+        "residual-risks"
+      ],
+      "verify": [],
+      "stopRules": []
+    },
+    "inferredReason": [
+      "read-only/reviewer-style agent"
+    ],
+    "criteria": [
+      {
+        "id": "criterion-1",
+        "must": "Return concrete findings with file paths and severity when applicable",
+        "evidence": [
+          "review-findings",
+          "residual-risks"
+        ],
+        "severity": "required"
+      }
+    ],
+    "runtimeChecks": [],
+    "verifyRuns": [],
+    "childReport": {
+      "criteriaSatisfied": [
+        {
+          "id": "criterion-1",
+          "status": "satisfied",
+          "evidence": "Concrete findings returned with severity labels and dated source URLs: high-severity risk for option (c) (bun#25769 next start launches node; Abrarqasim 80/1500 native-deps failure; next#91720 Vercel bunVersion regression), high cost for (a) (Codeline +100k/-129k lines; TanStack auth boundaries per WorkOS guide), SSE sharp edges with concrete fixes (Hono PR #3833 compression skip; ServerFault nginx proxy_buffering off; bun#13811 v1.1.26/27 SSE regressions), and a 3-step cheap validation plan with success metrics. No code files were edited; output written to .pi-subagents/artifacts/outputs/0532b7db/research.md."
+        }
+      ],
+      "changedFiles": [
+        ".pi-subagents/artifacts/outputs/0532b7db/research.md"
+      ],
+      "testsAddedOrUpdated": [],
+      "commandsRun": [
+        {
+          "command": "web_search (8 queries across 4 angles)",
+          "result": "passed",
+          "summary": "Covered TanStack Start migration/SSR, Bun SSE+production stability, Hono streamSSE, Next 16 breaking changes, Railway/Inngest/Codeline real migrations"
+        },
+        {
+          "command": "web_search follow-up (TanStack Start v1.0 release date)",
+          "result": "passed",
+          "summary": "Confirmed v1.0 tagged Mar 18, 2026; package 1.168.32 as of Jul 2026 (medium confidence, secondary source)"
+        },
+        {
+          "command": "fetch_content (6 primary URLs)",
+          "result": "passed",
+          "summary": "Read Bun SSE guide, TanStack migration guide, Railway, Inngest, DecodeStack, Next 16 upgrade guide"
+        }
+      ],
+      "validationOutput": [
+        "Word count of brief body is under 900 words excluding acceptance report",
+        "All findings carry inline citations with dates",
+        "Comparison table covers cost/risk, SSE, ecosystem, tooling, deployment for all three options"
+      ],
+      "residualRisks": [
+        "TanStack Start v1.0 date verified only via secondary blog (Stack Dispatch); official announcement post still describes RC status",
+        "Bun SSE production behavior at dashboard scale (10k+ concurrent streams) has no authoritative long-run benchmark; only anecdotal 240k WebSocket report",
+        "Auth port cost (JWT/SSO) for options (a) and (b) could not be estimated without inspecting the repo",
+        "Hono+TanStack Router SSR template ecosystem is largely community-maintained; official guidance is thinner than Next's"
+      ],
+      "noStagedFiles": true,
+      "diffSummary": "Research-only run; single artifact written to .pi-subagents/artifacts/outputs/0532b7db/research.md. No source code modified.",
+      "reviewFindings": [
+        "no blockers: research task completed with 18 cited sources across primary docs and two documented real-world migrations (Railway, Inngest)",
+        "note: DecodeStack article labeling TanStack Start 'still RC' is stale relative to the Mar 2026 v1.0 tag; flagged in Gaps and not relied on for the recommendation"
+      ],
+      "manualNotes": "Recommendation: option (b) via staged path — Hono SSE/auth gateway in front of FastAPI first, one-page Vite+TanStack Router pilot, adopt Bun only for the Hono process if connection ceiling demands it. Skip (a) until server-side Next usage is minimal; never adopt (c) as the primary path due to Bun/Next runtime compatibility risk."
+    }
+  },
+  "effects": {
+    "fileMutation": {
+      "status": "not-applicable",
+      "expected": false,
+      "attempted": true
+    }
+  },
+  "transcriptPath": "/home/mariobgsp/Project/github/trading-suite/.pi-subagents/artifacts/0532b7db_researcher_0_transcript.jsonl",
+  "timestamp": 1786464050210
+}

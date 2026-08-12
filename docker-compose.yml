@@ -1,0 +1,90 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Trading Suite — merged IDX trading platform
+#   frontend: Next.js 16 (http://localhost:3000)
+#   backend:  FastAPI   (http://localhost:8000, Swagger at /docs)
+#
+# Usage:
+#   podman-compose up -d --build     (or: docker compose up -d --build)
+#   podman-compose logs -f           (tail both services)
+#   podman-compose down              (stop; data volume persists)
+#
+# Secrets: copy .env.example to .env and fill in STOCKBIT_JWT_TOKEN /
+# GEMINI_API_KEY if you want the Stockbit feed and bot pipeline.
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: trading-suite-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - STOCKBIT_JWT_TOKEN=${STOCKBIT_JWT_TOKEN:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - OPENCODE_GO_API_KEY=${OPENCODE_GO_API_KEY:-}
+      - YFINANCE_CACHE_TTL=${YFINANCE_CACHE_TTL:-3600}
+      - YFINANCE_HISTORY_CACHE_TTL=${YFINANCE_HISTORY_CACHE_TTL:-43200}
+      - FOREX_CACHE_TTL=${FOREX_CACHE_TTL:-3600}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000}
+    volumes:
+      # persist the SQLite cache + journal/watchlist JSON across rebuilds
+      - trading_suite_data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trading-suite-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      # Browser-side fetches go to http://localhost:8000 (published on
+      # the host); the container retries http://backend:8000/api/health.
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      # busybox wget ships in node:22-alpine
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    restart: unless-stopped
+
+  # Migration pilot — TanStack Start + Hono (http://localhost:3001).
+  # Runs alongside the Next frontend so both can be compared; proxies /api/*
+  # to the backend container (no CORS involvement).
+  pilot:
+    build:
+      context: ./pilot
+      dockerfile: Dockerfile
+    container_name: trading-suite-pilot
+    ports:
+      - "3001:3001"
+    environment:
+      - API_TARGET=http://backend:8000
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      # busybox wget ships in node:22-alpine
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  trading_suite_data:

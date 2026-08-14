@@ -1,15 +1,16 @@
 # Trading Suite — IDX (Indonesia) Trading Platform
 
 A self-hosted Indonesian stock-market platform: live quotes, charting, screening,
-bandarmology (smart-money) validation, portfolio FIFO accounting, regime filter,
-backtesting, AI summaries, and rule-based entry plans — all backed by real data
-for the 900+ ticker IDX universe.
+bandarmology (smart-money) validation, ownership & shareholder intelligence,
+portfolio FIFO accounting, regime filter, backtesting, AI summaries, and
+rule-based entry plans — all backed by real data for the 900+ ticker IDX
+universe.
 
-```
+```text
 ┌─────────────┐     /api/* proxy      ┌──────────────┐
-│  pilot web  │ ─────────────────────▶ │  FastAPI     │──▶ yfinance / SQLite cache
-│ (:3001 SSR) │                        │  (:8000)     │──▶ TradingView scanner scrape
-└─────────────┘                        │              │──▶ opencode-go model (optional)
+│  pilot web  │ ─────────────────────▶ │  FastAPI     │──▶ IDX official API
+│ (:3001 SSR) │                        │  (:8000)     │──▶ yfinance
+└─────────────┘                        │              │──▶ TradingView scanner
         ▲                              └──────────────┘
         │ (legacy Next.js app also ships: :3000)
 ```
@@ -18,14 +19,14 @@ for the 900+ ticker IDX universe.
 
 | Path | What it is |
 | --- | --- |
-| `backend/` | FastAPI service: market data, indicators, screener, validator, portfolio, regime, backtest, sentiment, AI summaries, entry plans |
-| `backend/app/` | API routers + services (`market`, `screener`, `validator`, `portfolio`, `regime`, `backtest`, `sentiment`, `movers`, `entry`, `ai`, `indicators`) |
+| `backend/` | FastAPI service: market data, indicators, screener, validator, ownership, portfolio, regime, backtest, sentiment, AI summaries, entry plans |
+| `backend/app/` | API routers + services (`market`, `idx`, `intel`, `ownership`, `validator`, `portfolio`, `regime`, `backtest`, `sentiment`, `entry`, `ai`, `indicators`, …) |
 | `backend/app/routers/` | FastAPI route modules (`/api/*`) |
 | `backend/core/` | Canonical technical-indicator math (SMA/EMA/RSI/MACD/ATR/Stochastic/CMF/MFI/PSAR/A-D line, …) |
 | `backend/config/` | 900+ ticker IDX universe, index symbols |
 | `backend/tests/` | Offline pytest suite (synthetic data — no network) |
-| `pilot/` | Migration-pilot frontend: TanStack Start + Hono SSR, Vite, lightweight-charts |
-| `pilot/src/routes/` | Pilot pages: `/`, `/overview`, `/markets`, `/validator`, `/screener`, `/portfolio`, `/backtest`, `/sentiment`, `/regime` |
+| `pilot/` | Main frontend: TanStack Start + Hono SSR, Vite, lightweight-charts |
+| `pilot/src/routes/` | Pilot pages: `/`, `/overview`, `/markets`, `/ownership`, `/profiler`, `/validator`, `/screener`, `/portfolio`, `/backtest`, `/regime`, `/foreignflow`, `/brokerintel`, … (20 tools) |
 | `src/` | Legacy Next.js frontend (runs alongside; compare mode) |
 | `legacy/` | Archived original source repos (six merged codebases) |
 | `docker-compose.yml` | Runs backend + frontend + pilot as containers |
@@ -53,12 +54,12 @@ API health: <http://127.0.0.1:8000/api/health> · Swagger: <http://127.0.0.1:800
 > The backend never calls `load_dotenv()` — pass `--env-file .env` (as above) or
 > export the variables in the process environment.
 
-### 2. Pilot web app (recommended UI)
+### 2. Pilot web app (the main UI)
 
 ```sh
 cd pilot
 npm install
-npm run dev          # client-only Vite dev server (:5173)
+npm run dev          # Vite dev server on :3001
 # or production SSR:
 npm run build && npm start   # Hono + TanStack Start on :3001
 ```
@@ -100,14 +101,33 @@ Secrets live in gitignored `.env` files; never commit real keys.
 
 ## Data sources
 
+- **IDX official API** — `www.idx.co.id/primary/*` (GetStockSummary,
+  GetCompanyProfilesDetail, GetBrokerSummary, GetAnnouncement, …). Used for the
+  heatmap, movers, foreign flow, broker radar, ownership, announcements, and
+  sector rotation. Fetched with curl_cffi Chrome impersonation + Playwright
+  fallback; responses cached in SQLite with per-feed TTLs, plus
+  stale-while-revalidate so slow IDX scrapes never block the UI.
 - **Quotes / history** — yfinance (`.JK` symbols, `^JKSE` etc.), cached in SQLite
   (`backend/data/cache.db`) with TTLs; stale-cache fallback on upstream failures.
-- **Top gainers / losers + sector rotation** — scraped from TradingView's
-  Indonesia scanner API (one POST returns the full ~885-ticker universe with
-  sector + % change; 5-minute cache).
+- **TradingView scanner** — top gainers/losers + sector rotation (one POST
+  returns the full ~885-ticker universe with sector + % change; 5-minute cache).
 - **AI model** — opencode-go chat-completions endpoint via `backend/app/ai.py`.
   When unconfigured/unreachable, summaries and narrations fall back to
   deterministic data-derived text so the UI never hard-fails.
+
+## Caching & performance
+
+- SQLite `kv_cache` (WAL) with per-feed TTLs: quotes 1h, history 12h, ownership
+  24h, broker/foreign 1h, announcements 10m.
+- **Stale-while-revalidate** on the slow IDX feeds (heatmap, movers): stale data
+  is served instantly while a background thread refreshes — no request ever
+  blocks on an IDX scrape.
+- **Entry plans** are cached per ticker (10 min) including the AI narration;
+  the profiler's Analyze button forces a fresh recompute.
+- **Ownership history** keeps a per-ticker snapshot archive (up to 24 snapshots)
+  that powers period-over-period diffs and 5/25/50% threshold watch.
+- The pilot shows a global pending bar + per-panel refresh spinners while any
+  data view is loading; all motion honors `prefers-reduced-motion`.
 
 ## API endpoints
 
@@ -129,11 +149,23 @@ Indicators emitted by `/history`: SMA20/50/200, EMA9/21, RSI(14), ATR(14), MACD,
 **Stochastic 10,3,3**, OBV, VWAP, **CMF(20)**, **MFI(14)**, **PSAR** (0.02/0.02/0.20),
 **A/D line**, **VOL MA20**.
 
+### Intel — IDX market intelligence (`/api/intel`)
+
+| Endpoint | Description |
+| --- | --- |
+| `GET /heatmap` | Whole-IDX treemap (market cap √-scaled sizes, ±6% change colors, sector grouping) |
+| `GET /movers?range_days=1&limit=50` | Leaders/laggards by JCI point contribution |
+| `GET /foreign/universe` · `/foreign/{ticker}` | Net foreign flow — whole board + per ticker |
+| `GET /broker/radar` · `/broker/{ticker}` | Exchange-level broker volume/value ranking; per-ticker foreign flow context |
+| `GET /ownership/{ticker}` · `/ownership/{ticker}/history` | Shareholder / board / subsidiaries + snapshot-diff archive |
+| `GET /announcements` | Official IDX announcements (45-day window, PDF links) |
+| `GET /rotation?days=20` | Sector rotation |
+
 ### Validator (`/api/validator`)
 
 | Endpoint | Description |
-|---|---|
-| `GET /{ticker}` | Bandarmology: bandar phase, institutional flow, hidden-intent radar, liquidity, CMF/MFI, RSI |
+| --- | --- |
+| `GET /{ticker}` | Bandarmology: bandar phase, institutional flow, hidden-intent radar (newest-first), liquidity, CMF/MFI, RSI |
 
 ### Screener (`/api/screener`)
 
@@ -150,7 +182,6 @@ Indicators emitted by `/history`: SMA20/50/200, EMA9/21, RSI(14), ATR(14), MACD,
 | Endpoint | Description |
 | --- | --- |
 | `GET /api/regime/snapshot` · `/api/regime/history` | IHSG regime filter + index history |
-| `GET /api/regime/stockbit` · `/api/regime/stockbit/detector/{ticker}` | Stockbit feeds (optional) |
 | `GET /api/sentiment/news` · `/api/sentiment/idx` | News sentiment radar |
 | `GET /api/portfolio/state` · `/watchlist` · `/journal` · `/pending-orders` | FIFO ledger (GET/POST) |
 | `GET /api/backtest/strategies` · `/{ticker}` | Strategy backtests |
@@ -167,17 +198,20 @@ Indicators emitted by `/history`: SMA20/50/200, EMA9/21, RSI(14), ATR(14), MACD,
 | Route | What it shows |
 | --- | --- |
 | `/` | App launcher (all tools) |
-| `/overview` | Indices strip, top gainers/losers, sector rotation, regime, AI summary |
-| `/markets` | Multi-pane chart: candles + SMA/EMA + PSAR dots · volume + VOL MA20 (always on) · Stochastic 10,3,3 (always on) · MFI/CMF/A-D line (toggleable panes) · beta vs IHSG · AI summary |
-| `/validator` | Bandarmology analysis + entry plan + AI summary |
+| `/overview` | Indices strip, **IDX heatmap** (whole market at a glance), **JCI movers** (point contribution), regime filter |
+| `/markets` | Multi-pane chart: candles + SMA/EMA + PSAR dots · volume + VOL MA20 (always on) · Stochastic 10,3,3 (always on) · MFI/CMF/A-D line (toggleable panes) · beta vs IHSG |
+| `/ownership` | **Connection web** (2.5D radial graph: shareholders/board/subsidiaries, d3-force drift, hover-highlight, click-focus, parallax) · shareholder table · ownership-change diff archive · board lists |
+| `/profiler` | One-screen full picture: quote, price action, beta, bandarmology, regime, **entry plan** — Analyze refreshes everything |
+| `/foreignflow` | Foreign buy / sell split tables (top 10 + see-more), per-ticker breakdown |
+| `/brokerintel` | Broker radar (exchange-level volume/value ranking) + per-ticker foreign flow context |
+| `/validator` | Bandarmology analysis + entry plan + AI summary + intent radar (newest-first) |
 | `/screener` | Single-ticker analysis + streaming universe scan (SSE) |
 | `/portfolio` | FIFO positions, cash, realized/unrealized P&L |
 | `/backtest` | Strategy backtests |
 | `/sentiment` | News sentiment radar |
 | `/regime` | IHSG regime + bot engine filter |
-
-AI summaries render on `/markets`, `/validator`, `/screener` (per single ticker),
-and `/overview`. The other pages never mount or fetch a summary.
+| `/announcements` | Official IDX announcements |
+| `/watchlist` / `/journal` / `/msci` / `/sector-rotation` / `/calculators` / `/wiki` | Ledger, MSCI watch, rotation, calculators, wiki |
 
 ## Testing & checks
 
@@ -185,8 +219,10 @@ and `/overview`. The other pages never mount or fetch a summary.
 # Backend: offline unit tests (synthetic data, no network)
 ( cd backend && .venv/bin/python -m pytest -q )
 
-# Pilot: typecheck, lint, build
-( cd pilot && npx tsc --noEmit )
+# Backend: typecheck
+( cd backend && pyright . )
+
+# Pilot: lint + build
 ( cd pilot && npx eslint . )
 ( cd pilot && npm run build )
 ```

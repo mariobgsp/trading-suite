@@ -8,6 +8,7 @@ backend data directory instead of the repo root.
 from __future__ import annotations
 
 import logging
+import math
 from datetime import UTC, datetime
 from typing import Any
 
@@ -196,4 +197,102 @@ def portfolio_state(force_forex: bool = False) -> dict[str, Any]:
         "total_trades": len(engine.realized_trades),
         "recent_trades": list(reversed(engine.realized_trades[-10:])),
         "currency": "IDR",
+    }
+
+
+def journal_stats() -> dict[str, Any]:
+    """Performance analytics over the trade journal: win rate, profit factor,
+    average win/loss, and a monthly P&L series.
+
+    Trades are the realized_trades produced by replaying the FIFO engine over
+    the journal — the same accounting `portfolio_state` uses, so analytics and
+    the ledger never disagree. An empty journal yields an honest empty result
+    rather than zeros dressed up as signals.
+    """
+    journal = get_journal()
+    if not journal:
+        return {
+            "trade_count": 0,
+            "note": "journal is empty — add trades in the Portfolio tool first",
+            "win_rate_pct": None,
+            "profit_factor": None,
+            "avg_win_idr": None,
+            "avg_loss_idr": None,
+            "total_pnl_idr": 0,
+            "monthly": [],
+            "by_ticker": [],
+            "recent": [],
+        }
+
+    live_forex = fetch_forex() or 0.0
+    engine = FIFOEngine(live_forex=live_forex)
+    hist_forex_cache: dict[str, float] = {}
+    for entry in journal:
+        try:
+            engine.process_entry(entry, hist_forex_cache)
+        except Exception as exc:  # noqa: BLE001 - one bad entry must not kill the ledger
+            logger.warning("journal entry skipped: %s", exc)
+
+    trades = engine.realized_trades
+    wins = [t for t in trades if t.get("pnl_idr", 0) > 0]
+    losses = [t for t in trades if t.get("pnl_idr", 0) < 0]
+    closed = wins + losses
+    total_pnl = sum(t.get("pnl_idr", 0) for t in trades)
+
+    win_rate = (len(wins) / len(closed) * 100) if closed else None
+    avg_win = sum(t.get("pnl_idr", 0) for t in wins) / len(wins) if wins else None
+    avg_loss = abs(sum(t.get("pnl_idr", 0) for t in losses)) / len(losses) if losses else None
+    gross_win = sum(t.get("pnl_idr", 0) for t in wins)
+    gross_loss = abs(sum(t.get("pnl_idr", 0) for t in losses))
+    try:
+        profit_factor = gross_win / gross_loss if gross_loss > 0 else None
+        if profit_factor is None and gross_win > 0:
+            profit_factor = float("inf")
+    except (TypeError, ValueError, ZeroDivisionError):
+        profit_factor = None
+    # Represent an infinite profit factor (wins, zero losses) as 999.0 for the API.
+    pf_display = None
+    if profit_factor is not None:
+        pf_display = 999.0 if math.isinf(profit_factor) else round(profit_factor, 2)
+
+    # Monthly P&L series (realized only), oldest first.
+    monthly_map: dict[str, float] = {}
+    for t in trades:
+        d = t.get("exit_date") or t.get("date") or ""
+        month = str(d)[:7]
+        if len(month) == 7:
+            try:
+                pnl = float(t.get("pnl_idr", 0))
+            except (TypeError, ValueError):
+                pnl = 0.0
+            monthly_map[month] = monthly_map.get(month, 0.0) + pnl
+    monthly = [{"month": m, "pnl_idr": round(v, 2)} for m, v in sorted(monthly_map.items())]
+
+    # Per-ticker realized P&L.
+    by_ticker_map: dict[str, dict[str, float]] = {}
+    for t in trades:
+        sym = t.get("ticker") or t.get("symbol") or "?"
+        row = by_ticker_map.setdefault(sym, {"pnl_idr": 0.0, "count": 0})
+        try:
+            pnl = float(t.get("pnl_idr", 0))
+        except (TypeError, ValueError):
+            pnl = 0.0
+        row["pnl_idr"] += pnl
+        row["count"] += 1
+    by_ticker = [
+        {"ticker": k, "pnl_idr": round(v["pnl_idr"], 2), "count": v["count"]}
+        for k, v in sorted(by_ticker_map.items(), key=lambda kv: kv[1]["pnl_idr"], reverse=True)
+    ]
+
+    return {
+        "trade_count": len(trades),
+        "closed_count": len(closed),
+        "win_rate_pct": round(win_rate, 1) if win_rate is not None else None,
+        "profit_factor": pf_display,
+        "avg_win_idr": round(avg_win, 2) if avg_win is not None else None,
+        "avg_loss_idr": round(avg_loss, 2) if avg_loss is not None else None,
+        "total_pnl_idr": round(total_pnl, 2),
+        "monthly": monthly,
+        "by_ticker": by_ticker,
+        "recent": list(reversed(trades[-10:])),
     }

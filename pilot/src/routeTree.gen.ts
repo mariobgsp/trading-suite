@@ -10,18 +10,34 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AnnouncementsRouteImport } from './routes/announcements'
 import { Route as BacktestRouteImport } from './routes/backtest'
+import { Route as BrokerintelRouteImport } from './routes/brokerintel'
+import { Route as CalculatorsRouteImport } from './routes/calculators'
+import { Route as ForeignflowRouteImport } from './routes/foreignflow'
+import { Route as JournalRouteImport } from './routes/journal'
 import { Route as MarketsRouteImport } from './routes/markets'
+import { Route as MsciRouteImport } from './routes/msci'
 import { Route as OverviewRouteImport } from './routes/overview'
+import { Route as OwnershipRouteImport } from './routes/ownership'
 import { Route as PortfolioRouteImport } from './routes/portfolio'
+import { Route as ProfilerRouteImport } from './routes/profiler'
 import { Route as RegimeRouteImport } from './routes/regime'
 import { Route as ScreenerRouteImport } from './routes/screener'
+import { Route as SectorRotationRouteImport } from './routes/sector-rotation'
 import { Route as SentimentRouteImport } from './routes/sentiment'
 import { Route as ValidatorRouteImport } from './routes/validator'
+import { Route as WatchlistRouteImport } from './routes/watchlist'
+import { Route as WikiRouteImport } from './routes/wiki'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AnnouncementsRoute = AnnouncementsRouteImport.update({
+  id: '/announcements',
+  path: '/announcements',
   getParentRoute: () => rootRouteImport,
 } as any)
 const BacktestRoute = BacktestRouteImport.update({
@@ -29,9 +45,34 @@ const BacktestRoute = BacktestRouteImport.update({
   path: '/backtest',
   getParentRoute: () => rootRouteImport,
 } as any)
+const BrokerintelRoute = BrokerintelRouteImport.update({
+  id: '/brokerintel',
+  path: '/brokerintel',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CalculatorsRoute = CalculatorsRouteImport.update({
+  id: '/calculators',
+  path: '/calculators',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ForeignflowRoute = ForeignflowRouteImport.update({
+  id: '/foreignflow',
+  path: '/foreignflow',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const JournalRoute = JournalRouteImport.update({
+  id: '/journal',
+  path: '/journal',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const MarketsRoute = MarketsRouteImport.update({
   id: '/markets',
   path: '/markets',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MsciRoute = MsciRouteImport.update({
+  id: '/msci',
+  path: '/msci',
   getParentRoute: () => rootRouteImport,
 } as any)
 const OverviewRoute = OverviewRouteImport.update({
@@ -39,9 +80,19 @@ const OverviewRoute = OverviewRouteImport.update({
   path: '/overview',
   getParentRoute: () => rootRouteImport,
 } as any)
+const OwnershipRoute = OwnershipRouteImport.update({
+  id: '/ownership',
+  path: '/ownership',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PortfolioRoute = PortfolioRouteImport.update({
   id: '/portfolio',
   path: '/portfolio',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProfilerRoute = ProfilerRouteImport.update({
+  id: '/profiler',
+  path: '/profiler',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RegimeRoute = RegimeRouteImport.update({
@@ -54,6 +105,11 @@ const ScreenerRoute = ScreenerRouteImport.update({
   path: '/screener',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SectorRotationRoute = SectorRotationRouteImport.update({
+  id: '/sector-rotation',
+  path: '/sector-rotation',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SentimentRoute = SentimentRouteImport.update({
   id: '/sentiment',
   path: '/sentiment',
@@ -64,87 +120,174 @@ const ValidatorRoute = ValidatorRouteImport.update({
   path: '/validator',
   getParentRoute: () => rootRouteImport,
 } as any)
+const WatchlistRoute = WatchlistRouteImport.update({
+  id: '/watchlist',
+  path: '/watchlist',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WikiRoute = WikiRouteImport.update({
+  id: '/wiki',
+  path: '/wiki',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/announcements': typeof AnnouncementsRoute
   '/backtest': typeof BacktestRoute
+  '/brokerintel': typeof BrokerintelRoute
+  '/calculators': typeof CalculatorsRoute
+  '/foreignflow': typeof ForeignflowRoute
+  '/journal': typeof JournalRoute
   '/markets': typeof MarketsRoute
+  '/msci': typeof MsciRoute
   '/overview': typeof OverviewRoute
+  '/ownership': typeof OwnershipRoute
   '/portfolio': typeof PortfolioRoute
+  '/profiler': typeof ProfilerRoute
   '/regime': typeof RegimeRoute
   '/screener': typeof ScreenerRoute
+  '/sector-rotation': typeof SectorRotationRoute
   '/sentiment': typeof SentimentRoute
   '/validator': typeof ValidatorRoute
+  '/watchlist': typeof WatchlistRoute
+  '/wiki': typeof WikiRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/announcements': typeof AnnouncementsRoute
   '/backtest': typeof BacktestRoute
+  '/brokerintel': typeof BrokerintelRoute
+  '/calculators': typeof CalculatorsRoute
+  '/foreignflow': typeof ForeignflowRoute
+  '/journal': typeof JournalRoute
   '/markets': typeof MarketsRoute
+  '/msci': typeof MsciRoute
   '/overview': typeof OverviewRoute
+  '/ownership': typeof OwnershipRoute
   '/portfolio': typeof PortfolioRoute
+  '/profiler': typeof ProfilerRoute
   '/regime': typeof RegimeRoute
   '/screener': typeof ScreenerRoute
+  '/sector-rotation': typeof SectorRotationRoute
   '/sentiment': typeof SentimentRoute
   '/validator': typeof ValidatorRoute
+  '/watchlist': typeof WatchlistRoute
+  '/wiki': typeof WikiRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/announcements': typeof AnnouncementsRoute
   '/backtest': typeof BacktestRoute
+  '/brokerintel': typeof BrokerintelRoute
+  '/calculators': typeof CalculatorsRoute
+  '/foreignflow': typeof ForeignflowRoute
+  '/journal': typeof JournalRoute
   '/markets': typeof MarketsRoute
+  '/msci': typeof MsciRoute
   '/overview': typeof OverviewRoute
+  '/ownership': typeof OwnershipRoute
   '/portfolio': typeof PortfolioRoute
+  '/profiler': typeof ProfilerRoute
   '/regime': typeof RegimeRoute
   '/screener': typeof ScreenerRoute
+  '/sector-rotation': typeof SectorRotationRoute
   '/sentiment': typeof SentimentRoute
   '/validator': typeof ValidatorRoute
+  '/watchlist': typeof WatchlistRoute
+  '/wiki': typeof WikiRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/announcements'
     | '/backtest'
+    | '/brokerintel'
+    | '/calculators'
+    | '/foreignflow'
+    | '/journal'
     | '/markets'
+    | '/msci'
     | '/overview'
+    | '/ownership'
     | '/portfolio'
+    | '/profiler'
     | '/regime'
     | '/screener'
+    | '/sector-rotation'
     | '/sentiment'
     | '/validator'
+    | '/watchlist'
+    | '/wiki'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/announcements'
     | '/backtest'
+    | '/brokerintel'
+    | '/calculators'
+    | '/foreignflow'
+    | '/journal'
     | '/markets'
+    | '/msci'
     | '/overview'
+    | '/ownership'
     | '/portfolio'
+    | '/profiler'
     | '/regime'
     | '/screener'
+    | '/sector-rotation'
     | '/sentiment'
     | '/validator'
+    | '/watchlist'
+    | '/wiki'
   id:
     | '__root__'
     | '/'
+    | '/announcements'
     | '/backtest'
+    | '/brokerintel'
+    | '/calculators'
+    | '/foreignflow'
+    | '/journal'
     | '/markets'
+    | '/msci'
     | '/overview'
+    | '/ownership'
     | '/portfolio'
+    | '/profiler'
     | '/regime'
     | '/screener'
+    | '/sector-rotation'
     | '/sentiment'
     | '/validator'
+    | '/watchlist'
+    | '/wiki'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AnnouncementsRoute: typeof AnnouncementsRoute
   BacktestRoute: typeof BacktestRoute
+  BrokerintelRoute: typeof BrokerintelRoute
+  CalculatorsRoute: typeof CalculatorsRoute
+  ForeignflowRoute: typeof ForeignflowRoute
+  JournalRoute: typeof JournalRoute
   MarketsRoute: typeof MarketsRoute
+  MsciRoute: typeof MsciRoute
   OverviewRoute: typeof OverviewRoute
+  OwnershipRoute: typeof OwnershipRoute
   PortfolioRoute: typeof PortfolioRoute
+  ProfilerRoute: typeof ProfilerRoute
   RegimeRoute: typeof RegimeRoute
   ScreenerRoute: typeof ScreenerRoute
+  SectorRotationRoute: typeof SectorRotationRoute
   SentimentRoute: typeof SentimentRoute
   ValidatorRoute: typeof ValidatorRoute
+  WatchlistRoute: typeof WatchlistRoute
+  WikiRoute: typeof WikiRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -156,11 +299,46 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/announcements': {
+      id: '/announcements'
+      path: '/announcements'
+      fullPath: '/announcements'
+      preLoaderRoute: typeof AnnouncementsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/backtest': {
       id: '/backtest'
       path: '/backtest'
       fullPath: '/backtest'
       preLoaderRoute: typeof BacktestRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/brokerintel': {
+      id: '/brokerintel'
+      path: '/brokerintel'
+      fullPath: '/brokerintel'
+      preLoaderRoute: typeof BrokerintelRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/calculators': {
+      id: '/calculators'
+      path: '/calculators'
+      fullPath: '/calculators'
+      preLoaderRoute: typeof CalculatorsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/foreignflow': {
+      id: '/foreignflow'
+      path: '/foreignflow'
+      fullPath: '/foreignflow'
+      preLoaderRoute: typeof ForeignflowRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/journal': {
+      id: '/journal'
+      path: '/journal'
+      fullPath: '/journal'
+      preLoaderRoute: typeof JournalRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/markets': {
@@ -170,6 +348,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MarketsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/msci': {
+      id: '/msci'
+      path: '/msci'
+      fullPath: '/msci'
+      preLoaderRoute: typeof MsciRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/overview': {
       id: '/overview'
       path: '/overview'
@@ -177,11 +362,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OverviewRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/ownership': {
+      id: '/ownership'
+      path: '/ownership'
+      fullPath: '/ownership'
+      preLoaderRoute: typeof OwnershipRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/portfolio': {
       id: '/portfolio'
       path: '/portfolio'
       fullPath: '/portfolio'
       preLoaderRoute: typeof PortfolioRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/profiler': {
+      id: '/profiler'
+      path: '/profiler'
+      fullPath: '/profiler'
+      preLoaderRoute: typeof ProfilerRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/regime': {
@@ -198,6 +397,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ScreenerRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/sector-rotation': {
+      id: '/sector-rotation'
+      path: '/sector-rotation'
+      fullPath: '/sector-rotation'
+      preLoaderRoute: typeof SectorRotationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/sentiment': {
       id: '/sentiment'
       path: '/sentiment'
@@ -212,19 +418,44 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ValidatorRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/watchlist': {
+      id: '/watchlist'
+      path: '/watchlist'
+      fullPath: '/watchlist'
+      preLoaderRoute: typeof WatchlistRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/wiki': {
+      id: '/wiki'
+      path: '/wiki'
+      fullPath: '/wiki'
+      preLoaderRoute: typeof WikiRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AnnouncementsRoute: AnnouncementsRoute,
   BacktestRoute: BacktestRoute,
+  BrokerintelRoute: BrokerintelRoute,
+  CalculatorsRoute: CalculatorsRoute,
+  ForeignflowRoute: ForeignflowRoute,
+  JournalRoute: JournalRoute,
   MarketsRoute: MarketsRoute,
+  MsciRoute: MsciRoute,
   OverviewRoute: OverviewRoute,
+  OwnershipRoute: OwnershipRoute,
   PortfolioRoute: PortfolioRoute,
+  ProfilerRoute: ProfilerRoute,
   RegimeRoute: RegimeRoute,
   ScreenerRoute: ScreenerRoute,
+  SectorRotationRoute: SectorRotationRoute,
   SentimentRoute: SentimentRoute,
   ValidatorRoute: ValidatorRoute,
+  WatchlistRoute: WatchlistRoute,
+  WikiRoute: WikiRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

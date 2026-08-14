@@ -12,6 +12,17 @@ const PORTED = new Set([
 	"/validator",
 	"/sentiment",
 	"/regime",
+	"/foreignflow",
+	"/brokerintel",
+	"/announcements",
+	"/calculators",
+	"/sector-rotation",
+	"/profiler",
+	"/journal",
+	"/msci",
+	"/watchlist",
+	"/ownership",
+	"/wiki",
 ]);
 
 export const Route = createFileRoute("/")({

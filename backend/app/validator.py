@@ -232,7 +232,7 @@ class BandarmologyAnalyzer:
         else:
             conf_str = "Weak"
 
-        # Historical intent radar
+        # Historical intent radar — newest session first (descending).
         radar: list[dict[str, Any]] = []
         subset = df.iloc[-days:]
         for i in range(len(subset)):
@@ -268,6 +268,7 @@ class BandarmologyAnalyzer:
                     "intent": intent,
                 }
             )
+        radar.reverse()  # newest session first in the UI table
 
         current_intent = self.detect_hidden_intent(curr, prev, vwap, liq["is_small_cap"])
 

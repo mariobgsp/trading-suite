@@ -8,6 +8,7 @@ pandas==3.0.5
 numpy==2.5.1
 pyarrow==25.0.1
 requests==2.33.1
+curl_cffi==0.16.0
 python-dotenv==1.2.2
 feedparser==6.0.14
 python-dateutil==2.9.0.post0

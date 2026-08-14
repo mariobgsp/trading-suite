@@ -49,7 +49,9 @@ export function StatCard({
 			<div className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-faint)]">
 				{label}
 			</div>
-			<div className={`mt-1 font-mono text-xl font-bold ${tones[tone]}`}>
+			<div
+				className={`mt-1 font-mono text-[22px] font-bold tracking-tight ${tones[tone]}`}
+			>
 				{value}
 			</div>
 			{sub && (
@@ -70,13 +72,15 @@ export function SectionHeader({
 	right?: React.ReactNode;
 }) {
 	return (
-		<div className="mb-4 flex items-end justify-between">
+		<div className="mb-5 flex items-end justify-between gap-4">
 			<div>
-				<h1 className="text-xl font-bold tracking-tight text-[var(--text)]">
+				<h1 className="text-2xl font-bold tracking-tight text-[var(--text)]">
 					{title}
 				</h1>
 				{subtitle && (
-					<p className="mt-0.5 text-sm text-[var(--text-dim)]">{subtitle}</p>
+					<p className="mt-1 max-w-[60ch] text-sm text-[var(--text-dim)]">
+						{subtitle}
+					</p>
 				)}
 			</div>
 			{right}

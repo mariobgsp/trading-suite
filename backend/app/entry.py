@@ -15,6 +15,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from app import db
 from app.ai import MODEL, call_model
 from app.beta import beta_correlation
 from app.indicators import compute_indicators
@@ -23,6 +24,11 @@ from app.regime import regime_snapshot
 from app.validator import BandarmologyAnalyzer
 
 RISK_PCT = 0.01  # 1% of capital risked per trade (for the sizing note)
+
+# entry plans fuse 1y+6mo history, indicators, bandarmology, beta, regime,
+# and an AI narration — a cold recompute is slow. Cache the finished plan
+# (narration included) so repeated profiler loads / Analyze clicks stay fast.
+ENTRY_CACHE_TTL = 600  # 10 min
 
 
 def _f(v: Any) -> float | None:
@@ -136,7 +142,16 @@ def _narrate(plan: dict[str, Any]) -> tuple[str, bool]:
 
 
 def entry_plan(ticker: str, force: bool = False) -> dict[str, Any]:
-    """Full entry plan for a ticker (technicals + validator + regime + beta)."""
+    """Full entry plan for a ticker (technicals + validator + regime + beta).
+
+    Cached per ticker (ENTRY_CACHE_TTL) with the finished narration; pass
+    force=True to bypass and recompute from fresh underlying data.
+    """
+    cache_key = f"entry:{ticker.upper()}"
+    if not force:
+        cached = db.get_fresh(cache_key, ENTRY_CACHE_TTL)
+        if cached is not None:
+            return cached
     try:
         history = fetch_history(ticker, period="1y", interval="1d", force=force) or []
     except Exception:  # noqa: BLE001
@@ -440,4 +455,5 @@ def entry_plan(ticker: str, force: bool = False) -> dict[str, Any]:
     }
     plan["narration"], plan_used_ai = _narrate(plan)
     plan["narration_model"] = MODEL if plan_used_ai else ""
+    db.set(cache_key, plan)
     return plan

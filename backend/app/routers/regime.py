@@ -1,4 +1,4 @@
-"""API router: market regime + stockbit bandarmology."""
+"""API router: market regime + IDX flow context."""
 
 from __future__ import annotations
 
@@ -26,10 +26,11 @@ async def history() -> dict[str, Any]:
 
 @router.get("/stockbit")
 async def stockbit_status() -> dict[str, Any]:
-    return {"available": stockbit_available()}
+    """Deprecated endpoint — flow context now comes from IDX directly."""
+    return {"available": stockbit_available(), "source": "idx"}
 
 
 @router.get("/stockbit/detector/{ticker}")
 async def stockbit_detector(ticker: str) -> dict[str, Any]:
-    """Bandarmology market detector (top broker / broker summary)."""
+    """Per-ticker flow context from IDX (foreign flow + price)."""
     return await asyncio.to_thread(stockbit_market_detector, ticker)

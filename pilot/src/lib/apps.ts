@@ -166,4 +166,178 @@ export const APPS: AppMeta[] = [
 		},
 		endpoints: ["/api/regime/snapshot", "/api/regime/history"],
 	},
+	{
+		num: "09",
+		name: "Foreign Flow",
+		tagline:
+			"Net foreign per stock and sector across the IDX universe — where institutional money moves.",
+		glyph: "◭",
+		href: "/foreignflow",
+		badge: "IDX",
+		viz: {
+			kind: "meters",
+			rows: [
+				{ label: "NET INFLOW", pct: 72 },
+				{ label: "NET OUTFLOW", pct: 28, dim: true },
+			],
+		},
+		endpoints: ["/api/intel/foreign/universe", "/api/intel/foreign/{ticker}"],
+	},
+	{
+		num: "10",
+		name: "Broker Intel",
+		tagline:
+			"Market-wide broker accumulation radar plus per-ticker buyer/seller breakdown.",
+		glyph: "◍",
+		href: "/brokerintel",
+		badge: "BROKSUM",
+		viz: {
+			kind: "bars",
+		},
+		endpoints: ["/api/intel/broker/radar", "/api/intel/broker/{ticker}"],
+	},
+	{
+		num: "11",
+		name: "Announcements",
+		tagline:
+			"Official IDX corporate disclosures, curated and readable — the pengumuman feed.",
+		glyph: "▣",
+		href: "/announcements",
+		badge: "IDX FEED",
+		viz: {
+			kind: "stat",
+			value: "IDX",
+			unit: "DISCLOSURES",
+			segments: [{ pct: 40 }, { pct: 60, locked: true }],
+		},
+		endpoints: ["/api/intel/announcements"],
+	},
+	{
+		num: "12",
+		name: "Calculators",
+		tagline:
+			"Position math for the desk — average price, sizing, risk/reward, and profit with fees.",
+		glyph: "⚖",
+		href: "/calculators",
+		badge: "LOCAL",
+		viz: {
+			kind: "stat",
+			value: "R",
+			unit: "RISK MATH",
+			segments: [{ pct: 50 }, { pct: 50, locked: true }],
+		},
+		endpoints: [],
+	},
+	{
+		num: "13",
+		name: "Sector Rotation",
+		tagline:
+			"Daily sector snapshots archived on the server — strength and rank shifts over 5 and 20 days.",
+		glyph: "◫",
+		href: "/sector-rotation",
+		badge: "ROTATION",
+		viz: {
+			kind: "meters",
+			rows: [
+				{ label: "GAINING", pct: 70 },
+				{ label: "FADING", pct: 34, dim: true },
+			],
+		},
+		endpoints: ["/api/intel/rotation"],
+	},
+	{
+		num: "14",
+		name: "Stock Profiler",
+		tagline:
+			"One screen, the full picture — quote, beta, bandarmology, regime, and entry plan per ticker.",
+		glyph: "◉",
+		href: "/profiler",
+		badge: "CONSOLIDATED",
+		viz: {
+			kind: "stat",
+			value: "BBCA",
+			unit: "PROFILE",
+			segments: [{ pct: 62 }, { pct: 38, locked: true }],
+		},
+		endpoints: [
+			"/api/market/quote/{ticker}",
+			"/api/validator/{ticker}",
+			"/api/analysis/entry/{ticker}",
+		],
+	},
+	{
+		num: "15",
+		name: "Trade Journal",
+		tagline:
+			"Performance analytics over your FIFO ledger — win rate, profit factor, and monthly P&L.",
+		glyph: "▤",
+		href: "/journal",
+		badge: "ANALYTICS",
+		viz: {
+			kind: "stat",
+			value: "R",
+			unit: "LEDGER STATS",
+			segments: [{ pct: 55 }, { pct: 45, locked: true }],
+		},
+		endpoints: ["/api/portfolio/journal/stats"],
+	},
+	{
+		num: "16",
+		name: "MSCI Watch",
+		tagline:
+			"MSCI Indonesia constituents with live price and cap data — refreshed at each index review.",
+		glyph: "◈",
+		href: "/msci",
+		badge: "INDEX",
+		viz: {
+			kind: "bars",
+		},
+		endpoints: ["/api/intel/msci"],
+	},
+	{
+		num: "17",
+		name: "Watchlist Intel",
+		tagline:
+			"Your watchlist with live quotes and a momentum + liquidity ranking.",
+		glyph: "◫",
+		href: "/watchlist",
+		badge: "RANKED",
+		viz: {
+			kind: "meters",
+			rows: [
+				{ label: "MOMENTUM", pct: 74 },
+				{ label: "LIQUIDITY", pct: 46, dim: true },
+			],
+		},
+		endpoints: ["/api/portfolio/watchlist"],
+	},
+	{
+		num: "18",
+		name: "Ownership",
+		tagline:
+			"Shareholder structure straight from IDX — who controls the float and at what percentage.",
+		glyph: "◍",
+		href: "/ownership",
+		badge: "IDX",
+		viz: {
+			kind: "stat",
+			value: "IDX",
+			unit: "OWNERSHIP",
+			segments: [{ pct: 40 }, { pct: 60, locked: true }],
+		},
+		endpoints: ["/api/intel/ownership/{ticker}"],
+	},
+	{
+		num: "19",
+		name: "Wiki",
+		tagline:
+			"How the IDX works and what the signals mean — the desk manual for this suite.",
+		glyph: "▣",
+		href: "/wiki",
+		badge: "EDU",
+		viz: {
+			kind: "eq",
+		},
+		endpoints: [],
+	},
 ];

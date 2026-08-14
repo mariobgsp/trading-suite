@@ -44,3 +44,6 @@ __pycache__/
 # agent / local artifacts
 .pi/
 .pi-tasks/*.log
+
+# tanstack router temp files
+pilot/.tanstack/

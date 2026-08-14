@@ -55,6 +55,13 @@ async def journal() -> dict[str, Any]:
     return {"entries": portfolio.get_journal(), "count": len(portfolio.get_journal())}
 
 
+@router.get("/journal/stats")
+async def journal_stats() -> dict[str, Any]:
+    """Performance analytics over the trade journal (win rate, profit factor,
+    monthly P&L series)."""
+    return await asyncio.to_thread(portfolio.journal_stats)
+
+
 @router.post("/journal")
 async def add_entry(body: dict[str, Any]) -> dict[str, Any]:
     """Add a trade to the journal.

@@ -16,6 +16,7 @@ from app.config import CORS_ORIGINS
 from app.routers import (  # pyright: ignore[reportAttributeAccessIssue]
     analysis,
     backtest,
+    intel,
     market,
     portfolio,
     regime,
@@ -44,6 +45,7 @@ app.add_middleware(
 
 for router in (
     analysis.router,
+    intel.router,
     market.router,
     portfolio.router,
     backtest.router,
@@ -75,6 +77,7 @@ async def health() -> dict:
             "regime",
             "summary",
             "analysis",
+            "intel",
         ],
     }
 

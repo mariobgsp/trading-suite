@@ -75,6 +75,7 @@ function ValidatorPage() {
 			<EntryPlanPanel
 				entry={entry.data}
 				loading={entry.loading}
+				refreshing={entry.refreshing}
 				ticker={ticker}
 			/>
 
@@ -239,10 +240,12 @@ const VERDICT_TONE: Record<string, string> = {
 function EntryPlanPanel({
 	entry,
 	loading,
+	refreshing,
 	ticker,
 }: {
 	entry: EntryPlan | null;
 	loading: boolean;
+	refreshing: boolean;
 	ticker: string;
 }) {
 	return (
@@ -255,6 +258,8 @@ function EntryPlanPanel({
 					<span className="font-mono text-[10px] text-[var(--text-faint)]">
 						{entry.narration_model}
 					</span>
+				) : refreshing ? (
+					<Spinner label="Refreshing…" />
 				) : null}
 			</div>
 
@@ -263,106 +268,97 @@ function EntryPlanPanel({
 			) : entry?.error ? (
 				<p className="text-xs text-[var(--down)]">{entry.error}</p>
 			) : entry ? (
-				<div className="space-y-4">
-					{/* Verdict + score */}
-					<div className="flex flex-wrap items-center gap-3">
-						<span
-							className={`rounded-md px-3 py-1 font-mono text-xs font-bold ${
-								VERDICT_TONE[entry.verdict] ?? "bg-[var(--panel-2)]"
-							}`}
-						>
-							{entry.verdict}
-						</span>
-						<span className="font-mono text-xs text-[var(--text-dim)]">
-							Score {entry.score}/100 · {entry.bias}
-						</span>
-					</div>
-
-					{/* AI narration */}
-					{entry.narration ? (
-						<p className="rounded-md bg-[var(--panel-2)] p-3 text-sm leading-relaxed text-[var(--text-dim)]">
-							{entry.narration}
-						</p>
+				<div className="relative">
+					{/* Refresh overlay: stale plan stays visible but dimmed with a
+					    spinner while new data loads. */}
+					{refreshing && entry ? (
+						<div className="absolute inset-0 z-10 flex items-center justify-center rounded-md bg-[var(--panel)]/70 backdrop-blur-[1px]">
+							<div className="rounded-md border border-[var(--border)] bg-[var(--panel-2)] px-4 py-3 shadow-[var(--elev)]">
+								<Spinner label="Refreshing entry plan…" />
+							</div>
+						</div>
 					) : null}
+					<div className={refreshing ? "opacity-40 transition-opacity" : ""}>
+						<div className="space-y-4">
+							{/* Verdict + score */}
+							<div className="flex flex-wrap items-center gap-3">
+								<span
+									className={`rounded-md px-3 py-1 font-mono text-xs font-bold ${
+										VERDICT_TONE[entry.verdict] ?? "bg-[var(--panel-2)]"
+									}`}
+								>
+									{entry.verdict}
+								</span>
+								<span className="font-mono text-xs text-[var(--text-dim)]">
+									Score {entry.score}/100 · {entry.bias}
+								</span>
+							</div>
 
-					{/* Levels */}
-					<div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-						<div className="panel-2 p-3">
-							<div className="text-[10px] uppercase tracking-wider text-[var(--text-faint)]">
-								Entry Zone
-							</div>
-							<div className="tabular mt-0.5 font-mono text-sm font-bold text-[var(--text)]">
-								{entry.entry_zone.from != null
-									? `${fmtNum(entry.entry_zone.from)} – ${fmtNum(entry.entry_zone.to)}`
-									: "—"}
-							</div>
-							<div className="mt-0.5 text-[10px] text-[var(--text-faint)]">
-								{entry.entry_zone.note ?? ""}
-							</div>
-						</div>
-						<div className="panel-2 p-3">
-							<div className="text-[10px] uppercase tracking-wider text-[var(--text-faint)]">
-								Stop Loss
-							</div>
-							<div className="tabular mt-0.5 font-mono text-sm font-bold text-[var(--down)]">
-								{entry.stop_loss != null ? fmtNum(entry.stop_loss) : "—"}
-							</div>
-						</div>
-						<div className="panel-2 p-3">
-							<div className="text-[10px] uppercase tracking-wider text-[var(--text-faint)]">
-								Target 1 (1R)
-							</div>
-							<div className="tabular mt-0.5 font-mono text-sm font-bold text-[var(--up)]">
-								{entry.targets.target1 != null
-									? fmtNum(entry.targets.target1)
-									: "—"}
-							</div>
-						</div>
-						<div className="panel-2 p-3">
-							<div className="text-[10px] uppercase tracking-wider text-[var(--text-faint)]">
-								Target 2 (2R)
-							</div>
-							<div className="tabular mt-0.5 font-mono text-sm font-bold text-[var(--up)]">
-								{entry.targets.target2 != null
-									? fmtNum(entry.targets.target2)
-									: "—"}
-							</div>
-						</div>
-					</div>
-
-					{/* Confluence context */}
-					<div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-						<div className="panel-2 p-3 text-xs text-[var(--text-dim)]">
-							<span className="text-[10px] uppercase tracking-wider text-[var(--text-faint)]">
-								Context ·
-							</span>{" "}
-							{entry.validator.bandar_phase} · {entry.validator.inst_flow} ·{" "}
-							{entry.validator.current_intent} · regime{" "}
-							{entry.regime.regime ?? "—"} · {entry.beta.classification} (β{" "}
-							{entry.beta.beta_1y != null ? fmtNum(entry.beta.beta_1y, 2) : "—"}
-							)
-						</div>
-						<div className="panel-2 p-3 text-xs text-[var(--text-dim)]">
-							<span className="text-[10px] uppercase tracking-wider text-[var(--text-faint)]">
-								Sizing ·
-							</span>{" "}
-							{entry.position_sizing || "—"}
-						</div>
-						<div className="panel-2 p-3">
-							<div className="text-[10px] uppercase tracking-wider text-[var(--text-faint)]">
-								Triggers to confirm
-							</div>
-							{entry.conditions.missing.length > 0 ? (
-								<ul className="mt-1 list-disc space-y-0.5 pl-4 text-xs text-[var(--gold)]">
-									{entry.conditions.missing.map((m) => (
-										<li key={m}>{m}</li>
-									))}
-								</ul>
-							) : (
-								<p className="mt-1 text-xs text-[var(--up)]">
-									None — setup confirmed
+							{/* AI narration */}
+							{entry.narration ? (
+								<p className="rounded-md bg-[var(--panel-2)] p-3 text-sm leading-relaxed text-[var(--text-dim)]">
+									{entry.narration}
 								</p>
-							)}
+							) : null}
+
+							{/* Levels */}
+							<div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+								<div className="panel-2 p-3">
+									<div className="text-[10px] uppercase tracking-wider text-[var(--text-faint)]">
+										Entry Zone
+									</div>
+									<div className="tabular mt-0.5 font-mono text-sm font-bold text-[var(--text)]">
+										{entry.entry_zone.from != null
+											? `${fmtNum(entry.entry_zone.from)} – ${fmtNum(entry.entry_zone.to)}`
+											: "—"}
+									</div>
+									<div className="mt-0.5 text-[10px] text-[var(--text-faint)]">
+										{entry.entry_zone.note ?? ""}
+									</div>
+								</div>
+								<div className="panel-2 p-3">
+									<div className="text-[10px] uppercase tracking-wider text-[var(--text-faint)]">
+										Stop Loss
+									</div>
+									<div className="tabular mt-0.5 font-mono text-sm font-bold text-[var(--down)]">
+										{entry.stop_loss != null ? fmtNum(entry.stop_loss) : "—"}
+									</div>
+									<div className="mt-0.5 text-[10px] text-[var(--text-faint)]">
+										{entry.stop_loss != null ? "hard stop" : "no long setup"}
+									</div>
+								</div>
+								<div className="panel-2 p-3">
+									<div className="text-[10px] uppercase tracking-wider text-[var(--text-faint)]">
+										Target 1
+									</div>
+									<div className="tabular mt-0.5 font-mono text-sm font-bold text-[var(--up)]">
+										{entry.targets.target1 != null
+											? fmtNum(entry.targets.target1)
+											: "—"}
+									</div>
+									<div className="mt-0.5 text-[10px] text-[var(--text-faint)]">
+										{entry.targets.target2 != null
+											? `Target 2 ${fmtNum(entry.targets.target2)}`
+											: ""}
+									</div>
+								</div>
+								<div className="panel-2 p-3">
+									<div className="text-[10px] uppercase tracking-wider text-[var(--text-faint)]">
+										R:R
+									</div>
+									<div className="tabular mt-0.5 font-mono text-sm font-bold text-[var(--text)]">
+										{entry.targets.rr != null
+											? `${fmtNum(entry.targets.rr, 2)}R`
+											: "—"}
+									</div>
+								</div>
+							</div>
+
+							{entry.position_sizing ? (
+								<p className="border-t border-[var(--border)] pt-3 text-xs text-[var(--text-faint)]">
+									{entry.position_sizing}
+								</p>
+							) : null}
 						</div>
 					</div>
 				</div>
@@ -373,9 +369,9 @@ function EntryPlanPanel({
 
 function Row({ k, v }: { k: string; v: React.ReactNode }) {
 	return (
-		<div className="flex items-center justify-between border-b border-[var(--border)]/50 py-1.5 last:border-0">
+		<div className="flex items-center justify-between border-b border-[var(--border)]/50 py-1.5 last:border-b-0">
 			<span className="text-xs text-[var(--text-faint)]">{k}</span>
-			<span className="text-right font-mono text-xs font-semibold text-[var(--text)]">
+			<span className="tabular font-mono text-xs font-semibold text-[var(--text)]">
 				{v}
 			</span>
 		</div>

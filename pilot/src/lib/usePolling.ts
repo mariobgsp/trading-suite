@@ -1,4 +1,51 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+	useCallback,
+	useEffect,
+	useRef,
+	useState,
+	useSyncExternalStore,
+} from "react";
+
+/**
+ * Global pending-view counter — every usePolling fetch in flight bumps it.
+ * Lets the shell show a top progress bar whenever ANY data-driven view is
+ * still loading (first paint, route change, or poll refresh), without each
+ * route wiring its own indicator.
+ */
+const pendingSubs = new Set<() => void>();
+let pendingCount = 0;
+
+function emitPending() {
+	for (const fn of pendingSubs) fn();
+}
+
+function incPending() {
+	pendingCount++;
+	emitPending();
+}
+
+function decPending() {
+	if (pendingCount > 0) pendingCount--;
+	emitPending();
+}
+
+function subscribePending(fn: () => void) {
+	pendingSubs.add(fn);
+	return () => {
+		pendingSubs.delete(fn);
+	};
+}
+
+/** React hook: number of views currently awaiting data (0 = idle). */
+export function usePendingViews(): number {
+	// getServerSnapshot: SSR must render the idle state (0) — fetches only
+	// start client-side, so the server snapshot is always zero.
+	return useSyncExternalStore(
+		subscribePending,
+		() => pendingCount,
+		() => 0,
+	);
+}
 
 /**
  * Polling hook that refetches immediately whenever `refreshKey` changes
@@ -16,6 +63,9 @@ export function usePolling<T>(
 	const [data, setData] = useState<T | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [loading, setLoading] = useState(true);
+	// refreshing = a fetch is in flight (true on every poll/refresh, not just
+	// the first load) — lets panels show a spinner while stale data stays up.
+	const [refreshing, setRefreshing] = useState(false);
 	const fetcherRef = useRef(fetcher);
 	const disposedRef = useRef(false);
 
@@ -33,6 +83,8 @@ export function usePolling<T>(
 	}, []);
 
 	const load = useCallback(async () => {
+		incPending();
+		setRefreshing(true);
 		try {
 			const result = await fetcherRef.current();
 			if (!disposedRef.current) {
@@ -45,19 +97,25 @@ export function usePolling<T>(
 			}
 		} finally {
 			if (!disposedRef.current) setLoading(false);
+			setRefreshing(false);
+			decPending();
 		}
 	}, []);
 
 	// Immediate fetch + interval, keyed on refreshKey so ticker/period
-	// changes trigger an instant reload.
+	// changes trigger an instant reload. The first load is deferred a tick so
+	// the synchronous setState(refreshing) doesn't fire inside the effect.
 	useEffect(() => {
-		void load();
-		if (intervalMs == null) return;
+		const first = setTimeout(() => void load(), 0);
+		if (intervalMs == null) return () => clearTimeout(first);
 		const id = setInterval(() => void load(), intervalMs);
-		return () => clearInterval(id);
+		return () => {
+			clearTimeout(first);
+			clearInterval(id);
+		};
 	}, [load, intervalMs, refreshKey]);
 
-	return { data, error, loading, refresh: load };
+	return { data, error, loading, refreshing, refresh: load };
 }
 
 /**

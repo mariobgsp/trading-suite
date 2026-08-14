@@ -91,7 +91,7 @@ function RegimePage() {
 					{hist.loading || !points.length ? (
 						<Skeleton className="h-64" />
 					) : (
-						<SimpleLineChart data={points} height={280} color="#38bdf8" />
+						<SimpleLineChart data={points} height={280} color="#56b6e7" />
 					)}
 				</div>
 

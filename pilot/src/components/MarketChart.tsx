@@ -14,10 +14,10 @@ import type { HistoryRecord, IndicatorColumns } from "@/lib/api";
 const PALETTE = {
 	up: "#26a69a",
 	down: "#ef5350",
-	line: "#38bdf8",
+	line: "#56b6e7",
 	line2: "#a78bfa",
 	line3: "#fbbf24",
-	volume: "rgba(56, 189, 248, 0.25)",
+	volume: "rgba(86, 182, 231, 0.25)",
 	grid: "rgba(30, 38, 53, 0.5)",
 };
 

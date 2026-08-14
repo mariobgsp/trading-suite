@@ -1,17 +1,63 @@
 import { Link } from "@tanstack/react-router";
-import { APPS } from "@/lib/apps";
 
-/** Routes actually ported to the pilot — Sidebar only links to these. */
-const PORTED = new Set([
-	"/overview",
-	"/markets",
-	"/portfolio",
-	"/backtest",
-	"/screener",
-	"/validator",
-	"/sentiment",
-	"/regime",
-]);
+/**
+ * Simplified sidebar — 6 grouped sections instead of 19 flat links.
+ *
+ * Market Pulse is the daily screen (Overview/Heatmap/Movers live there);
+ * Analysis, Ledger, and Intel group the deep tools; Learn holds the wiki.
+ * The full 19-tool launcher grid remains on the home page.
+ */
+const GROUPS: {
+	label: string;
+	links: { href: string; glyph: string; name: string }[];
+}[] = [
+	{
+		label: "Market Pulse",
+		links: [{ href: "/overview", glyph: "◈", name: "Overview" }],
+	},
+	{
+		label: "Analysis",
+		links: [
+			{ href: "/markets", glyph: "▤", name: "Markets" },
+			{ href: "/screener", glyph: "◫", name: "Screener" },
+			{ href: "/validator", glyph: "◉", name: "Validator" },
+			{ href: "/profiler", glyph: "◉", name: "Stock Profiler" },
+		],
+	},
+	{
+		label: "Ledger",
+		links: [
+			{ href: "/portfolio", glyph: "▤", name: "Portfolio" },
+			{ href: "/journal", glyph: "▤", name: "Trade Journal" },
+			{ href: "/backtest", glyph: "↻", name: "Backtest" },
+			{ href: "/calculators", glyph: "⚖", name: "Calculators" },
+		],
+	},
+	{
+		label: "Intel",
+		links: [
+			{ href: "/foreignflow", glyph: "◭", name: "Foreign Flow" },
+			{ href: "/brokerintel", glyph: "◍", name: "Broker Intel" },
+			{ href: "/announcements", glyph: "▣", name: "Announcements" },
+			{ href: "/ownership", glyph: "◍", name: "Ownership" },
+			{ href: "/msci", glyph: "◈", name: "MSCI Watch" },
+			{ href: "/watchlist", glyph: "◫", name: "Watchlist" },
+			{ href: "/sector-rotation", glyph: "◫", name: "Sector Rotation" },
+			{ href: "/sentiment", glyph: "◈", name: "Sentiment" },
+		],
+	},
+	{
+		label: "Learn",
+		links: [{ href: "/wiki", glyph: "▣", name: "Wiki" }],
+	},
+];
+
+const itemClass = (active: boolean) =>
+	`flex items-center gap-3 rounded-md px-3 py-1.5 text-[12.5px] transition-colors ${
+		active
+			? "bg-[var(--panel-2)] font-semibold text-[var(--accent)]"
+			: "text-[var(--text-dim)] hover:bg-[var(--panel-2)] hover:text-[var(--text)]"
+	}`;
 
 export default function Sidebar({ active }: { active: string }) {
 	return (
@@ -30,48 +76,42 @@ export default function Sidebar({ active }: { active: string }) {
 				</div>
 			</div>
 
-			<nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-4">
-				<Link
-					to="/"
-					className={`mb-1 flex items-center gap-3 rounded-md px-3 py-2 text-[13px] transition-colors ${
-						active === "/"
-							? "bg-[var(--panel-2)] font-semibold text-[var(--accent)]"
-							: "text-[var(--text-dim)] hover:bg-[var(--panel-2)] hover:text-[var(--text)]"
-					}`}
-				>
+			<nav className="flex-1 space-y-4 overflow-y-auto px-3 py-4">
+				<Link to="/" className={`${itemClass(active === "/")} mb-1`}>
 					<span className="w-4 text-center text-sm">⌂</span>
 					Apps
 				</Link>
 
-				{APPS.filter((a) => PORTED.has(a.href)).map((item) => (
-					<Link
-						key={item.href}
-						to={item.href}
-						className={`flex items-center gap-3 rounded-md px-3 py-2 text-[13px] transition-colors ${
-							active === item.href
-								? "bg-[var(--panel-2)] font-semibold text-[var(--accent)]"
-								: "text-[var(--text-dim)] hover:bg-[var(--panel-2)] hover:text-[var(--text)]"
-						}`}
-					>
-						<span className="w-4 text-center text-sm">{item.glyph}</span>
-						{item.name}
-					</Link>
+				{GROUPS.map((g) => (
+					<div key={g.label}>
+						<div className="mb-1 px-3 font-mono text-[9px] uppercase tracking-[0.14em] text-[var(--text-faint)]">
+							{g.label}
+						</div>
+						<div className="space-y-0.5">
+							{g.links.map((l) => (
+								<Link
+									key={l.href}
+									to={l.href}
+									className={itemClass(active === l.href)}
+								>
+									<span className="w-4 text-center text-sm">{l.glyph}</span>
+									{l.name}
+								</Link>
+							))}
+						</div>
+					</div>
 				))}
 
 				<div className="mt-4 rounded-md bg-[var(--panel-2)]/60 px-3 py-2 font-mono text-[10px] text-[var(--text-faint)]">
-					PILOT — all 8 routes ported
+					19 tools · full grid on Apps
 				</div>
 			</nav>
 
 			<div className="border-t border-[var(--border)] px-5 py-4">
 				<div className="font-mono text-[10px] leading-relaxed text-[var(--text-faint)]">
-					Merged from 6 repos
+					IDX market intelligence
 					<br />
-					trading-simulator · backtester
-					<br />
-					bot · validator · screener
-					<br />
-					sentiment-analysis
+					all features free
 				</div>
 			</div>
 		</aside>

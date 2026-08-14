@@ -320,6 +320,266 @@ export interface EntryPlan {
 	error?: string;
 }
 
+/* ── Market intelligence (free feeds) ─────────────────────────────────────── */
+
+/** Broker row shape for the IDX-backed foreign-flow feeds. */
+export interface IntelForeignRow {
+	broker: string;
+	side: "buy" | "sell";
+	type: string;
+	lots: number;
+	value_idr: number;
+	avg_price: number;
+}
+
+export interface ForeignFlow {
+	ticker: string;
+	available: boolean;
+	error?: string;
+	as_of?: string;
+	price?: number;
+	net_foreign_lots?: number;
+	net_foreign_idr?: number;
+	foreign_buy_lots?: number;
+	foreign_sell_lots?: number;
+	foreign_buy_idr?: number;
+	foreign_sell_idr?: number;
+	total_volume?: number;
+	broker_count?: number;
+	rows?: IntelForeignRow[];
+}
+
+export interface ForeignFlowUniverse {
+	available: boolean;
+	error?: string;
+	count?: number;
+	as_of?: string;
+	rows?: {
+		ticker: string;
+		name: string;
+		sector: string;
+		price: number;
+		change_percent: number;
+		net_foreign_idr: number;
+		net_foreign_lots: number;
+		foreign_buy_lots: number;
+		foreign_sell_lots: number;
+		foreign_buy_idr: number;
+		foreign_sell_idr: number;
+		volume?: number;
+	}[];
+}
+
+export interface BrokerAnalysis {
+	ticker: string;
+	available: boolean;
+	error?: string;
+	as_of?: string;
+	note?: string;
+	price?: number;
+	total_volume?: number;
+	net_foreign_lots?: number;
+	net_foreign_idr?: number;
+	foreign_buy_lots?: number;
+	foreign_sell_lots?: number;
+	foreign_buy_idr?: number;
+	foreign_sell_idr?: number;
+}
+
+export interface BrokerRadarRow {
+	broker: string;
+	code?: string;
+	net_lots: number;
+	net_idr: number;
+	type: string;
+	ticker_count: number;
+	tickers: string[];
+	volume?: number;
+	value_idr?: number;
+	frequency?: number;
+}
+
+export interface BrokerRadar {
+	available: boolean;
+	error?: string;
+	covered_tickers?: number;
+	count?: number;
+	as_of?: string;
+	rows?: BrokerRadarRow[];
+}
+
+export interface AnnouncementItem {
+	title?: string;
+	link?: string;
+	url?: string;
+	date?: string;
+	category?: string;
+	ticker?: string;
+	[field: string]: unknown;
+}
+
+export interface Announcements {
+	available: boolean;
+	error?: string;
+	count?: number;
+	as_of?: string;
+	items?: AnnouncementItem[];
+}
+
+export interface RotationSector {
+	sector: string;
+	count: number;
+	gainers: number;
+	losers: number;
+	avg_change_percent: number;
+	avg5: number | null;
+	avg20: number | null;
+	rank: number | null;
+	rank_delta: number | null;
+}
+
+export interface RotationHistory {
+	as_of?: string;
+	days_archived: number;
+	dates: string[];
+	sectors: RotationSector[];
+	error?: string;
+}
+
+export interface MsciRow {
+	ticker: string;
+	name: string;
+	sector: string;
+	price: number;
+	change_percent: number;
+	market_cap: number | null;
+	volume: number | null;
+}
+
+export interface MsciWatch {
+	count: number;
+	missing: string[];
+	as_of?: string;
+	rows: MsciRow[];
+	error?: string;
+}
+
+export interface JournalStats {
+	trade_count: number;
+	closed_count?: number;
+	note?: string;
+	win_rate_pct: number | null;
+	profit_factor: number | null;
+	avg_win_idr: number | null;
+	avg_loss_idr: number | null;
+	total_pnl_idr: number;
+	monthly: { month: string; pnl_idr: number }[];
+	by_ticker: { ticker: string; pnl_idr: number; count: number }[];
+	recent: Record<string, unknown>[];
+}
+
+export interface OwnershipStructure {
+	ticker: string;
+	available: boolean;
+	error?: string;
+	note?: string;
+	as_of?: string;
+	name?: string;
+	sector?: string;
+	sub_sector?: string;
+	listing_date?: string;
+	shareholders?: {
+		name: string;
+		shares: number | null;
+		percent: number | null;
+		category: string;
+		controlling: boolean;
+	}[];
+	board?: {
+		direktur: { name: string; position: string }[];
+		komisaris: { name: string; position: string }[];
+	};
+	subsidiaries?: { name: string; percent: number | null }[];
+}
+
+export interface OwnershipSnapshot {
+	date: string;
+	holders: {
+		name: string;
+		percent: number | null;
+		category: string;
+		controlling: boolean;
+	}[];
+}
+
+export interface OwnershipChanges {
+	from_date: string;
+	to_date: string;
+	entered: { name: string; percent: number | null }[];
+	exited: { name: string; percent: number | null }[];
+	changed: { name: string; from: number; to: number; delta: number }[];
+	crossed: {
+		name: string;
+		from: number;
+		to: number;
+		threshold: number;
+		dir: "above" | "below";
+	}[];
+}
+
+export interface OwnershipHistory {
+	ticker: string;
+	available: boolean;
+	snapshots: OwnershipSnapshot[];
+	changes: OwnershipChanges | null;
+}
+
+export interface HeatmapRow {
+	ticker: string;
+	name: string;
+	sector: string;
+	price: number;
+	change_pct: number | null;
+	market_cap: number;
+	listed_shares: number;
+	volume: number;
+	value_idr: number;
+	foreign_net: number;
+}
+
+export interface HeatmapResponse {
+	available: boolean;
+	error?: string;
+	count?: number;
+	as_of?: string;
+	rows: HeatmapRow[];
+}
+
+export interface MoverContribution {
+	ticker: string;
+	name: string;
+	price: number;
+	change_pct: number;
+	pts: number | null;
+	idx_mv_pct: number | null;
+	volume: number;
+	value_idr: number;
+}
+
+export interface JciMoversResponse {
+	available: boolean;
+	error?: string;
+	as_of?: string;
+	trade_date?: string;
+	jci: number | null;
+	range_days: number;
+	up_count: number;
+	down_count: number;
+	flat_count: number;
+	leaders: MoverContribution[];
+	laggards: MoverContribution[];
+}
+
 /* ── Formatters ───────────────────────────────────────────────────────────── */
 
 export const fmtIdr = (

@@ -1,19 +1,17 @@
-"""Market regime + Stockbit bandarmology service wrappers.
+"""Market regime + IDX flow context.
 
 - Regime: wraps bot-trading-simulator's canonical MarketRegime
   (core/regime.py) — BULL / CAUTION / BEAR classification from ^JKSE.
-- Stockbit: wraps the copied trading-simulator StockbitClient
-  (app/services/stockbit.py) — bandarmology/market-detector feeds.
+- Flow context: per-ticker foreign flow served from IDX directly
+  (app.idx) — the free replacement for the old Stockbit market detector.
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import UTC
 from typing import Any
 
 from app import db
-from app.config import STOCKBIT_JWT_TOKEN
 from app.market import fetch_history
 
 logger = logging.getLogger(__name__)
@@ -59,48 +57,60 @@ def regime_history() -> dict[str, Any]:
     return {"symbol": "^JKSE", "history": history}
 
 
-# ─── Stockbit (optional, needs STOCKBIT_JWT_TOKEN) ────────────────────────────
-
-
-def _client():
-    from app.services.stockbit import StockbitClient
-
-    return StockbitClient(token=STOCKBIT_JWT_TOKEN)
+# ─── Bandarmology context (IDX, no Stockbit) ─────────────────────────────────
 
 
 def stockbit_available() -> bool:
-    return bool(STOCKBIT_JWT_TOKEN)
+    """Deprecated gate — bandarmology now comes from IDX directly."""
+    return True
 
 
 def stockbit_market_detector(ticker: str) -> dict[str, Any]:
-    """Bandarmology market-detector for a ticker (top broker + summary)."""
-    cache_key = f"stockbit:detector:{ticker}"
-    cached = db.get_fresh(cache_key, 1800)
-    if cached is not None:
-        return cached
-    try:
-        from datetime import datetime, timedelta
+    """Per-ticker flow context from IDX (foreign flow + price).
 
-        client = _client()
-        # Rolling 12-month window instead of a hardcoded 2025-2027 range.
-        today = datetime.now(UTC).date()
-        from_date = (today - timedelta(days=365)).isoformat()
-        to_date = today.isoformat()
-        data = client.fetch_market_detector(ticker, from_date, to_date)
-        if data is None:
-            return {"ticker": ticker, "error": "no data (token valid?)"}
-        from app.services.stockbit import (
-            get_broker_summary,
-            get_top_broker,
-        )
+    Replaces the old Stockbit market-detector: IDX does not publish per-stock
+    broker attribution, so the free equivalent is the official per-stock
+    foreign flow from GetStockSummary.
+    """
+    from app.idx import foreign_flow
 
-        payload = {
-            "ticker": ticker,
-            "top_broker": get_top_broker(data),
-            "broker_summary": get_broker_summary(data),
-        }
-        db.set(cache_key, payload)
-        return payload
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("stockbit detector failed: %s", exc)
-        return {"ticker": ticker, "error": str(exc)[:200]}
+    ff = foreign_flow(ticker)
+    return {
+        "ticker": ticker,
+        "top_broker": {
+            "bandar": "IDX",
+            "barangBandar": round(ff.get("net_foreign_lots", 0) or 0),
+            "rataRataBandar": ff.get("price") or 0,
+        },
+        "broker_summary": {
+            "detector": {
+                "top1": {"vol": 0, "percent": 0, "amount": 0, "accdist": "-"},
+                "top3": {"vol": 0, "percent": 0, "amount": 0, "accdist": "-"},
+                "top5": {"vol": 0, "percent": 0, "amount": 0, "accdist": "-"},
+                "avg": {"vol": 0, "percent": 0, "amount": 0, "accdist": "-"},
+                "total_buyer": 0,
+                "total_seller": 0,
+                "number_broker_buysell": 0,
+                "broker_accdist": ff.get("net_foreign_idr", 0),
+                "volume": 0,
+                "value": 0,
+                "average": ff.get("price") or 0,
+            },
+            "topBuyers": [
+                {
+                    "netbs_broker_code": "IDX-F",
+                    "blot": ff.get("foreign_buy_lots", 0),
+                    "netbs_buy_avg_price": ff.get("price") or 0,
+                    "bval": ff.get("foreign_buy_idr", 0),
+                }
+            ],
+            "topSellers": [
+                {
+                    "netbs_broker_code": "IDX-F",
+                    "slot": ff.get("foreign_sell_lots", 0),
+                    "netbs_buy_avg_price": ff.get("price") or 0,
+                    "sval": ff.get("foreign_sell_idr", 0),
+                }
+            ],
+        },
+    }

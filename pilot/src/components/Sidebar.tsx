@@ -22,6 +22,7 @@ const GROUPS: {
 			{ href: "/screener", glyph: "◫", name: "Screener" },
 			{ href: "/validator", glyph: "◉", name: "Validator" },
 			{ href: "/profiler", glyph: "◉", name: "Stock Profiler" },
+			{ href: "/alerts", glyph: "◔", name: "D-Signal" },
 		],
 	},
 	{
@@ -43,6 +44,7 @@ const GROUPS: {
 			{ href: "/msci", glyph: "◈", name: "MSCI Watch" },
 			{ href: "/watchlist", glyph: "◫", name: "Watchlist" },
 			{ href: "/sector-rotation", glyph: "◫", name: "Sector Rotation" },
+			{ href: "/konglo", glyph: "⊕", name: "Konglo" },
 			{ href: "/sentiment", glyph: "◈", name: "Sentiment" },
 		],
 	},
@@ -89,11 +91,7 @@ export default function Sidebar({ active }: { active: string }) {
 						</div>
 						<div className="space-y-0.5">
 							{g.links.map((l) => (
-								<Link
-									key={l.href}
-									to={l.href}
-									className={itemClass(active === l.href)}
-								>
+								<Link key={l.href} to={l.href} className={itemClass(active === l.href)}>
 									<span className="w-4 text-center text-sm">{l.glyph}</span>
 									{l.name}
 								</Link>
@@ -103,7 +101,7 @@ export default function Sidebar({ active }: { active: string }) {
 				))}
 
 				<div className="mt-4 rounded-md bg-[var(--panel-2)]/60 px-3 py-2 font-mono text-[10px] text-[var(--text-faint)]">
-					19 tools · full grid on Apps
+					21 tools · full grid on Apps
 				</div>
 			</nav>
 

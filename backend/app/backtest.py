@@ -20,7 +20,7 @@ from typing import Any
 import pandas as pd
 
 from app.indicators import history_to_frame
-from core.indicators import macd, stochastic_oscillator
+from core.indicators import ema, macd, sma, stochastic_oscillator
 from core.indicators import rsi as _rsi
 
 STOP_LOSS_PCT = 0.05
@@ -28,7 +28,32 @@ TRAILING_STOP_PCT = 0.10
 FEE_RATE = 0.0015  # IDX broker fee (0.15% — from bot backtester)
 SLIPPAGE_RATE = 0.0015
 
-STRATEGIES = ("momentum", "meanreversion", "buyhold")
+STRATEGIES = (
+    "momentum",
+    "meanreversion",
+    "buyhold",
+    "pullback",
+    "breakout",
+    "mildmover",
+    "golden_cross",
+    "cross_3_5",
+    "cross_9_21",
+)
+PATTERN_STRATEGIES = (
+    "pullback",
+    "breakout",
+    "mildmover",
+    "golden_cross",
+    "cross_3_5",
+    "cross_9_21",
+)
+
+# MA-cross family: golden-cross entry, death-cross exit ("stop").
+_CROSS_MAS = {
+    "golden_cross": ("sma", 20, 50),  # classic trend-following pair
+    "cross_3_5": ("ema", 3, 5),  # fast scalp pair
+    "cross_9_21": ("ema", 9, 21),  # swing pair
+}
 
 
 def _signals(df: pd.DataFrame, strategy: str) -> pd.Series:
@@ -37,6 +62,54 @@ def _signals(df: pd.DataFrame, strategy: str) -> pd.Series:
     macd_line, macd_signal_line, _ = macd(close_s)
     rsi_s = _rsi(close_s, 14)
     stoch_k, stoch_d = stochastic_oscillator(df)
+
+    if strategy in _CROSS_MAS:
+        # Golden cross -> hold -> death cross ("stop") — nothing in between.
+        kind, fast_n, slow_n = _CROSS_MAS[strategy]
+        ma = sma if kind == "sma" else ema
+        fast, slow = ma(close_s, fast_n), ma(close_s, slow_n)
+        sig = pd.Series(0, index=df.index)
+        golden = (fast > slow) & (fast.shift(1) <= slow.shift(1))
+        death = (fast < slow) & (fast.shift(1) >= slow.shift(1))
+        sig[golden] = 1
+        sig[death] = -1
+        return sig
+
+    if strategy == "pullback":
+        # Dip-buy inside an uptrend: price above the 50sma but pulled back
+        # below the 20sma with RSI cooling; exit on recovery or hot RSI.
+        sig = pd.Series(0, index=df.index)
+        sma50 = sma(close_s, 50)
+        sma20 = sma(close_s, 20)
+        buy = (
+            (close_s > sma50)
+            & (close_s < sma20)
+            & (rsi_s < 45)
+            & (sma50 > sma50.shift(5))  # trend still rising
+        )
+        sell = ((close_s > sma20) & (close_s.shift(1) <= sma20.shift(1))) | (rsi_s > 70)
+        sig[buy] = 1
+        sig[sell] = -1
+        return sig
+
+    if strategy == "breakout":
+        # 20-bar high breakout entry; exit when price loses the 10-bar low.
+        sig = pd.Series(0, index=df.index)
+        prior_high = df["High"].rolling(20).max().shift(1)
+        prior_low = df["Low"].rolling(10).min().shift(1)
+        sig[close_s >= prior_high] = 1
+        sig[close_s < prior_low] = -1
+        return sig
+
+    if strategy == "mildmover":
+        # Volatility compression: five straight mild days (<2% move) inside a
+        # range, betting on expansion; exit once a day moves hard (>4%).
+        sig = pd.Series(0, index=df.index)
+        chg = close_s.pct_change().abs()
+        mild = (chg < 0.02).rolling(5).sum() == 5
+        sig[mild & (chg < 0.02)] = 1
+        sig[chg > 0.04] = -1
+        return sig
 
     if strategy == "momentum":
         sig = pd.Series(0, index=df.index)
@@ -269,3 +342,29 @@ def _compute_stats(
 
 def fee_note() -> str:
     return f"broker {FEE_RATE * 100:.2f}% + slippage {SLIPPAGE_RATE * 100:.2f}%"
+
+
+def pattern_backtests(ticker: str, force: bool = False) -> dict[str, Any]:
+    """Run the pullback / breakout / mild-mover pattern backtests over ~1y
+    of the same history the profiler charts. Each strategy shares the
+    engine's fee/slippage/stop model; buy-and-hold comes free in stats."""
+    # Late import avoids a market <-> backtest cycle at module load.
+    from app.market import fetch_history
+
+    history = fetch_history(ticker, period="1y", interval="1d", force=force)
+    strategies: dict[str, Any] = {}
+    for strat in PATTERN_STRATEGIES:
+        out = run_backtest(history, strategy=strat)
+        trades = out.get("trades") or []
+        strategies[strat] = {
+            "stats": out.get("stats") or {},
+            "error": out.get("error"),
+            "recent_trades": trades[-3:][::-1],  # newest first
+        }
+    return {
+        "ticker": ticker,
+        "available": len(history) >= 30,
+        "bars": len(history),
+        "fee_note": fee_note(),
+        "strategies": strategies,
+    }

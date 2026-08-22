@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { api, fmtNum, type ValidatorResult } from "@/lib/api";
 import Shell from "@/components/Shell";
-import { SectionHeader, Skeleton, Spinner, StatCard } from "@/components/ui";
+import { SectionHeader, StatCard } from "@/components/ui";
 
 const INTENT_TONE = (intent: string): string => {
 	if (/SILENT EXIT|DISTRIBUTION|ABANDONED|MARKDOWN|CHURN/.test(intent))
@@ -24,7 +24,20 @@ export default function ValidatorPage() {
 		setLoading(true);
 		setError(null);
 		try {
-			const res = await api.get<ValidatorResult>(`/api/validator/${ticker}`);
+			// cached: second analyze of same ticker within 60s is instant
+			const path = `/api/validator/${ticker}`;
+			const cached = api.peek<ValidatorResult>(path);
+			if (cached) {
+				setResult(cached);
+				setLoading(false);
+				// still revalidate stale in background
+				void api
+					.getCached<ValidatorResult>(path)
+					.then((fresh) => setResult(fresh))
+					.catch(() => {});
+				return;
+			}
+			const res = await api.getCached<ValidatorResult>(path);
 			setResult(res);
 		} catch (e) {
 			setError(e instanceof Error ? e.message : String(e));
@@ -38,8 +51,9 @@ export default function ValidatorPage() {
 	return (
 		<Shell>
 			<SectionHeader
+				eyebrow="VWAP phase · Institutional flow · Intent radar"
 				title="Bandarmology Validator"
-				subtitle="Smart-money detector — VWAP phase, institutional flow, hidden intent radar (IHSG)"
+				subtitle="Smart-money detector — VWAP phase, institutional flow, and hidden intent radar for IHSG tickers."
 			/>
 
 			<div className="mb-6 flex items-end gap-3">
@@ -55,9 +69,9 @@ export default function ValidatorPage() {
 				<button
 					onClick={() => void run()}
 					disabled={loading}
-					className="rounded-md bg-[var(--accent)] px-5 py-2 text-sm font-semibold text-black hover:opacity-90 disabled:opacity-50"
+					className="rounded bg-[var(--accent)] px-5 py-2 font-mono text-sm font-semibold text-black hover:brightness-[1.05] disabled:opacity-50"
 				>
-					{loading ? <Spinner label="Analyzing…" /> : "Analyze"}
+					{loading ? "$ validator --running…" : "$ validator --analyze"}
 				</button>
 			</div>
 
@@ -71,9 +85,9 @@ export default function ValidatorPage() {
 					{result.error}
 				</div>
 			)}
-			{loading && <Skeleton className="h-72" />}
+			{loading && <div className="border border-dashed border-[var(--line)] bg-[var(--panel-2)] p-4 font-mono text-xs text-[var(--text-faint)]">$ validator {ticker} | analyzing…</div>}
 
-			{s && !loading && (
+			{s && (
 				<>
 					<div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
 						<StatCard
@@ -200,10 +214,9 @@ export default function ValidatorPage() {
 			)}
 
 			{!result && !loading && (
-				<div className="panel grid-texture p-16 text-center text-sm text-[var(--text-faint)]">
-					Enter a ticker to run the bandarmology analysis —
-					accumulation/distribution phase, institutional flow, and the
-					hidden-intent radar will render here.
+				<div className="panel grid-texture p-8 font-mono text-xs leading-relaxed text-[var(--text-faint)]">
+					<div className="text-[var(--accent)]">$ validator --help</div>
+					<div className="mt-1">Enter a ticker to run bandarmology analysis. Instant — no spinner wait.</div>
 				</div>
 			)}
 		</Shell>

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import math
 import threading
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import requests
@@ -94,7 +94,8 @@ def fetch_universe(force: bool = False) -> list[dict[str, Any]]:
                 return cached
         try:
             rows = _scrape_universe()
-        except Exception:  # noqa: BLE001 - scrape must never crash the API
+        except Exception:  # noqa: BLE001
+            # scrape must never crash the API
             stale = db.get(CACHE_KEY)
             return stale or []
         if rows:
@@ -121,6 +122,21 @@ def top_movers(
     }
 
 
+def _recent_stock_digests(max_days: int = 7, want: int = 5):
+    """Stock digests stored inside recent daily rotation snapshots,
+    oldest first. These give the multi-day view that separates genuine
+    accumulation from one-off foreign-flow noise."""
+    out: list[list[dict[str, Any]]] = []
+    for offset in range(1, max_days + 1):
+        day = datetime.now(UTC) - timedelta(days=offset)
+        snap = db.get(f"rotation:snap:{day.strftime('%Y-%m-%d')}")
+        if isinstance(snap, dict) and isinstance(snap.get("stock_digest"), list):
+            out.append(snap["stock_digest"])
+            if len(out) >= want:
+                break
+    return out
+
+
 def sector_performance(force: bool = False) -> dict[str, Any]:
     """Per-sector avg % change, ticker count, and gainer count (rotation view)."""
     rows = fetch_universe(force)
@@ -129,8 +145,40 @@ def sector_performance(force: bool = False) -> dict[str, Any]:
         sector = r["sector"] or "Unclassified"
         by_sector.setdefault(sector, []).append(r)
 
+    # Smart-money layer: IDX official net foreign flow per stock, joined by
+    # ticker. Accumulation = positive net foreign IDR (foreigners buying).
+    try:
+        from app.idx import foreign_flow_universe
+
+        _flow = foreign_flow_universe(force=force)
+        flow_by_ticker = (
+            {r["ticker"]: r for r in _flow.get("rows") or []}
+            if _flow.get("available", True)
+            else {}
+        )
+    except Exception:  # noqa: BLE001 - flow is a bonus layer, never fatal
+        flow_by_ticker = {}
+
+    # Daily per-stock digest archived inside each snapshot — the multi-day
+    # memory behind valid-accumulation detection.
+    stock_digest = [
+        {
+            "t": r["symbol"],
+            "c": r["price"],
+            "v": r.get("volume") or 0,
+            "p": r["change_percent"],
+        }
+        for r in rows
+        if r.get("price") is not None
+    ]
+    stock_history: dict[str, list[dict[str, Any]]] = {}
+    for dset in _recent_stock_digests():
+        for d in dset:
+            stock_history.setdefault(d["t"], []).append(d)
+
     out = []
     for sector, members in by_sector.items():
+        ordered = sorted(members, key=lambda m: m["change_percent"], reverse=True)
         out.append(
             {
                 "sector": sector,
@@ -140,12 +188,80 @@ def sector_performance(force: bool = False) -> dict[str, Any]:
                 "count": len(members),
                 "gainers": sum(1 for m in members if m["change_percent"] > 0),
                 "losers": sum(1 for m in members if m["change_percent"] < 0),
+                # Who is actually moving in this sector — top 5 up, top 5 down.
+                "movers": {
+                    "gainers": [
+                        {
+                            "ticker": m["symbol"],
+                            "name": m.get("name"),
+                            "price": m.get("price"),
+                            "change_percent": m["change_percent"],
+                        }
+                        for m in ordered[:5]
+                        if m["change_percent"] > 0
+                    ],
+                    "losers": [
+                        {
+                            "ticker": m["symbol"],
+                            "name": m.get("name"),
+                            "price": m.get("price"),
+                            "change_percent": m["change_percent"],
+                        }
+                        for m in reversed(ordered[-5:])
+                        if m["change_percent"] < 0
+                    ],
+                },
             }
         )
+        # VALID accumulation: multi-day price+volume behaviour — buying volume
+        # dominant while the price has NOT run away yet. Foreign flow is only a
+        # bonus badge (it often disagrees with price: rebalancing, local exits).
+        valid = []
+        for m in members:
+            hist = stock_history.get(m["symbol"], [])
+            if len(hist) < 2:
+                continue  # need >=2 prior days of behaviour, not just today
+            points = hist + [{"c": m["price"], "v": m.get("volume") or 0, "p": m["change_percent"]}]
+            first_c = points[0]["c"]
+            if first_c <= 0:
+                continue
+            price_move = (points[-1]["c"] - first_c) / first_c * 100
+            # "Belum lari" is judged on the PEAK, not the net: a stock that
+            # spiked +10% and round-tripped to +4% net HAS run — it no longer
+            # offers an accumulation entry.
+            peak_move = (max(p["c"] for p in points) - first_c) / first_c * 100
+            buy_v = sum(p["v"] for p in points if p["p"] > 0)
+            sell_v = sum(p["v"] for p in points if p["p"] < 0)
+            tot_v = buy_v + sell_v
+            if tot_v <= 0:
+                continue
+            buy_share = buy_v / tot_v * 100
+            if buy_share < 60 or abs(price_move) > 6 or peak_move > 8 or price_move < -3:
+                continue  # distribution-ish, already chased, or falling knife
+            flow_row = flow_by_ticker.get(m["symbol"])
+            # Stage: "watch" = still completely flat (peak <=3%) — the earliest
+            # accumulation names, nothing has moved yet. "moving" = already
+            # walking up but within the belum-lari bounds.
+            stage = "watch" if peak_move <= 3 and abs(price_move) <= 2 else "moving"
+            valid.append(
+                {
+                    "ticker": m["symbol"],
+                    "name": m.get("name"),
+                    "days": len(points),
+                    "buy_share": round(buy_share, 1),
+                    "price_move": round(price_move, 2),
+                    "peak_move": round(peak_move, 2),
+                    "stage": stage,
+                    "flow_agrees": bool(flow_row and (flow_row.get("net_foreign_idr") or 0) > 0),
+                }
+            )
+        valid.sort(key=lambda x: x["buy_share"], reverse=True)
+        out[-1]["valid_accumulation"] = valid[:6]
     out.sort(key=lambda s: s["avg_change_percent"], reverse=True)
     return {
         "count": len(out),
         "tickers": len(rows),
         "as_of": datetime.now(UTC).isoformat(),
+        "stock_digest": stock_digest,
         "sectors": out,
     }

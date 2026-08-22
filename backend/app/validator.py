@@ -272,7 +272,88 @@ class BandarmologyAnalyzer:
 
         current_intent = self.detect_hidden_intent(curr, prev, vwap, liq["is_small_cap"])
 
+        # ── BidBot-style score block ─────────────────────────────────────
+        gap = _safe_float(phase.get("gap_pct", 0.0)) or 0.0
+        phase_name = str(phase.get("phase", ""))
+        rsi_v = _safe_float(rsi) or 0.0
+        value_score = max(0.0, min(100.0, 50.0 - gap * 8.0))
+        momentum_score = max(0.0, min(100.0, (rsi_v - 30) * 2)) * 0.6 + (conf_idx / 4.0 * 100) * 0.4
+        pattern_score = {
+            "ACCUMULATION (Undervalued)": 80.0,
+            "BASE / HOLD (Fair Value)": 60.0,
+            "MARKUP / DISTRIBUTION (Overvalued)": 40.0,
+        }.get(phase_name, 20.0)
+        composite = round(0.35 * value_score + 0.35 * momentum_score + 0.30 * pattern_score, 1)
+        score_label = (
+            "EXCELLENT"
+            if composite >= 75
+            else "GOOD"
+            if composite >= 60
+            else "NEUTRAL"
+            if composite >= 45
+            else "WEAK"
+        )
+        if inst_flow > 0 and sm_status.startswith("Inflow"):
+            bandar_type = "Accumulation"
+        elif inst_flow < 0 and sm_status.startswith("Outflow"):
+            bandar_type = "Distribution"
+        else:
+            bandar_type = "Balanced"
+        avg_value = _safe_float(liq.get("avg_value_idr", 0)) or 0.0
+        kapitalisasi = (
+            "BIG"
+            if avg_value >= 1e11
+            else "MID"
+            if avg_value >= 1e10
+            else "SMALL"
+            if avg_value >= 1e9
+            else "MICRO"
+        )
+        wyckoff_confidence = round(min(99.0, abs(gap) * 10 + conf_idx * 15), 1)
+        weekly = pd.Series(df["Close"]).resample("W").last().dropna()
+
+        def _above_all(series: pd.Series, wins: list[int]) -> bool | None:
+            if len(series) < max(wins):
+                return None
+            last = _safe_float(series.iloc[-1])
+            if last is None:
+                return None
+            out = True
+            for w in wins:
+                ma = _safe_float(pd.Series(series.rolling(w).mean()).iloc[-1])
+                if ma is None or last <= ma:
+                    out = False
+            return out
+
+        short_term = _above_all(pd.Series(df["Close"]), [3, 5, 10])
+        long_term = _above_all(weekly, [20, 50, 100]) if len(weekly) >= 100 else None
+        if short_term is None or long_term is None:
+            alignment = "N/A"
+        elif short_term == long_term:
+            alignment = "AGREE"
+        else:
+            alignment = "DIVERGE"
+        if composite >= 65 and alignment != "DIVERGE":
+            recommendation = "BUY"
+        elif composite >= 45:
+            recommendation = "HOLD"
+        else:
+            recommendation = "AVOID"
+        if alignment == "DIVERGE" and not short_term:
+            recommendation = "AVOID"
+        score = {
+            "composite_score": composite,
+            "score_label": score_label,
+            "bandar_type": bandar_type,
+            "kapitalisasi": kapitalisasi,
+            "likuiditas": liq.get("level"),
+            "wyckoff_confidence": wyckoff_confidence,
+            "two_layer_alignment": alignment,
+            "recommendation": recommendation,
+        }
+
         return {
+            "score": score,
             "summary": {
                 "close": _safe_float(curr["Close"]),
                 "change_pct": round(chg_pct, 2),

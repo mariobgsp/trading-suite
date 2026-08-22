@@ -14,6 +14,7 @@ from typing import Any
 from fastapi import APIRouter, Query
 
 from app import idx, intel, msci, ownership, rotation
+from app.konglo import konglo_overview
 
 router = APIRouter(prefix="/api/intel", tags=["intel"])
 
@@ -87,6 +88,17 @@ async def ownership_structure_route(ticker: str, force: bool = False) -> dict[st
 async def ownership_history_route(ticker: str) -> dict[str, Any]:
     """Ownership-change history: snapshots + latest period-over-period diff."""
     return await asyncio.to_thread(ownership.ownership_history, ticker.upper())
+
+@router.get("/owner/holdings")
+async def owner_holdings_route(name: str) -> dict[str, Any]:
+    """Cross-issuer search: every archived company where this holder appears."""
+    return await asyncio.to_thread(ownership.owner_holdings, name)
+
+
+@router.get("/konglo")
+async def konglo() -> dict[str, Any]:
+    """Broker-flow aggregated per konglomerat / taipan group."""
+    return await asyncio.to_thread(konglo_overview)
 
 
 @router.get("/heatmap")

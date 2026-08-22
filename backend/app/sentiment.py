@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 from datetime import UTC, datetime
 from typing import Any
 
@@ -194,25 +195,23 @@ _QUERIES = [
 
 
 def _fetch_google_news() -> list[dict[str, Any]]:
+    """Fetch the 4 Google News queries IN PARALLEL (was 4-8s serial, now ~2s)."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
     from dateutil import parser as date_parser
 
-    all_news: list[dict[str, Any]] = []
-    seen_urls: set[str] = set()
-
-    for q in _QUERIES:
+    def _fetch_one(q: str) -> list[dict[str, Any]]:
         encoded = q.replace(" ", "%20").replace('"', "%22")
         url = f"https://news.google.com/rss/search?q={encoded}&hl=id&gl=ID&ceid=ID:id"
+        out: list[dict[str, Any]] = []
         try:
             feed = feedparser.parse(url)
         except Exception as exc:  # noqa: BLE001
             logger.warning("google news query failed: %s", exc)
-            continue
+            return out
         if not feed.entries:
-            continue
+            return out
         for entry in feed.entries:
-            if entry.link in seen_urls:
-                continue
-            seen_urls.add(entry.link)
             title = clean_text(entry.title)
             if len(title) < 10 or "<" in title:
                 continue
@@ -224,7 +223,7 @@ def _fetch_google_news() -> list[dict[str, Any]]:
             except Exception:  # noqa: BLE001
                 dt = datetime.now(UTC)
             sentiment = _analyze_sentiment(title)
-            all_news.append(
+            out.append(
                 {
                     "date": dt.isoformat(),
                     "date_str": dt.strftime("%d %b %H:%M"),
@@ -238,28 +237,73 @@ def _fetch_google_news() -> list[dict[str, Any]]:
                     **sentiment,
                 }
             )
+        return out
+
+    all_news: list[dict[str, Any]] = []
+    seen_urls: set[str] = set()
+    with ThreadPoolExecutor(max_workers=min(4, len(_QUERIES))) as pool:
+        futures = [pool.submit(_fetch_one, q) for q in _QUERIES]
+        for fut in as_completed(futures):
+            for item in fut.result():
+                if item["link"] in seen_urls:
+                    continue
+                seen_urls.add(item["link"])
+                all_news.append(item)
 
     all_news.sort(key=lambda n: n["date"], reverse=True)
     return all_news
 
 
+# Background refresh thread pool (one per key, deduplicated) — same SWR
+# pattern as app.market so a stale feed serves instantly while re-fetching.
+_refreshing: set[str] = set()
+_refresh_lock = threading.Lock()
+
+
+def _spawn_refresh(key: str, fn) -> None:
+    with _refresh_lock:
+        if key in _refreshing:
+            return
+        _refreshing.add(key)
+
+    def _run() -> None:
+        try:
+            fn()
+        finally:
+            with _refresh_lock:
+                _refreshing.discard(key)
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
 def fetch_sentiment_news(force: bool = False) -> dict[str, Any]:
-    """Fetch + cache the sentiment news feed."""
+    """Fetch + cache the sentiment news feed — never blocks on stale.
+
+    - Fresh cache → instant.
+    - Stale cache → serve stale instantly + refresh in background.
+    - No cache at all → returns a lightweight degraded payload immediately and
+      refreshes in background (first-ever call only; ~2s parallel fetch).
+    """
     cache_key = "sentiment:news"
     if not force:
         cached = db.get_fresh(cache_key, CACHE_TTL)
         if cached is not None:
             return cached
+        stale = db.get(cache_key)
+        if stale is not None:
+            _spawn_refresh(cache_key, lambda: _refresh_news(cache_key))
+            return stale
 
+    # No cache yet: kick off background fetch and return degraded instantly.
+    _spawn_refresh(cache_key, lambda: _refresh_news(cache_key))
+    return {"generated_at": db.utcnow_iso(), "count": 0, "items": [], "degraded": True, "refreshing": True}
+
+
+def _refresh_news(cache_key: str) -> None:
     items = _fetch_google_news()
     payload = {"generated_at": db.utcnow_iso(), "count": len(items), "items": items}
     if items:
-        # Only cache non-empty results: a network failure yielding zero
-        # items must not poison the cache as "authoritative empty".
         db.set(cache_key, payload)
-    else:
-        payload["degraded"] = True
-    return payload
 
 
 # ─── IDX official news (trading-simulator/news_service.py adapter) ───────────

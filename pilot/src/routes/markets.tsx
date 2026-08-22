@@ -9,7 +9,6 @@ import {
 	StatCard,
 } from "@/components/ui";
 import MarketChart from "@/components/MarketChart";
-import AiSummary from "@/components/AiSummary";
 import type { BetaResult } from "@/lib/api";
 
 // Volume + Stochastic are always-on dedicated panes; these four are the
@@ -181,7 +180,6 @@ function MarketsPage() {
 
 			{/* Chart */}
 			<div className="panel p-4">
-				<AiSummary page="markets" ticker={ticker} className="mb-4" />
 				{data.loading || !data.data ? (
 					<Skeleton className="h-[420px]" />
 				) : data.data.error ? (

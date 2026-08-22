@@ -4,12 +4,14 @@ import { useState } from "react";
 import { api, fmtIdr, fmtNum, type PortfolioState } from "@/lib/api";
 import { usePolling } from "@/lib/usePolling";
 import Shell from "@/components/Shell";
-import { SectionHeader, Skeleton, StatCard, Spinner } from "@/components/ui";
+import { SectionHeader, StatCard } from "@/components/ui";
 
 export default function PortfolioPage() {
 	const state = usePolling<PortfolioState>(
-		() => api.get("/api/portfolio/state"),
+		() => api.getCached<PortfolioState>("/api/portfolio/state"),
 		20000,
+		"",
+		{ cacheKey: "/api/portfolio/state" },
 	);
 	const [form, setForm] = useState({
 		action: "BUY",
@@ -55,6 +57,7 @@ export default function PortfolioPage() {
 				date: form.date,
 				currency: form.currency,
 			});
+			api.invalidate("/api/portfolio/state");
 			setMsg({ ok: true, text: "Entry recorded." });
 			setForm((f) => ({ ...f, ticker: "", price: "" }));
 			void state.refresh();
@@ -73,48 +76,25 @@ export default function PortfolioPage() {
 	return (
 		<Shell>
 			<SectionHeader
+				eyebrow="FIFO · Lots · Cash · P&L in IDR"
 				title="Portfolio"
-				subtitle="FIFO cost-basis ledger — positions, cash, and realized P&L (IDR)"
+				subtitle="FIFO cost-basis ledger — positions, lots, cash, and realized P&L. Journal your trades, track unrealized in IDR."
 			/>
 
-			<div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
-				{state.loading || !s ? (
-					[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-24" />)
-				) : (
-					<>
-						<StatCard
-							label="Net Worth"
-							value={fmtIdr(s.net_worth_idr)}
-							tone="accent"
-							sub={`FX ${fmtNum(s.live_forex_usdidr)}`}
-						/>
-						<StatCard label="Cash" value={fmtIdr(s.cash_idr)} />
-						<StatCard
-							label="Market Value"
-							value={fmtIdr(s.total_market_value_idr)}
-							tone="up"
-						/>
-						<StatCard
-							label="Realized P&L"
-							value={fmtIdr(s.realized_pnl_idr)}
-							tone={s.realized_pnl_idr >= 0 ? "up" : "down"}
-							sub={`${s.total_trades} trades closed`}
-						/>
-					</>
-				)}
+			<div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4 rise-in font-mono">
+				<StatCard label="Net Worth" value={s ? fmtIdr(s.net_worth_idr) : "—"} tone={s ? "accent" : "default"} sub={s ? `FX ${fmtNum(s.live_forex_usdidr)} · live` : "$ portfolio --sync"} />
+				<StatCard label="Cash" value={s ? fmtIdr(s.cash_idr) : "—"} sub={s ? "Available to deploy" : "$ cash --sync"} />
+				<StatCard label="Market Value" value={s ? fmtIdr(s.total_market_value_idr) : "—"} tone={s ? "up" : "default"} sub={s ? "Mark-to-market" : "$ mtm --sync"} />
+				<StatCard label="Realized P&L" value={s ? fmtIdr(s.realized_pnl_idr) : "—"} tone={!s ? "default" : s.realized_pnl_idr >= 0 ? "up" : "down"} sub={s ? `${s.total_trades} trades closed` : "$ pnl --sync"} />
 			</div>
 
-			<div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-				{/* Positions */}
+			<div className="grid grid-cols-1 gap-6 lg:grid-cols-3 font-mono">
+				{/* Positions — terminal: always inline, never skeleton */}
 				<div className="panel p-4 lg:col-span-2">
-					<h2 className="mb-3 text-sm font-bold uppercase tracking-wider text-[var(--text-dim)]">
-						Positions
-					</h2>
-					{state.loading ? (
-						<Skeleton className="h-40" />
-					) : !s?.positions.length ? (
-						<p className="py-10 text-center text-sm text-[var(--text-faint)]">
-							No open positions. Add your first trade in the journal.
+					<h2 className="mb-3 font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--text-dim)]">$ positions --fifo</h2>
+					{!s?.positions.length ? (
+						<p className="py-8 text-center font-mono text-xs text-[var(--text-faint)]">
+							{state.loading ? "$ fetching positions… —" : "No open positions. $ journal add --help"}
 						</p>
 					) : (
 						<table className="w-full text-sm">
@@ -248,9 +228,9 @@ export default function PortfolioPage() {
 						<button
 							type="submit"
 							disabled={busy}
-							className="w-full rounded-md bg-[var(--accent)] py-2 text-sm font-semibold text-black hover:opacity-90 disabled:opacity-50"
+							className="w-full rounded bg-[var(--accent)] py-2 font-mono text-sm font-semibold text-black hover:brightness-[1.05] disabled:opacity-50"
 						>
-							{busy ? <Spinner label="Recording…" /> : "Record Entry"}
+							{busy ? "$ journal --recording…" : "$ journal add"}
 						</button>
 						{msg && (
 							<p

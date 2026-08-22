@@ -91,11 +91,17 @@ export default function ScreenerPage() {
 
 	const analyzeSingle = async () => {
 		if (!singleTicker) return;
+		const path = `/api/screener/analyze/${singleTicker}?force=false`;
+		const cached = api.peek<ScreenerResult>(path);
+		if (cached) {
+			setSingle(cached);
+			setSingleLoading(false);
+			void api.getCached<ScreenerResult>(path).then((fresh)=> setSingle(fresh)).catch(()=>{});
+			return;
+		}
 		setSingleLoading(true);
 		try {
-			const res = await api.get<ScreenerResult>(
-				`/api/screener/analyze/${singleTicker}?force=false`,
-			);
+			const res = await api.getCached<ScreenerResult>(path);
 			setSingle(res);
 		} catch (e) {
 			setSingle({
@@ -121,8 +127,9 @@ export default function ScreenerPage() {
 	return (
 		<Shell>
 			<SectionHeader
+				eyebrow="Behavior · Squeeze · Vault — SSE streamed"
 				title="Screener"
-				subtitle="900+ IDX universe — behavior scoring or MA-squeeze scan, streamed live"
+				subtitle="900+ IDX universe — behavior scoring or MA-squeeze scan streamed live ticker-by-ticker over SSE."
 			/>
 
 			<div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-3">

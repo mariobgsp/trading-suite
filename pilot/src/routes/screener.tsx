@@ -3,7 +3,6 @@ import { useCallback, useState } from "react";
 import { api, fmtNum, type ScreenerResult } from "@/lib/api";
 import { useEventSource } from "@/lib/usePolling";
 import { ChangeBadge, SectionHeader, Spinner } from "@/components/ui";
-import AiSummary from "@/components/AiSummary";
 
 const ACTION_TONE: Record<string, string> = {
 	"STRONG BUY": "text-[var(--up)]",
@@ -149,10 +148,6 @@ function ScreenerPage() {
 							{singleLoading ? "…" : "Go"}
 						</button>
 					</div>
-
-					{singleTicker && (
-						<AiSummary page="screener" ticker={singleTicker} className="mb-4" />
-					)}
 
 					{single && (
 						<div className="mt-4 space-y-2 text-sm">

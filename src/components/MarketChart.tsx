@@ -14,13 +14,13 @@ import {
 import type { HistoryRecord, IndicatorColumns } from "@/lib/api";
 
 const PALETTE = {
-	up: "#26a69a",
-	down: "#ef5350",
-	line: "#38bdf8",
+	up: "#4ade80",
+	down: "#fb7185",
+	line: "#7dd3fc",
 	line2: "#a78bfa",
-	line3: "#fbbf24",
-	volume: "rgba(56, 189, 248, 0.25)",
-	grid: "rgba(30, 38, 53, 0.5)",
+	line3: "#facc15",
+	volume: "rgba(125, 211, 252, 0.22)",
+	grid: "rgba(27, 38, 57, 0.9)",
 };
 
 export interface ChartOptions {
@@ -50,7 +50,7 @@ export default function MarketChart({
 			height,
 			layout: {
 				background: { type: ColorType.Solid, color: "transparent" },
-				textColor: "#8b95a9",
+				textColor: "#73809a",
 				fontFamily: "'JetBrains Mono', monospace",
 				fontSize: 11,
 			},
@@ -61,16 +61,16 @@ export default function MarketChart({
 			crosshair: {
 				mode: 0,
 				vertLine: {
-					color: "rgba(56,189,248,0.5)",
+					color: "rgba(125,211,252,0.45)",
 					labelBackgroundColor: "#0e7490",
 				},
 				horzLine: {
-					color: "rgba(56,189,248,0.5)",
+					color: "rgba(125,211,252,0.45)",
 					labelBackgroundColor: "#0e7490",
 				},
 			},
-			rightPriceScale: { borderColor: "#1e2635" },
-			timeScale: { borderColor: "#1e2635", timeVisible: true },
+			rightPriceScale: { borderColor: "#1b2639" },
+			timeScale: { borderColor: "#1b2639", timeVisible: true },
 		});
 		chartRef.current = chart;
 
@@ -201,7 +201,7 @@ export function SimpleLineChart({
 			height,
 			layout: {
 				background: { type: ColorType.Solid, color: "transparent" },
-				textColor: "#8b95a9",
+				textColor: "#73809a",
 				fontFamily: "'JetBrains Mono', monospace",
 				fontSize: 11,
 			},
@@ -209,8 +209,8 @@ export function SimpleLineChart({
 				vertLines: { color: PALETTE.grid },
 				horzLines: { color: PALETTE.grid },
 			},
-			rightPriceScale: { borderColor: "#1e2635" },
-			timeScale: { borderColor: "#1e2635" },
+			rightPriceScale: { borderColor: "#1b2639" },
+			timeScale: { borderColor: "#1b2639" },
 		});
 		const series = chart.addSeries(LineSeries, { color, lineWidth: 2 });
 		series.setData(

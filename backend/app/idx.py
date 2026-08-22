@@ -25,6 +25,7 @@ flow instead.
 from __future__ import annotations
 
 import logging
+import re
 import math
 import threading
 from datetime import UTC, datetime, timedelta
@@ -575,6 +576,64 @@ def _ownership_snapshot(ticker: str, shareholders: list[dict[str, Any]]) -> None
     }
     hist.append(snapshot)
     db.set(hist_key, hist[-OWNERSHIP_HIST_MAX:])
+
+
+_IDX_TICKER_RE = re.compile(r"[A-Z]{4}\Z")
+
+
+def _norm_owner(s: str) -> str:
+    """Normalize a holder name for cross-issuer matching: lowercase, strip
+    punctuation, collapse whitespace ("PT Dwimuria Investama, Tbk" ==
+    "pt dwimuria investama tbk")."""
+    return " ".join("".join(ch for ch in s.lower() if ch.isalnum() or ch.isspace()).split())
+
+
+def owner_holdings(name: str) -> dict[str, Any]:
+    """Cross-issuer lookup: which archived companies does this holder own
+    stock in? Scans the latest archived snapshot of every issuer we have
+    ownership data for (the per-ticker snapshot archive)."""
+    q = _norm_owner(name)
+    if not q:
+        return {"query": name, "available": True, "issuers_scanned": 0, "matches": []}
+    matches: list[dict[str, Any]] = []
+    issuers: list[dict[str, Any]] = []
+    scanned = 0
+    for key in db.keys("intel:ownership:hist:"):
+        hist = db.get(key)
+        if not isinstance(hist, list) or not hist:
+            continue
+        scanned += 1
+        latest = hist[-1] or {}
+        ticker = key.rsplit(":", 1)[-1]
+        # IDX codes are exactly 4 letters; anything else is junk cached from
+        # partial-ticker lookups (e.g. someone hitting Load mid-typing).
+        if not _IDX_TICKER_RE.fullmatch(ticker):
+            scanned -= 1
+            continue
+        info = db.get(f"intel:ownership:{ticker}")
+        company = info.get("name") if isinstance(info, dict) else None
+        issuers.append({"ticker": ticker, "name": company})
+        for h in latest.get("holders", []):
+            if h.get("name") and _norm_owner(str(h["name"])) == q:
+                matches.append(
+                    {
+                        "ticker": ticker,
+                        "name": company,
+                        "percent": h.get("percent"),
+                        "category": h.get("category", ""),
+                        "controlling": bool(h.get("controlling")),
+                        "as_of": latest.get("date"),
+                    }
+                )
+                break  # one row per issuer — the latest stake wins
+    matches.sort(key=lambda m: -(m["percent"] or 0))
+    return {
+        "query": name,
+        "available": True,
+        "issuers_scanned": scanned,
+        "matches": matches,
+        "issuers": issuers,
+    }
 
 
 def ownership_history(ticker: str) -> dict[str, Any]:

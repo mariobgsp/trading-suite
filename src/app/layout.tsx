@@ -15,9 +15,16 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-	title: "Trading Suite — IDX Platform",
+	title: "Trading Suite — IDX Desk | IHSG, Portfolio, Screener & Sentiment",
 	description:
-		"Merged Indonesian stock trading platform: portfolio, backtesting, screener, bandarmology validator, sentiment radar, market regime.",
+		"Dark desk for the IDX — IHSG overview, candlestick charts, FIFO portfolio, backtests, bandarmology validator, sentiment radar and live screener.",
+	openGraph: {
+		title: "Trading Suite — IDX Desk",
+		description:
+			"Eight tools across markets, portfolio, screening and sentiment — one dark desk for the IDX.",
+		type: "website",
+	},
+	icons: { icon: "/favicon.ico" },
 };
 
 export default function RootLayout({

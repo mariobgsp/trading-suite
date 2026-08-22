@@ -10,12 +10,14 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AlertsRouteImport } from './routes/alerts'
 import { Route as AnnouncementsRouteImport } from './routes/announcements'
 import { Route as BacktestRouteImport } from './routes/backtest'
 import { Route as BrokerintelRouteImport } from './routes/brokerintel'
 import { Route as CalculatorsRouteImport } from './routes/calculators'
 import { Route as ForeignflowRouteImport } from './routes/foreignflow'
 import { Route as JournalRouteImport } from './routes/journal'
+import { Route as KongloRouteImport } from './routes/konglo'
 import { Route as MarketsRouteImport } from './routes/markets'
 import { Route as MsciRouteImport } from './routes/msci'
 import { Route as OverviewRouteImport } from './routes/overview'
@@ -33,6 +35,11 @@ import { Route as WikiRouteImport } from './routes/wiki'
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AlertsRoute = AlertsRouteImport.update({
+  id: '/alerts',
+  path: '/alerts',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AnnouncementsRoute = AnnouncementsRouteImport.update({
@@ -63,6 +70,11 @@ const ForeignflowRoute = ForeignflowRouteImport.update({
 const JournalRoute = JournalRouteImport.update({
   id: '/journal',
   path: '/journal',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const KongloRoute = KongloRouteImport.update({
+  id: '/konglo',
+  path: '/konglo',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MarketsRoute = MarketsRouteImport.update({
@@ -133,12 +145,14 @@ const WikiRoute = WikiRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/alerts': typeof AlertsRoute
   '/announcements': typeof AnnouncementsRoute
   '/backtest': typeof BacktestRoute
   '/brokerintel': typeof BrokerintelRoute
   '/calculators': typeof CalculatorsRoute
   '/foreignflow': typeof ForeignflowRoute
   '/journal': typeof JournalRoute
+  '/konglo': typeof KongloRoute
   '/markets': typeof MarketsRoute
   '/msci': typeof MsciRoute
   '/overview': typeof OverviewRoute
@@ -155,12 +169,14 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/alerts': typeof AlertsRoute
   '/announcements': typeof AnnouncementsRoute
   '/backtest': typeof BacktestRoute
   '/brokerintel': typeof BrokerintelRoute
   '/calculators': typeof CalculatorsRoute
   '/foreignflow': typeof ForeignflowRoute
   '/journal': typeof JournalRoute
+  '/konglo': typeof KongloRoute
   '/markets': typeof MarketsRoute
   '/msci': typeof MsciRoute
   '/overview': typeof OverviewRoute
@@ -178,12 +194,14 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/alerts': typeof AlertsRoute
   '/announcements': typeof AnnouncementsRoute
   '/backtest': typeof BacktestRoute
   '/brokerintel': typeof BrokerintelRoute
   '/calculators': typeof CalculatorsRoute
   '/foreignflow': typeof ForeignflowRoute
   '/journal': typeof JournalRoute
+  '/konglo': typeof KongloRoute
   '/markets': typeof MarketsRoute
   '/msci': typeof MsciRoute
   '/overview': typeof OverviewRoute
@@ -202,12 +220,14 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/alerts'
     | '/announcements'
     | '/backtest'
     | '/brokerintel'
     | '/calculators'
     | '/foreignflow'
     | '/journal'
+    | '/konglo'
     | '/markets'
     | '/msci'
     | '/overview'
@@ -224,12 +244,14 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/alerts'
     | '/announcements'
     | '/backtest'
     | '/brokerintel'
     | '/calculators'
     | '/foreignflow'
     | '/journal'
+    | '/konglo'
     | '/markets'
     | '/msci'
     | '/overview'
@@ -246,12 +268,14 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/alerts'
     | '/announcements'
     | '/backtest'
     | '/brokerintel'
     | '/calculators'
     | '/foreignflow'
     | '/journal'
+    | '/konglo'
     | '/markets'
     | '/msci'
     | '/overview'
@@ -269,12 +293,14 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AlertsRoute: typeof AlertsRoute
   AnnouncementsRoute: typeof AnnouncementsRoute
   BacktestRoute: typeof BacktestRoute
   BrokerintelRoute: typeof BrokerintelRoute
   CalculatorsRoute: typeof CalculatorsRoute
   ForeignflowRoute: typeof ForeignflowRoute
   JournalRoute: typeof JournalRoute
+  KongloRoute: typeof KongloRoute
   MarketsRoute: typeof MarketsRoute
   MsciRoute: typeof MsciRoute
   OverviewRoute: typeof OverviewRoute
@@ -297,6 +323,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/alerts': {
+      id: '/alerts'
+      path: '/alerts'
+      fullPath: '/alerts'
+      preLoaderRoute: typeof AlertsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/announcements': {
@@ -339,6 +372,13 @@ declare module '@tanstack/react-router' {
       path: '/journal'
       fullPath: '/journal'
       preLoaderRoute: typeof JournalRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/konglo': {
+      id: '/konglo'
+      path: '/konglo'
+      fullPath: '/konglo'
+      preLoaderRoute: typeof KongloRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/markets': {
@@ -437,12 +477,14 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AlertsRoute: AlertsRoute,
   AnnouncementsRoute: AnnouncementsRoute,
   BacktestRoute: BacktestRoute,
   BrokerintelRoute: BrokerintelRoute,
   CalculatorsRoute: CalculatorsRoute,
   ForeignflowRoute: ForeignflowRoute,
   JournalRoute: JournalRoute,
+  KongloRoute: KongloRoute,
   MarketsRoute: MarketsRoute,
   MsciRoute: MsciRoute,
   OverviewRoute: OverviewRoute,

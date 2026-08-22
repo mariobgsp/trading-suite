@@ -3,7 +3,7 @@
 import { api, fmtNum, type RegimeSnapshot } from "@/lib/api";
 import { usePolling } from "@/lib/usePolling";
 import Shell from "@/components/Shell";
-import { SectionHeader, Skeleton, StatCard } from "@/components/ui";
+import { SectionHeader, StatCard } from "@/components/ui";
 import { SimpleLineChart } from "@/components/MarketChart";
 
 const REGIME_META: Record<
@@ -34,13 +34,17 @@ const REGIME_META: Record<
 
 export default function RegimePage() {
 	const snap = usePolling<RegimeSnapshot>(
-		() => api.get("/api/regime/snapshot"),
+		() => api.getCached<RegimeSnapshot>("/api/regime/snapshot"),
 		60000,
+		"",
+		{ cacheKey: "/api/regime/snapshot" },
 	);
 	const hist = usePolling<{
 		symbol: string;
 		history: { date: string; close: number }[];
-	}>(() => api.get("/api/regime/history"), 60000);
+	}>(() => api.getCached("/api/regime/history"), 60000, "", {
+		cacheKey: "/api/regime/history",
+	});
 
 	const meta =
 		REGIME_META[snap.data?.regime ?? "UNKNOWN"] ?? REGIME_META.UNKNOWN;
@@ -52,73 +56,46 @@ export default function RegimePage() {
 	return (
 		<Shell>
 			<SectionHeader
+				eyebrow="SMA 20/50/200 · ATR · Hurst · Pipeline gates"
 				title="Regime & Bot"
-				subtitle="IHSG composite market-regime filter that gates the entry engines"
+				subtitle="IHSG composite market-regime filter that gates the entry engines — paper-trade pipeline preserved in backend."
 			/>
 
-			<div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
-				{snap.loading || !snap.data ? (
-					[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-24" />)
-				) : (
-					<>
-						<StatCard
-							label="Regime"
-							value={<span style={{ color: meta.tone }}>{meta.label}</span>}
-							sub={meta.desc}
-						/>
-						<StatCard label="Index Close" value={fmtNum(snap.data.close)} />
-						<StatCard
-							label="SMA(short) / SMA(long)"
-							value={`${fmtNum(snap.data.sma_short)} / ${fmtNum(snap.data.sma_long)}`}
-							tone={snap.data.close > snap.data.sma_long ? "up" : "down"}
-						/>
-						<StatCard
-							label="ATR(14)"
-							value={fmtNum(snap.data.atr_value)}
-							sub={`Hurst ${fmtNum(snap.data.hurst_value, 3)}`}
-						/>
-					</>
-				)}
+			<div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4 font-mono">
+				<StatCard label="Regime" value={snap.data ? <span style={{ color: meta.tone }}>{meta.label}</span> : "—"} sub={snap.data ? meta.desc : "$ regime --sync"} />
+				<StatCard label="Index Close" value={snap.data ? fmtNum(snap.data.close) : "—"} />
+				<StatCard label="SMA(short) / SMA(long)" value={snap.data ? `${fmtNum(snap.data.sma_short)} / ${fmtNum(snap.data.sma_long)}` : "—"} tone={!snap.data ? "default" : snap.data.close > snap.data.sma_long ? "up" : "down"} />
+				<StatCard label="ATR(14)" value={snap.data ? fmtNum(snap.data.atr_value) : "—"} sub={snap.data ? `Hurst ${fmtNum(snap.data.hurst_value, 3)}` : "$ atr --sync"} />
 			</div>
 
-			<div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
+			<div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-3 font-mono">
 				<div className="panel p-4 lg:col-span-2">
-					<h2 className="mb-3 text-sm font-bold uppercase tracking-wider text-[var(--text-dim)]">
-						IHSG Composite — 1 Year
-					</h2>
-					{hist.loading || !points.length ? (
-						<Skeleton className="h-64" />
+					<h2 className="mb-3 font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--text-dim)]">$ plot --history | ihsg</h2>
+					{!points.length ? (
+						<div className="flex h-[280px] items-center justify-center border border-dashed border-[var(--line)] bg-[var(--panel-2)] text-xs text-[var(--text-faint)]">{hist.loading ? "$ fetching history…" : "$ no points"}</div>
 					) : (
-						<SimpleLineChart data={points} height={280} color="#38bdf8" />
+						<SimpleLineChart data={points} height={280} color="#7dd3fc" />
 					)}
 				</div>
 
 				<div className="panel p-4">
-					<h2 className="mb-3 text-sm font-bold uppercase tracking-wider text-[var(--text-dim)]">
-						Engine Permissions
-					</h2>
-					{snap.loading || !snap.data ? (
-						<Skeleton className="h-40" />
-					) : snap.data.error ? (
+					<h2 className="mb-3 font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--text-dim)]">$ engines --list</h2>
+					{snap.data?.error ? (
 						<p className="text-xs text-[var(--down)]">{snap.data.error}</p>
+					) : !snap.data ? (
+						<p className="font-mono text-xs text-[var(--text-faint)]">$ syncing…</p>
 					) : (
 						<div className="space-y-1.5">
-							{snap.data.allowed_engines.length === 0 && (
-								<p className="text-xs text-[var(--text-faint)]">
-									No engines permitted
-								</p>
+							{snap.data.allowed_engines.length === 0 ? (
+								<p className="text-xs text-[var(--text-faint)]">No engines permitted</p>
+							) : (
+								snap.data.allowed_engines.map((e) => (
+									<div key={e} className="flex items-center justify-between rounded bg-[var(--panel-2)] px-3 py-1.5">
+										<span className="font-mono text-xs text-[var(--text)]">{e}</span>
+										<span className="text-xs text-[var(--up)]">● active</span>
+									</div>
+								))
 							)}
-							{snap.data.allowed_engines.map((e) => (
-								<div
-									key={e}
-									className="flex items-center justify-between rounded bg-[var(--panel-2)] px-3 py-1.5"
-								>
-									<span className="font-mono text-xs text-[var(--text)]">
-										{e}
-									</span>
-									<span className="text-xs text-[var(--up)]">● active</span>
-								</div>
-							))}
 						</div>
 					)}
 				</div>

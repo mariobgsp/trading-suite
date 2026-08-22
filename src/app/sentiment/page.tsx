@@ -1,10 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api, type SentimentFeed } from "@/lib/api";
 import { usePolling } from "@/lib/usePolling";
 import Shell from "@/components/Shell";
-import { SectionHeader, Skeleton, StatCard } from "@/components/ui";
+import { SectionHeader, StatCard } from "@/components/ui";
 
 const CATEGORY_ORDER = ["WHALE", "KINERJA", "ACTION", "KOMODITAS", "GLOBAL"];
 
@@ -12,9 +12,19 @@ export default function SentimentPage() {
 	const [category, setCategory] = useState<string>("ALL");
 	const [tag, setTag] = useState<string>("ALL");
 	const feed = usePolling<SentimentFeed>(
-		() => api.get("/api/sentiment/news"),
+		() => api.getCached<SentimentFeed>("/api/sentiment/news"),
 		300000,
+		"",
+		{ cacheKey: "/api/sentiment/news" },
 	);
+
+	// Backend serves stale instantly + refreshes in background; this second
+	// poll picks up the freshly-fetched feed ~2s after mount without blocking.
+	useEffect(() => {
+		const t = setTimeout(() => void feed.refresh(), 2500);
+		return () => clearTimeout(t);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, []);
 
 	const items = useMemo(() => {
 		if (!feed.data) return [];
@@ -41,12 +51,13 @@ export default function SentimentPage() {
 	return (
 		<Shell>
 			<SectionHeader
+				eyebrow="Kontan · Bisnis · CNBC Indonesia · Investor.id"
 				title="Sentiment Radar"
-				subtitle="Weekly market intelligence from Kontan, Bisnis, CNBC Indonesia, Investor.id — whale & insider, financials, corporate action, commodities"
+				subtitle="Weekly market intelligence — whale & insider, financials, corporate action, commodities. Watch the tape, not the noise."
 				right={
 					<button
 						onClick={() => void feed.refresh()}
-						className="rounded-md bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-black hover:opacity-90"
+						className="rounded-control bg-[var(--accent-strong)] px-4 py-2 text-sm font-semibold text-black shadow-[0_6px_18px_-10px_rgba(56,189,248,0.6)] transition-all hover:brightness-[1.05] active:scale-[0.985]"
 					>
 						Rescan News
 					</button>
@@ -110,15 +121,9 @@ export default function SentimentPage() {
 				</select>
 			</div>
 
-			{feed.loading && !feed.data ? (
-				<div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-					{[0, 1, 2, 3, 4, 5].map((i) => (
-						<Skeleton key={i} className="h-32" />
-					))}
-				</div>
-			) : items.length === 0 ? (
-				<div className="panel p-16 text-center text-sm text-[var(--text-faint)]">
-					No headlines for this filter — rescan to fetch the latest feed.
+			{items.length === 0 ? (
+				<div className="panel p-8 font-mono text-xs text-[var(--text-faint)]">
+					{feed.loading ? "$ news --fetching…" : "No headlines for this filter — $ news --rescan"}
 				</div>
 			) : (
 				<div className="grid grid-cols-1 gap-4 md:grid-cols-2">

@@ -3,13 +3,7 @@
 import { useState } from "react";
 import { api, fmtIdr, fmtNum, type BacktestResult } from "@/lib/api";
 import Shell from "@/components/Shell";
-import {
-	ChangeBadge,
-	SectionHeader,
-	Skeleton,
-	Spinner,
-	StatCard,
-} from "@/components/ui";
+import { ChangeBadge, SectionHeader, StatCard } from "@/components/ui";
 import { SimpleLineChart } from "@/components/MarketChart";
 
 const STRATEGIES = [
@@ -27,12 +21,19 @@ export default function BacktestPage() {
 	const [error, setError] = useState<string | null>(null);
 
 	const run = async () => {
+		const path = `/api/backtest/${ticker}?strategy=${strategy}&period=${period}`;
+		const cached = api.peek<BacktestResult>(path);
+		if (cached) {
+			setResult(cached);
+			setError(null);
+			// background revalidate in case backend recomputed
+			void api.getCached<BacktestResult>(path).then((fresh) => setResult(fresh)).catch(()=>{});
+			return;
+		}
 		setLoading(true);
 		setError(null);
 		try {
-			const res = await api.get<BacktestResult>(
-				`/api/backtest/${ticker}?strategy=${strategy}&period=${period}`,
-			);
+			const res = await api.getCached<BacktestResult>(path);
 			setResult(res);
 		} catch (e) {
 			setError(e instanceof Error ? e.message : String(e));
@@ -46,8 +47,9 @@ export default function BacktestPage() {
 	return (
 		<Shell>
 			<SectionHeader
+				eyebrow="Momentum · Mean reversion · Buy & hold"
 				title="Backtest"
-				subtitle="Momentum / mean-reversion / buy-and-hold with 5% stop-loss, 10% trailing stop, IDR fees"
+				subtitle="Three strategies with 5% stop-loss, 10% trailing stop, and IDR-accurate fees — equity curves and per-trade logs."
 			/>
 
 			{/* Controls */}
@@ -89,9 +91,9 @@ export default function BacktestPage() {
 				<button
 					onClick={() => void run()}
 					disabled={loading}
-					className="rounded-md bg-[var(--accent)] px-5 py-2 text-sm font-semibold text-black hover:opacity-90 disabled:opacity-50"
+					className="rounded bg-[var(--accent)] px-5 py-2 font-mono text-sm font-semibold text-black hover:brightness-[1.05] disabled:opacity-50"
 				>
-					{loading ? <Spinner label="Running…" /> : "Run Backtest"}
+					{loading ? "$ backtest --running…" : "$ backtest --run"}
 				</button>
 			</div>
 
@@ -101,7 +103,7 @@ export default function BacktestPage() {
 				</div>
 			)}
 
-			{loading && <Skeleton className="h-80" />}
+			{loading && <div className="border border-dashed border-[var(--line)] bg-[var(--panel-2)] p-4 font-mono text-xs text-[var(--text-faint)]">$ backtest {ticker} --strategy {strategy} | running…</div>}
 
 			{result?.error && (
 				<div className="panel mb-4 p-4 text-sm text-[var(--down)]">
@@ -225,9 +227,9 @@ export default function BacktestPage() {
 			)}
 
 			{!result && !loading && (
-				<div className="panel grid-texture p-16 text-center text-sm text-[var(--text-faint)]">
-					Configure a ticker and strategy, then run the backtest. Equity curve,
-					drawdown, win rate, and per-trade P&L will render here.
+				<div className="panel grid-texture p-8 font-mono text-xs leading-relaxed text-[var(--text-faint)]">
+					<div className="text-[var(--accent)]">$ backtest --help</div>
+					<div className="mt-2">Configure a ticker and strategy, then run. No load — terminal renders instantly.</div>
 				</div>
 			)}
 		</Shell>

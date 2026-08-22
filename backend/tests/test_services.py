@@ -100,6 +100,21 @@ def test_validator_analyzes():
     assert len(out["radar"]) > 0
 
 
+def test_validator_score_block():
+    from app.validator import BandarmologyAnalyzer
+
+    analyzer = BandarmologyAnalyzer()
+    out = analyzer.analyze(_synthetic_history(260))
+    score = out["score"]
+    assert 0 <= score["composite_score"] <= 100
+    assert score["score_label"] in {"EXCELLENT", "GOOD", "NEUTRAL", "WEAK"}
+    assert score["bandar_type"] in {"Accumulation", "Distribution", "Balanced"}
+    assert score["kapitalisasi"] in {"BIG", "MID", "SMALL", "MICRO"}
+    assert 0 <= score["wyckoff_confidence"] <= 100
+    assert score["recommendation"] in {"BUY", "HOLD", "AVOID"}
+    assert score["two_layer_alignment"] in {"AGREE", "DIVERGE", "N/A"}
+
+
 def test_beta_correlation_known_shape():
     # Uses market service; monkeypatch-free path would need network — test the
     # internal math directly instead.
@@ -136,13 +151,27 @@ def test_fifo_engine_rejects_phantom_sell():
     hist_forex: dict[str, float] = {}
     # BUY 100 BBCA @ 6000 IDR
     engine.process_entry(
-        {"action": "BUY", "ticker": "BBCA", "qty": 100, "price": 6000, "currency": "IDR", "date": "2026-01-01"},
+        {
+            "action": "BUY",
+            "ticker": "BBCA",
+            "qty": 100,
+            "price": 6000,
+            "currency": "IDR",
+            "date": "2026-01-01",
+        },
         hist_forex,
     )
     # SELL 200 — exceeds the 100-share holding
     try:
         engine.process_entry(
-            {"action": "SELL", "ticker": "BBCA", "qty": 200, "price": 6100, "currency": "IDR", "date": "2026-01-02"},
+            {
+                "action": "SELL",
+                "ticker": "BBCA",
+                "qty": 200,
+                "price": 6100,
+                "currency": "IDR",
+                "date": "2026-01-02",
+            },
             hist_forex,
         )
     except ValueError as exc:
@@ -161,18 +190,39 @@ def test_fifo_engine_partial_sell_then_remaining():
     engine = FIFOEngine(live_forex=16300.0)
     hist: dict[str, float] = {}
     engine.process_entry(
-        {"action": "BUY", "ticker": "BBRI", "qty": 100, "price": 5000, "currency": "IDR", "date": "2026-01-01"},
+        {
+            "action": "BUY",
+            "ticker": "BBRI",
+            "qty": 100,
+            "price": 5000,
+            "currency": "IDR",
+            "date": "2026-01-01",
+        },
         hist,
     )
     engine.process_entry(
-        {"action": "SELL", "ticker": "BBRI", "qty": 40, "price": 5100, "currency": "IDR", "date": "2026-01-02"},
+        {
+            "action": "SELL",
+            "ticker": "BBRI",
+            "qty": 40,
+            "price": 5100,
+            "currency": "IDR",
+            "date": "2026-01-02",
+        },
         hist,
     )
     assert len(engine.realized_trades) == 1
     # remaining 60 shares still held; selling 61 must raise
     try:
         engine.process_entry(
-            {"action": "SELL", "ticker": "BBRI", "qty": 61, "price": 5200, "currency": "IDR", "date": "2026-01-03"},
+            {
+                "action": "SELL",
+                "ticker": "BBRI",
+                "qty": 61,
+                "price": 5200,
+                "currency": "IDR",
+                "date": "2026-01-03",
+            },
             hist,
         )
     except ValueError:

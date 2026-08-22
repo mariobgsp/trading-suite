@@ -16,11 +16,11 @@
 	--down: #f87171;
 	--gold: #fbbf24;
 	--violet: #a78bfa;
-	/* Launcher elevation ramp + borders (dark desk register) */
+	/* Flatter elevation: hairline border instead of deep drop shadows */
 	--line: rgba(232, 237, 240, 0.1);
 	--line-2: rgba(232, 237, 240, 0.2);
-	--elev: 0 18px 46px -26px rgba(0, 0, 0, 0.62);
-	--elev-hi: 0 28px 64px -28px rgba(0, 0, 0, 0.72);
+	--elev: 0 1px 2px rgba(0, 0, 0, 0.25);
+	--elev-hi: 0 2px 8px rgba(0, 0, 0, 0.28);
 }
 
 /*
@@ -44,8 +44,8 @@
 	--color-down: var(--down);
 	--color-gold: var(--gold);
 	--color-violet: var(--violet);
-	--radius-card: 10px;
-	--radius-control: 8px;
+	--radius-card: 6px;
+	--radius-control: 4px;
 	--shadow-elev: var(--elev);
 	--shadow-elev-hi: var(--elev-hi);
 	--font-display: "Space Grotesk Variable";
@@ -95,7 +95,7 @@ body {
 /* ── Data tables (dense desk register) ─────────────────────── */
 .table-wrap {
 	border: 1px solid var(--border);
-	border-radius: 10px;
+	border-radius: 6px;
 	overflow: auto;
 	background: var(--panel);
 }
@@ -179,12 +179,12 @@ body {
 .panel {
 	background: var(--panel);
 	border: 1px solid var(--border);
-	border-radius: 10px;
+	border-radius: 6px;
 }
 .panel-2 {
 	background: var(--panel-2);
 	border: 1px solid var(--border);
-	border-radius: 8px;
+	border-radius: 4px;
 }
 
 /* Ticker flash for live updates */
@@ -521,50 +521,6 @@ button:focus-visible {
 	}
 }
 
-/* Entrance: satellites scale in with a springy overshoot (delay set inline). */
-.graph-node {
-	transform-box: fill-box;
-	transform-origin: center;
-	animation: graph-node-in 0.55s cubic-bezier(0.34, 1.4, 0.64, 1) backwards;
-}
-@keyframes graph-node-in {
-	0% {
-		opacity: 0;
-		transform: scale(0.2);
-	}
-	60% {
-		opacity: 1;
-		transform: scale(1.12);
-	}
-	100% {
-		opacity: 1;
-		transform: scale(1);
-	}
-}
-
-/* Hover/focus: lit node glows + its edge brightens; everything else dims.
-   Slightly longer ease-out so highlights feel weighted, not snappy. */
-.graph-node {
-	transition:
-		opacity 0.3s ease-out,
-		filter 0.3s ease-out;
-}
-.graph-edge {
-	transition:
-		opacity 0.3s ease-out,
-		stroke-width 0.3s ease-out;
-}
-.graph-dim {
-	opacity: 0.18;
-}
-.graph-node-lit {
-	opacity: 1;
-	filter: drop-shadow(0 0 6px var(--accent-dim));
-}
-.graph-edge-lit {
-	opacity: 1;
-	stroke-width: 2.2;
-}
 
 /* Skip-to-content link (keyboard a11y) */
 .skip-link {
@@ -593,8 +549,7 @@ button:focus-visible {
 	.viz-seg-locked,
 	.viz-live,
 	.tool-card,
-	.route-progress-bar,
-	.graph-node {
+	.route-progress-bar {
 		animation: none !important;
 		transition: none !important;
 	}

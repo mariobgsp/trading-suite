@@ -113,6 +113,8 @@ def rotation_history(days: int = 20, force: bool = False) -> dict[str, Any]:
                 "avg20": round(avg20, 2) if avg20 is not None else None,
                 "rank": rank_now,
                 "rank_delta": rank_delta,
+                "movers": s.get("movers"),
+                "accumulation": s.get("accumulation"),
             }
         )
     rows.sort(key=lambda r: r["avg_change_percent"], reverse=True)

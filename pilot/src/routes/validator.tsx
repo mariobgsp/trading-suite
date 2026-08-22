@@ -3,7 +3,6 @@ import { useState } from "react";
 import { api, fmtNum, type EntryPlan, type ValidatorResult } from "@/lib/api";
 import { usePolling } from "@/lib/usePolling";
 import { SectionHeader, Skeleton, Spinner, StatCard } from "@/components/ui";
-import AiSummary from "@/components/AiSummary";
 
 const INTENT_TONE = (intent: string): string => {
 	if (/SILENT EXIT|DISTRIBUTION|ABANDONED|MARKDOWN|CHURN/.test(intent))
@@ -69,8 +68,6 @@ function ValidatorPage() {
 					{loading ? <Spinner label="Analyzing…" /> : "Analyze"}
 				</button>
 			</div>
-
-			<AiSummary page="validator" ticker={ticker} className="mb-4" />
 
 			<EntryPlanPanel
 				entry={entry.data}

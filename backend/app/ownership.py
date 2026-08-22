@@ -32,3 +32,8 @@ def ownership_structure(ticker: str, force: bool = False) -> dict[str, Any]:
 def ownership_history(ticker: str) -> dict[str, Any]:
     """Ownership-change history: snapshots + latest period-over-period diff."""
     return idx.ownership_history(ticker)
+
+
+def owner_holdings(name: str) -> dict[str, Any]:
+    """Which other listed companies does this shareholder hold stock in?"""
+    return idx.owner_holdings(name)

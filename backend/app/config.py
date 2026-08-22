@@ -33,19 +33,20 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
 
 # ─── API behaviour ────────────────────────────────────────────────────────────
+# Allow both localhost AND 127.0.0.1 (dev server often bound to 127.0.0.1,
+# browser origin is then http://127.0.0.1:3000 — missing that origin silently
+# CORS-blocks every API call and the UI shows no data).
 CORS_ORIGINS = os.getenv(
     "CORS_ORIGINS",
-    "http://localhost:3000,http://localhost:3001,http://localhost:5173",
+    "http://localhost:3000,http://localhost:3001,http://localhost:5173,"
+    "http://127.0.0.1:3000,http://127.0.0.1:3001,http://127.0.0.1:5173",
 ).split(",")
 
 # ─── IHSG universe ────────────────────────────────────────────────────────────
-# Only symbols verified live on Yahoo Finance (^JKSRI / ^JKK100 do not exist
-# upstream and produced 404 spam on every indices call).
+# Only symbols verified live on Yahoo Finance. ^JKIDX30 / ^JKIDX80 / ^JKB27 /
+# ^JKINFOBANK15 were tested 2026-08 and return 404/delisted upstream, which
+# added 2-4s of yfinance retry per refresh on every /api/market/indices call.
 IHSG_INDICES = {
     "IHSG": "^JKSE",
     "LQ45": "^JKLQ45",
-    "IDX30": "^JKIDX30",
-    "IDX80": "^JKIDX80",
-    "BISNIS-27": "^JKB27",
-    "INFOBANK15": "^JKINFOBANK15",
 }

@@ -16,12 +16,14 @@ import math
 from typing import Any
 
 from app import db
-from app.ai import MODEL, call_model
 from app.beta import beta_correlation
 from app.indicators import compute_indicators
 from app.market import fetch_history
 from app.regime import regime_snapshot
 from app.validator import BandarmologyAnalyzer
+
+# AI dismantled — deterministic narration only
+MODEL = "disabled"
 
 RISK_PCT = 0.01  # 1% of capital risked per trade (for the sizing note)
 
@@ -80,38 +82,7 @@ def _recent_low(history: list[dict[str, Any]], n: int = 20) -> float | None:
 
 
 def _narrate(plan: dict[str, Any]) -> tuple[str, bool]:
-    """Ask the AI for a short desk narration of the entry plan.
-
-    Returns (text, used_ai). Deterministic fallback when the model is
-    unconfigured/unreachable so the plan always has a readable
-    "why / what to watch" line.
-    """
-    prompt = (
-        "You are a senior IDX desk analyst writing a short trade narrative. "
-        "Using ONLY the plan facts below, write 3-5 sentences: why this entry "
-        "plan exists, the confluence that supports it, the key risk, and what "
-        "would invalidate it. Plain sentences, no headers, no disclaimers.\n\n"
-        f"PLAN: {plan.get('verdict')} (score {plan.get('score')}/100) "
-        f"for {plan.get('ticker')}.\n"
-        f"Technicals: {plan.get('technicals')}\n"
-        f"Validator: {plan.get('validator')}\n"
-        f"Regime: {plan.get('regime')}\n"
-        f"Beta: {plan.get('beta')}\n"
-        f"Entry zone: {plan.get('entry_zone')} | Stop: {plan.get('stop_loss')} | "
-        f"Targets: {plan.get('targets')}\n"
-        f"Signals met: {plan.get('conditions', {}).get('met', [])}\n"
-        f"Triggers to confirm: {plan.get('conditions', {}).get('missing', [])}"
-    )
-    try:
-        text = call_model(
-            "You are the desk analyst for an Indonesian (IDX) trading suite.",
-            prompt,
-        )
-        if text:
-            return text, True
-    except Exception as e:  # noqa: BLE001 - narration must never crash
-        print(f"[entry] narration failed: {e}")
-
+    """Deterministic desk narration — AI dismantled, instant return."""
     v = plan.get("verdict") or ""
     t = plan.get("ticker") or ""
     ph = (plan.get("validator") or {}).get("bandar_phase", "?")

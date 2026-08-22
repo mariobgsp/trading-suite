@@ -175,6 +175,16 @@ export interface ValidatorResult {
 		small_cap_mode: boolean;
 		current_intent: string;
 	};
+	score: {
+		composite_score: number;
+		score_label: string;
+		bandar_type: string;
+		kapitalisasi: string;
+		likuiditas: string | null;
+		wyckoff_confidence: number;
+		two_layer_alignment: string;
+		recommendation: string;
+	};
 	radar: {
 		date: string;
 		close: number;
@@ -426,6 +436,30 @@ export interface Announcements {
 	items?: AnnouncementItem[];
 }
 
+export interface SectorFlow {
+	ticker: string;
+	name?: string;
+	net_foreign_idr: number;
+}
+
+export interface ValidAccum {
+	ticker: string;
+	name?: string;
+	days: number;
+	buy_share: number;
+	price_move: number;
+	peak_move?: number;
+	stage?: "watch" | "moving";
+	flow_agrees?: boolean;
+}
+
+export interface RotationMover {
+	ticker: string;
+	name?: string;
+	price: number | null;
+	change_percent: number;
+}
+
 export interface RotationSector {
 	sector: string;
 	count: number;
@@ -436,6 +470,11 @@ export interface RotationSector {
 	avg20: number | null;
 	rank: number | null;
 	rank_delta: number | null;
+	movers?: {
+		gainers: RotationMover[];
+		losers: RotationMover[];
+	};
+	valid_accumulation?: ValidAccum[];
 }
 
 export interface RotationHistory {
@@ -476,6 +515,61 @@ export interface JournalStats {
 	monthly: { month: string; pnl_idr: number }[];
 	by_ticker: { ticker: string; pnl_idr: number; count: number }[];
 	recent: Record<string, unknown>[];
+}
+
+export interface PatternStats {
+	strategy: string;
+	total_trades?: number;
+	wins?: number;
+	losses?: number;
+	win_rate?: number;
+	avg_win_pct?: number;
+	avg_loss_pct?: number;
+	total_return_pct?: number;
+	buyhold_return_pct?: number;
+	profit_factor?: number | null;
+}
+
+export interface PatternTrade {
+	entry_date: string;
+	exit_date: string;
+	trigger: string;
+	profit_pct: number;
+	pnl_idr: number;
+}
+
+export interface PatternBacktest {
+	ticker: string;
+	available: boolean;
+	bars: number;
+	fee_note: string;
+	error?: string;
+	strategies: Record<
+		string,
+		{ stats: PatternStats; error?: string; recent_trades: PatternTrade[] }
+	>;
+}
+
+export interface OwnerHoldingsMatch {
+	ticker: string;
+	name?: string;
+	percent: number | null;
+	category: string;
+	controlling: boolean;
+	as_of?: string;
+}
+
+export interface OwnerHoldingsIssuer {
+	ticker: string;
+	name?: string;
+}
+
+export interface OwnerHoldings {
+	query: string;
+	available: boolean;
+	issuers_scanned: number;
+	matches: OwnerHoldingsMatch[];
+	issuers?: OwnerHoldingsIssuer[];
 }
 
 export interface OwnershipStructure {
@@ -578,6 +672,57 @@ export interface JciMoversResponse {
 	flat_count: number;
 	leaders: MoverContribution[];
 	laggards: MoverContribution[];
+}
+
+/* ── BidBot-ported: D-Signal alerts + Konglo ───────────────────────────── */
+
+export interface AlertItem {
+	ticker: string;
+	price: number;
+	change_percent: number;
+	rsi: number | null;
+	above_ma: number[];
+	ma_ladder: string;
+	d_signal: "PREMIUM" | "BREAKOUT" | null;
+	spike_pagi: boolean;
+}
+
+export interface AlertsResponse {
+	count: number;
+	scanned: number;
+	failed: number;
+	available: boolean;
+	error?: string | null;
+	counts: {
+		premium: number;
+		breakout: number;
+		spike_pagi: number;
+		full_ladder: number;
+	};
+	items: AlertItem[];
+}
+
+export interface KongloMember {
+	ticker: string;
+	price: number | null;
+	change_percent: number | null;
+	net_foreign_idr: number | null;
+}
+
+export interface KongloGroup {
+	group: string;
+	count_saham: number;
+	avg_change_percent: number | null;
+	net_foreign_idr: number;
+	members: KongloMember[];
+}
+
+export interface KongloResponse {
+	available: boolean;
+	error?: string;
+	groups_counted: number;
+	tickers_mapped: number;
+	groups: KongloGroup[];
 }
 
 /* ── Formatters ───────────────────────────────────────────────────────────── */

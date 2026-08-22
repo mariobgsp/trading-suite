@@ -1,10 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { usePolling } from "@/lib/usePolling";
 import {
 	api,
 	fmtNum,
+	type AlertsResponse,
+	type ForeignFlowUniverse,
 	type HeatmapResponse,
 	type JciMoversResponse,
+	type KongloResponse,
 	type Quote,
 	type RegimeSnapshot,
 } from "@/lib/api";
@@ -52,6 +56,21 @@ function OverviewPage() {
 		() => api.get("/api/regime/snapshot"),
 		60000,
 	);
+	const alerts = usePolling<AlertsResponse>(
+		() => api.get("/api/alerts?limit=300"),
+		120000,
+		"alerts",
+	);
+	const foreign = usePolling<ForeignFlowUniverse>(
+		() => api.get("/api/intel/foreign/universe"),
+		120000,
+		"foreign",
+	);
+	const konglo = usePolling<KongloResponse>(
+		() => api.get("/api/intel/konglo"),
+		120000,
+		"konglo",
+	);
 
 	const indexQuotes = (indices.data ?? []).filter((q) =>
 		INDEX_SYMBOLS.includes(q.symbol),
@@ -88,22 +107,47 @@ function OverviewPage() {
 								key={q.symbol}
 								label={q.name ?? q.symbol}
 								value={fmtNum(q.price)}
-								tone={
-									q.change_percent != null && q.change_percent >= 0
-										? "up"
-										: "down"
-								}
+								tone={q.change_percent != null && q.change_percent >= 0 ? "up" : "down"}
 								sub={
 									<div className="flex items-center gap-2">
 										<ChangeBadge value={q.change_percent} />
 										<span className="text-[var(--text-faint)]">
-											O {fmtNum(q.open)} · H {fmtNum(q.day_high)} · L{" "}
-											{fmtNum(q.day_low)}
+											O {fmtNum(q.open)} · H {fmtNum(q.day_high)} · L {fmtNum(q.day_low)}
 										</span>
 									</div>
 								}
 							/>
 						))}
+			</div>
+
+			{/* Market breadth + D-Signal + Konglo top strip */}
+			<div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+				<StatCard
+					label="Advancers"
+					value={movers.data?.up_count ?? "—"}
+					tone="up"
+					sub="vs JCI movers board"
+				/>
+				<StatCard
+					label="Decliners"
+					value={movers.data?.down_count ?? "—"}
+					tone="down"
+					sub="vs JCI movers board"
+				/>
+				<Link to="/alerts" className="block">
+					<StatCard
+						label="D-Signal · Breakout"
+						value={alerts.data?.counts.breakout ?? "—"}
+						tone="accent"
+						sub={`${alerts.data?.counts.premium ?? "—"} premium · ${alerts.data?.counts.full_ladder ?? "—"} full MA`}
+					/>
+				</Link>
+				<StatCard
+					label="Konglo · Groups"
+					value={konglo.data?.groups_counted ?? "—"}
+					tone={konglo.data?.tickers_mapped ? "up" : "default"}
+					sub={`${konglo.data?.tickers_mapped ?? "—"} saham mapped`}
+				/>
 			</div>
 
 			{/* IDX Heatmap */}

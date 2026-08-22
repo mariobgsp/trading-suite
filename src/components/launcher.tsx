@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { api } from "@/lib/api";
 import type { AppMeta } from "@/lib/apps";
 
 /**
@@ -16,8 +19,9 @@ function AppViz({ viz }: { viz: AppMeta["viz"] }) {
 							className="viz-eq-bar"
 							style={{
 								height: `${h}%`,
-								background: i % 2 === 0 ? "var(--accent)" : "var(--line-2)",
+								background: i % 2 === 0 ? "var(--accent)" : "rgba(232,239,248,0.14)",
 								animationDelay: `${-i * 0.18}s`,
+								opacity: i % 2 === 0 ? 0.95 : 0.9,
 							}}
 						/>
 					))}
@@ -32,7 +36,7 @@ function AppViz({ viz }: { viz: AppMeta["viz"] }) {
 							className="viz-bar"
 							style={{
 								height: `${h}%`,
-								background: i === 4 ? "var(--accent)" : "var(--line-2)",
+								background: i === 4 ? "var(--accent)" : "rgba(232,239,248,0.13)",
 							}}
 						/>
 					))}
@@ -58,11 +62,11 @@ function AppViz({ viz }: { viz: AppMeta["viz"] }) {
 		case "stat":
 			return (
 				<div aria-hidden="true">
-					<div>
+					<div className="flex items-baseline gap-2">
 						<span className="viz-stat">{viz.value}</span>
-						<span className="viz-stat-unit"> {viz.unit}</span>
+						<span className="viz-stat-unit">{viz.unit}</span>
 					</div>
-					<div className="mt-4">
+					<div className="mt-5">
 						<div className="viz-seg">
 							{viz.segments.map((seg, i) => (
 								<span
@@ -72,7 +76,7 @@ function AppViz({ viz }: { viz: AppMeta["viz"] }) {
 								/>
 							))}
 						</div>
-						<div className="viz-head mt-2 flex justify-between">
+						<div className="viz-head mt-2.5 flex justify-between opacity-70">
 							<span>Tradable</span>
 							<span>Locked</span>
 						</div>
@@ -83,20 +87,34 @@ function AppViz({ viz }: { viz: AppMeta["viz"] }) {
 }
 
 /** One launchpad tile — the whole card is a link. */
-export function AppCard({ app }: { app: AppMeta }) {
+export function AppCard({ app, index = 0 }: { app: AppMeta; index?: number }) {
+	const doPrefetch = () => {
+		// warm the first endpoint for each tool so navigation feels instant
+		if (app.endpoints[0]) api.prefetch(app.endpoints[0].replace("{ticker}", "BBCA"));
+	};
 	return (
 		<Link
 			href={app.href}
-			className="tool-card flex flex-col rounded-card"
+			onMouseEnter={doPrefetch}
+			onFocus={doPrefetch}
+			prefetch
+			className="tool-card group flex flex-col rise-in"
 			aria-label={`Open ${app.name} — ${app.tagline}`}
+			style={{ animationDelay: `${index * 0.06}s` } as React.CSSProperties}
 		>
-			{/* Viz header */}
+			{/* Viz header — slightly taller, canvas with ambient wash */}
 			<div
-				className="h-[196px] shrink-0 bg-canvas p-6"
-				style={{ borderBottom: "1px solid var(--line)" }}
+				className="relative h-[204px] shrink-0 overflow-hidden p-6"
+				style={{
+					background:
+						"radial-gradient(520px 220px at 22% 0%, rgba(125,211,252,0.07), transparent 62%), linear-gradient(180deg, rgba(255,255,255,0.015), transparent 55%), var(--bg-subtle)",
+					borderBottom: "1px solid var(--border)",
+				}}
 			>
+				{/* subtle inner glow */}
+				<span className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[var(--line-2)] to-transparent opacity-60" />
 				<div className="viz-head flex items-center justify-between">
-					<span>{app.badge ?? app.name}</span>
+					<span className="tracking-[0.16em]">{app.badge ?? app.name}</span>
 					<span className="flex items-center gap-2">
 						{app.badge === "LIVE" && (
 							<span className="viz-live" aria-hidden="true" />
@@ -104,31 +122,43 @@ export function AppCard({ app }: { app: AppMeta }) {
 						<span className="viz-badge">{app.num}</span>
 					</span>
 				</div>
-				<div className="mt-4 h-[128px]">
+				<div className="mt-5 h-[128px]">
 					<AppViz viz={app.viz} />
 				</div>
+				{/* bottom fade */}
+				<div className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-[var(--panel-2)]/18 to-transparent" />
 			</div>
 
 			{/* Text body */}
-			<div className="flex flex-1 flex-col gap-3 p-[26px]">
+			<div className="flex flex-1 flex-col gap-3 p-6 sm:p-[26px]">
 				<div className="flex items-baseline gap-3">
-					<span className="font-mono text-xs text-accent">{app.num}</span>
-					<h3 className="text-2xl font-medium tracking-[-0.01em] text-ink">
+					<span className="font-mono text-xs font-bold tracking-widest text-[var(--accent)]">
+						{app.num}
+					</span>
+					<h3 className="text-balance text-[22px] font-semibold leading-none tracking-[-0.022em] text-[var(--text)] sm:text-[24px]">
 						{app.name}
 					</h3>
 				</div>
-				<p className="text-[15px] font-light leading-[1.56] text-ink-2">
+				<p className="max-w-[32ch] text-pretty text-[14px] font-light leading-[1.6] text-[var(--text-dim)]">
 					{app.tagline}
 				</p>
 
-				{/* Footer */}
+				{/* Footer — pinned to bottom */}
 				<div
-					className="mt-auto flex items-center justify-between pt-3.5 font-mono text-[11px]"
+					className="mt-auto flex items-center justify-between pt-4 font-mono text-[11px]"
 					style={{ borderTop: "1px solid var(--line)" }}
 				>
-					<span className="text-ink-3">{app.href}</span>
-					<span className="font-semibold text-accent">
-						OPEN <span aria-hidden="true">→</span>
+					<span className="truncate pr-4 font-medium tracking-wide text-[var(--text-ghost)]">
+						{app.href}
+					</span>
+					<span className="inline-flex shrink-0 items-center gap-1.5 font-bold tracking-[0.14em] text-[var(--accent)] transition-all duration-300 group-hover:gap-2.5">
+						OPEN
+						<span
+							aria-hidden="true"
+							className="translate-x-0 transition-transform duration-300 group-hover:translate-x-0.5"
+						>
+							→
+						</span>
 					</span>
 				</div>
 			</div>
@@ -139,31 +169,35 @@ export function AppCard({ app }: { app: AppMeta }) {
 /** "TOOLS & DATA" section — eyebrow, display heading, dim intro, 2-col grid. */
 export function AppsGrid({ apps }: { apps: AppMeta[] }) {
 	return (
-		<section className="mt-4">
-			<div
-				className="mb-13 flex flex-wrap items-end justify-between gap-x-10 gap-y-4"
-				style={{ marginBottom: 52 }}
-			>
-				<div>
+		<section className="mt-2">
+			<div className="mb-8 flex flex-wrap items-end justify-between gap-x-10 gap-y-4 sm:mb-10">
+				<div className="min-w-0">
 					<span className="eyebrow">Tools &amp; Data</span>
 					<h2
-						className="mt-3 font-medium tracking-[-0.02em] text-ink"
-						style={{ fontSize: "clamp(34px, 3.8vw, 50px)", lineHeight: 1.05 }}
+						className="mt-3 max-w-[12ch] text-balance font-semibold tracking-[-0.03em] text-[var(--text)] rise-in"
+						style={{ fontSize: "clamp(34px, 4vw, 52px)", lineHeight: 0.96 }}
 					>
 						Built for the desk.
 					</h2>
 				</div>
-				<p className="max-w-[30em] text-base font-light text-ink-3">
-					Eight tools across markets, portfolio, screening, and sentiment — one
-					dark desk for the IDX.
+				<p className="max-w-[32em] text-pretty text-[15px] font-light leading-relaxed text-[var(--text-dim)] rise-in-2">
+					Eight tools across markets, portfolio, screening, and sentiment — one dark
+					desk for the IDX. Every view streams live and respects the regime filter.
 				</p>
 			</div>
 
-			<div className="grid grid-cols-1 gap-[22px] lg:grid-cols-2">
-				{apps.map((app) => (
-					<AppCard key={app.href} app={app} />
+			<div className="h-px bg-[var(--line)] mb-8 rise-in-2" />
+
+			<div className="grid grid-cols-1 gap-5 sm:gap-[22px] lg:grid-cols-2">
+				{apps.map((app, i) => (
+					<AppCard key={app.href} app={app} index={i} />
 				))}
 			</div>
+
+			<p className="mx-auto mt-8 max-w-2xl text-center font-mono text-[11px] leading-relaxed tracking-wide text-[var(--text-ghost)]">
+				Data via yfinance · cached on disk · SSE streaming. Quotes are delayed and for
+				research only — not a recommendation.
+			</p>
 		</section>
 	);
 }

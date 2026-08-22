@@ -63,6 +63,23 @@ def get(key: str) -> Any | None:
         return None
 
 
+def keys(prefix: str) -> list[str]:
+    """All cached keys starting with prefix, ordered. Plain prefix match —
+    no LIKE wildcards, so % and _ in the prefix are literal."""
+    try:
+        rows = (
+            _get_conn()
+            .execute(
+                "SELECT key FROM kv_cache WHERE substr(key, 1, ?) = ? ORDER BY key",
+                (len(prefix), prefix),
+            )
+            .fetchall()
+        )
+        return [r[0] for r in rows]
+    except sqlite3.Error:
+        return []
+
+
 def get_fresh(key: str, ttl_seconds: int) -> Any | None:
     """Return cached value only if fetched within ttl_seconds."""
     try:

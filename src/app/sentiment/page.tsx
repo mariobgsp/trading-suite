@@ -57,7 +57,7 @@ export default function SentimentPage() {
 				right={
 					<button
 						onClick={() => void feed.refresh()}
-						className="rounded-control bg-[var(--accent-strong)] px-4 py-2 text-sm font-semibold text-black shadow-[0_6px_18px_-10px_rgba(56,189,248,0.6)] transition-all hover:brightness-[1.05] active:scale-[0.985]"
+						className="rounded-control bg-[var(--accent-strong)] px-4 py-2 text-sm font-semibold text-black transition-all hover:brightness-[1.05] active:scale-[0.985]"
 					>
 						Rescan News
 					</button>

@@ -150,7 +150,9 @@ def _scan_one(ticker: str) -> dict[str, Any] | None:
 def run_alert_scan(limit: int = 300) -> dict[str, Any]:
     """Scan up to `limit` tickers and group the alerts."""
     universe = get_ticker_universe()[:limit]
+    scanned = len(universe)
     results = [r for r in _POOL.map(_scan_one, universe) if r]
+    failed = scanned - len(results)
 
     counts = {
         "premium": sum(1 for r in results if r["d_signal"] == "PREMIUM"),
@@ -168,4 +170,12 @@ def run_alert_scan(limit: int = 300) -> dict[str, Any]:
         ),
         reverse=True,
     )
-    return {"count": len(results), "counts": counts, "items": results}
+    return {
+        "count": len(results),
+        "scanned": scanned,
+        "failed": failed,
+        # Upstream outage = every ticker in the universe failed to load.
+        "available": scanned > 0 and failed < scanned,
+        "counts": counts,
+        "items": results,
+    }

@@ -57,7 +57,9 @@ async function cachedGet<T>(path: string, opts: GetOpts = {}): Promise<T> {
 	// Stale hit + swr -> return stale immediately while revalidating in background
 	if (hit && hit.stale && swr) {
 		// fire-and-forget revalidation; next caller will see fresh data
-		void dedupedFetch<T>(key, () => request<T>(path, init), ttlMs).catch(() => {});
+		void dedupedFetch<T>(key, () => request<T>(path, init), ttlMs).catch(
+			() => {},
+		);
 		return hit.data;
 	}
 
@@ -159,6 +161,12 @@ export interface BacktestStats {
 	fees_pct?: string;
 }
 
+export interface BacktestValidation {
+	is_return_pct: number;
+	oos_return_pct: number;
+	consistent: boolean;
+}
+
 export interface BacktestResult {
 	symbol: string;
 	period: string;
@@ -166,6 +174,185 @@ export interface BacktestResult {
 	trades: BacktestTrade[];
 	equity: { date: string; value: number }[];
 	stats: BacktestStats;
+	validation?: BacktestValidation | null;
+	error?: string;
+}
+
+/* ── D-Signal alerts ── */
+
+export interface AlertItem {
+	ticker: string;
+	price: number;
+	change_percent: number;
+	rsi: number | null;
+	above_ma: number[];
+	ma_ladder: string;
+	d_signal: "PREMIUM" | "BREAKOUT" | null;
+	spike_pagi: boolean;
+}
+
+export interface AlertsResponse {
+	count: number;
+	scanned: number;
+	failed: number;
+	available: boolean;
+	error?: string | null;
+	counts: {
+		premium: number;
+		breakout: number;
+		spike_pagi: number;
+		full_ladder: number;
+	};
+	items: AlertItem[];
+}
+
+/* ── Konglo ── */
+
+export interface KongloMember {
+	ticker: string;
+	price: number | null;
+	change_percent: number | null;
+	net_foreign_idr: number | null;
+}
+
+export interface KongloGroup {
+	group: string;
+	count_saham: number;
+	avg_change_percent: number | null;
+	net_foreign_idr: number;
+	members: KongloMember[];
+}
+
+export interface KongloResponse {
+	available: boolean;
+	error?: string;
+	groups_counted: number;
+	tickers_mapped: number;
+	groups: KongloGroup[];
+}
+
+/* ── Ownership ── */
+
+export interface OwnershipStructure {
+	ticker: string;
+	available: boolean;
+	error?: string;
+	note?: string;
+	as_of?: string;
+	name?: string;
+	sector?: string;
+	sub_sector?: string;
+	listing_date?: string;
+	shareholders?: {
+		name: string;
+		shares: number | null;
+		percent: number | null;
+		category: string;
+		controlling: boolean;
+	}[];
+	board?: {
+		direktur: { name: string; position: string }[];
+		komisaris: { name: string; position: string }[];
+	};
+	subsidiaries?: { name: string; percent: number | null }[];
+}
+
+export interface OwnershipSnapshot {
+	date: string;
+	holders: {
+		name: string;
+		percent: number | null;
+		category: string;
+		controlling: boolean;
+	}[];
+}
+
+export interface OwnershipChanges {
+	from_date: string;
+	to_date: string;
+	entered: { name: string; percent: number | null }[];
+	exited: { name: string; percent: number | null }[];
+	changed: { name: string; from: number; to: number; delta: number }[];
+	crossed: {
+		name: string;
+		from: number;
+		to: number;
+		threshold: number;
+		dir: "above" | "below";
+	}[];
+}
+
+export interface OwnershipHistory {
+	ticker: string;
+	available: boolean;
+	snapshots: OwnershipSnapshot[];
+	changes: OwnershipChanges | null;
+}
+
+export interface OwnerHoldingsMatch {
+	ticker: string;
+	name?: string;
+	percent: number | null;
+	category: string;
+	controlling: boolean;
+	as_of?: string;
+}
+
+export interface OwnerHoldingsIssuer {
+	ticker: string;
+	name?: string;
+}
+
+export interface OwnerHoldings {
+	query: string;
+	available: boolean;
+	issuers_scanned: number;
+	matches: OwnerHoldingsMatch[];
+	issuers?: OwnerHoldingsIssuer[];
+}
+
+/* ── Sector rotation ── */
+
+export interface ValidAccum {
+	ticker: string;
+	name?: string;
+	days: number;
+	price_move: number;
+	peak_move?: number | null;
+	buy_share: number;
+	stage: string;
+	flow_agrees?: boolean;
+}
+
+export interface RotationMover {
+	ticker: string;
+	name?: string;
+	price: number | null;
+	change_percent: number;
+}
+
+export interface RotationSector {
+	sector: string;
+	count: number;
+	gainers: number;
+	losers: number;
+	avg_change_percent: number;
+	avg5: number | null;
+	avg20: number | null;
+	rank: number | null;
+	rank_delta: number | null;
+	movers?: {
+		gainers: RotationMover[];
+		losers: RotationMover[];
+	};
+	valid_accumulation?: ValidAccum[];
+}
+
+export interface RotationHistory {
+	as_of?: string;
+	days_archived: number;
+	dates: string[];
+	sectors: RotationSector[];
 	error?: string;
 }
 

@@ -90,7 +90,7 @@ function MarketsInner() {
 				/>
 				<button
 					onClick={() => void data.refresh()}
-					className="rounded-control bg-[var(--accent-strong)] px-4 py-2 text-sm font-semibold text-black shadow-[0_6px_18px_-10px_rgba(56,189,248,0.6)] transition-all hover:brightness-[1.05] active:scale-[0.985]"
+					className="rounded-control bg-[var(--accent-strong)] px-4 py-2 text-sm font-semibold text-black transition-all hover:brightness-[1.05] active:scale-[0.985]"
 				>
 					Load
 				</button>
@@ -99,7 +99,7 @@ function MarketsInner() {
 						<button
 							key={p}
 							onClick={() => setPeriod(p)}
-							className={`rounded-pill px-3.5 py-1.5 font-mono text-xs font-semibold transition-all ${period === p ? "bg-[var(--accent)] text-black shadow-sm" : "bg-[var(--panel-2)] text-[var(--text-dim)] hover:text-[var(--text)]"}`}
+							className={`rounded-pill px-3.5 py-1.5 font-mono text-xs font-semibold transition-all ${period === p ? "bg-[var(--accent)] text-black" : "bg-[var(--panel-2)] text-[var(--text-dim)] hover:text-[var(--text)]"}`}
 						>
 							{p}
 						</button>

@@ -74,7 +74,7 @@ export default function RegimePage() {
 					{!points.length ? (
 						<div className="flex h-[280px] items-center justify-center border border-dashed border-[var(--line)] bg-[var(--panel-2)] text-xs text-[var(--text-faint)]">{hist.loading ? "$ fetching history…" : "$ no points"}</div>
 					) : (
-						<SimpleLineChart data={points} height={280} color="#7dd3fc" />
+						<SimpleLineChart data={points} height={280} color="#4d9fff" />
 					)}
 				</div>
 

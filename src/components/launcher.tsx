@@ -90,7 +90,8 @@ function AppViz({ viz }: { viz: AppMeta["viz"] }) {
 export function AppCard({ app, index = 0 }: { app: AppMeta; index?: number }) {
 	const doPrefetch = () => {
 		// warm the first endpoint for each tool so navigation feels instant
-		if (app.endpoints[0]) api.prefetch(app.endpoints[0].replace("{ticker}", "BBCA"));
+		if (app.endpoints[0])
+			api.prefetch(app.endpoints[0].replace("{ticker}", "BBCA"));
 	};
 	return (
 		<Link
@@ -102,31 +103,21 @@ export function AppCard({ app, index = 0 }: { app: AppMeta; index?: number }) {
 			aria-label={`Open ${app.name} — ${app.tagline}`}
 			style={{ animationDelay: `${index * 0.06}s` } as React.CSSProperties}
 		>
-			{/* Viz header — slightly taller, canvas with ambient wash */}
+			{/* Viz header — flat canvas */}
 			<div
-				className="relative h-[204px] shrink-0 overflow-hidden p-6"
-				style={{
-					background:
-						"radial-gradient(520px 220px at 22% 0%, rgba(125,211,252,0.07), transparent 62%), linear-gradient(180deg, rgba(255,255,255,0.015), transparent 55%), var(--bg-subtle)",
-					borderBottom: "1px solid var(--border)",
-				}}
+				className="relative h-[204px] shrink-0 overflow-hidden bg-[var(--bg-subtle)] p-6"
+				style={{ borderBottom: "1px solid var(--border)" }}
 			>
-				{/* subtle inner glow */}
-				<span className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[var(--line-2)] to-transparent opacity-60" />
 				<div className="viz-head flex items-center justify-between">
 					<span className="tracking-[0.16em]">{app.badge ?? app.name}</span>
 					<span className="flex items-center gap-2">
-						{app.badge === "LIVE" && (
-							<span className="viz-live" aria-hidden="true" />
-						)}
+						{app.badge === "LIVE" && <span className="viz-live" aria-hidden="true" />}
 						<span className="viz-badge">{app.num}</span>
 					</span>
 				</div>
 				<div className="mt-5 h-[128px]">
 					<AppViz viz={app.viz} />
 				</div>
-				{/* bottom fade */}
-				<div className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-[var(--panel-2)]/18 to-transparent" />
 			</div>
 
 			{/* Text body */}
@@ -195,8 +186,8 @@ export function AppsGrid({ apps }: { apps: AppMeta[] }) {
 			</div>
 
 			<p className="mx-auto mt-8 max-w-2xl text-center font-mono text-[11px] leading-relaxed tracking-wide text-[var(--text-ghost)]">
-				Data via yfinance · cached on disk · SSE streaming. Quotes are delayed and for
-				research only — not a recommendation.
+				Data via yfinance · cached on disk · SSE streaming. Quotes are delayed and
+				for research only — not a recommendation.
 			</p>
 		</section>
 	);

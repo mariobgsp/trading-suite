@@ -65,7 +65,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 				<div className="sticky top-0 z-30 border-b border-[var(--border)] bg-[var(--panel)]">
 					{/* title bar like macOS terminal */}
 					<div className="flex h-7 items-center gap-1.5 px-3">
-						<span className="h-3 w-3 rounded-full bg-[#ff5f56] shadow-[inset_0_0.5px_0_rgba(0,0,0,0.15)]" />
+						<span className="h-3 w-3 rounded-full bg-[#ff5f56]" />
 						<span className="h-3 w-3 rounded-full bg-[#ffbd2e]" />
 						<span className="h-3 w-3 rounded-full bg-[#27c93f]" />
 						<span className="ml-3 font-mono text-[11px] tracking-wide text-[var(--text-faint)]">
@@ -73,25 +73,35 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 						</span>
 						<span className="ml-auto hidden items-center gap-2 font-mono text-[10px] text-[var(--text-ghost)] sm:flex">
 							<span className="hidden sm:inline">⌘K palette</span>
-							<span className="h-1.5 w-1.5 rounded-full bg-[var(--up)] shadow-[0_0_6px_rgba(74,222,128,0.6)]" />
+							<span className="h-1.5 w-1.5 rounded-full bg-[var(--up)]" />
 							online
 						</span>
 					</div>
 					{/* prompt bar — instant, no API */}
 					<div className="flex items-center gap-2 border-t border-[var(--line)] bg-[var(--bg-subtle)] px-3 py-1.5">
-						<span className="font-mono text-[11px] font-bold text-[var(--up)]">mario@desk</span>
+						<span className="font-mono text-[11px] font-bold text-[var(--up)]">
+							mario@desk
+						</span>
 						<span className="text-[var(--text-ghost)]">:</span>
-						<span className="font-mono text-[11px] font-semibold text-[var(--accent)]">~{pathname}</span>
+						<span className="font-mono text-[11px] font-semibold text-[var(--accent)]">
+							~{pathname}
+						</span>
 						<span className="font-mono text-[11px] text-[var(--text-faint)]">$</span>
 						<span className="ml-1 hidden sm:inline font-mono text-[11px] text-[var(--text-dim)]">
 							{active === "/" ? "ls --apps" : `run ${active.replace("/", "")}`}
 						</span>
-						<span className="ml-1 inline-block h-3.5 w-1.5 animate-pulse bg-[var(--accent)]" aria-hidden />
+						<span
+							className="ml-1 inline-block h-3.5 w-1.5 animate-pulse bg-[var(--accent)]"
+							aria-hidden
+						/>
 						<button
 							onClick={() => setCmdOpen(true)}
 							className="ml-auto hidden sm:inline-flex items-center gap-1.5 rounded border border-[var(--border)] bg-[var(--panel-2)] px-2 py-1 font-mono text-[10px] leading-none text-[var(--text-faint)] hover:text-[var(--text-dim)]"
 						>
-							<span className="rounded bg-[var(--panel-3)] px-1 py-0.5 text-[10px]">⌘</span>K
+							<span className="rounded bg-[var(--panel-3)] px-1 py-0.5 text-[10px]">
+								⌘
+							</span>
+							K
 						</button>
 					</div>
 				</div>
@@ -126,9 +136,15 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 					<footer className="mx-auto max-w-[1380px] px-4 pb-6 sm:px-6 lg:px-8">
 						<div className="border-t border-[var(--line)] pt-4 font-mono text-[11px] leading-relaxed text-[var(--text-ghost)]">
 							<span className="text-[var(--up)]">●</span> live ·{" "}
-							<span className="text-[var(--text-faint)]">IDX delayed</span> · no advice ·{" "}
-							<span className="underline decoration-[var(--line-2)] underline-offset-4">privacy</span> ·{" "}
-							<span className="underline decoration-[var(--line-2)] underline-offset-4">terms</span>
+							<span className="text-[var(--text-faint)]">IDX delayed</span> · no advice
+							·{" "}
+							<span className="underline decoration-[var(--line-2)] underline-offset-4">
+								privacy
+							</span>{" "}
+							·{" "}
+							<span className="underline decoration-[var(--line-2)] underline-offset-4">
+								terms
+							</span>
 						</div>
 					</footer>
 				</main>
@@ -136,9 +152,12 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
 			{/* Command palette — instant, client-only, no data fetch */}
 			{cmdOpen && (
-				<div className="fixed inset-0 z-50 flex items-start justify-center bg-black/55 p-4 pt-[14vh] backdrop-blur-[2px]" onClick={() => setCmdOpen(false)}>
+				<div
+					className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 p-4 pt-[14vh]"
+					onClick={() => setCmdOpen(false)}
+				>
 					<div
-						className="panel w-full max-w-[560px] overflow-hidden rounded-[14px] border-[var(--border-strong)] shadow-[0_24px_64px_-20px_rgba(0,0,0,0.7)]"
+						className="panel w-full max-w-[560px] overflow-hidden rounded-[14px] border-[var(--border-strong)] shadow-[0_16px_48px_rgba(0,0,0,0.6)]"
 						onClick={(e) => e.stopPropagation()}
 					>
 						<div className="flex items-center gap-3 border-b border-[var(--border)] px-4 py-3">
@@ -150,11 +169,15 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 								placeholder="type app, ticker, or command…"
 								className="w-full bg-transparent font-mono text-sm text-[var(--text)] placeholder:text-[var(--text-ghost)] focus:outline-none"
 							/>
-							<span className="rounded bg-[var(--panel-2)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--text-faint)]">ESC</span>
+							<span className="rounded bg-[var(--panel-2)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--text-faint)]">
+								ESC
+							</span>
 						</div>
 						<div className="max-h-[50vh] overflow-y-auto p-2">
 							{filtered.length === 0 ? (
-								<p className="px-3 py-6 text-center font-mono text-xs text-[var(--text-faint)]">no match</p>
+								<p className="px-3 py-6 text-center font-mono text-xs text-[var(--text-faint)]">
+									no match
+								</p>
 							) : (
 								filtered.map((a) => (
 									<button
@@ -169,16 +192,24 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 											{a.glyph}
 										</span>
 										<span className="min-w-0">
-											<span className="block font-mono text-sm font-semibold text-[var(--text)]">{a.name}</span>
-											<span className="block truncate font-mono text-xs text-[var(--text-faint)]">{a.href} — {a.tagline.slice(0, 48)}</span>
+											<span className="block font-mono text-sm font-semibold text-[var(--text)]">
+												{a.name}
+											</span>
+											<span className="block truncate font-mono text-xs text-[var(--text-faint)]">
+												{a.href} — {a.tagline.slice(0, 48)}
+											</span>
 										</span>
-										<span className="ml-auto font-mono text-xs text-[var(--text-ghost)]">{a.num}</span>
+										<span className="ml-auto font-mono text-xs text-[var(--text-ghost)]">
+											{a.num}
+										</span>
 									</button>
 								))
 							)}
 							<div className="mt-2 border-t border-[var(--line)] pt-2">
 								<p className="px-3 py-1 font-mono text-[10px] leading-relaxed text-[var(--text-ghost)]">
-									tip: <span className="text-[var(--text-faint)]">markets? ticker=BBCA</span> jumps straight to a chart · palette is instant, no network
+									tip:{" "}
+									<span className="text-[var(--text-faint)]">markets? ticker=BBCA</span>{" "}
+									jumps straight to a chart · palette is instant, no network
 								</p>
 							</div>
 						</div>

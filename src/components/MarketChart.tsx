@@ -16,7 +16,7 @@ import type { HistoryRecord, IndicatorColumns } from "@/lib/api";
 const PALETTE = {
 	up: "#4ade80",
 	down: "#fb7185",
-	line: "#7dd3fc",
+	line: "#4d9fff",
 	line2: "#a78bfa",
 	line3: "#facc15",
 	volume: "rgba(125, 211, 252, 0.22)",
@@ -61,16 +61,16 @@ export default function MarketChart({
 			crosshair: {
 				mode: 0,
 				vertLine: {
-					color: "rgba(125,211,252,0.45)",
+					color: "rgba(77,159,255,0.45)",
 					labelBackgroundColor: "#0e7490",
 				},
 				horzLine: {
-					color: "rgba(125,211,252,0.45)",
+					color: "rgba(77,159,255,0.45)",
 					labelBackgroundColor: "#0e7490",
 				},
 			},
-			rightPriceScale: { borderColor: "#1b2639" },
-			timeScale: { borderColor: "#1b2639", timeVisible: true },
+			rightPriceScale: { borderColor: "#1f1f24" },
+			timeScale: { borderColor: "#1f1f24", timeVisible: true },
 		});
 		chartRef.current = chart;
 
@@ -209,8 +209,8 @@ export function SimpleLineChart({
 				vertLines: { color: PALETTE.grid },
 				horzLines: { color: PALETTE.grid },
 			},
-			rightPriceScale: { borderColor: "#1b2639" },
-			timeScale: { borderColor: "#1b2639" },
+			rightPriceScale: { borderColor: "#1f1f24" },
+			timeScale: { borderColor: "#1f1f24" },
 		});
 		const series = chart.addSeries(LineSeries, { color, lineWidth: 2 });
 		series.setData(

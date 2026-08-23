@@ -29,6 +29,7 @@ FEE_RATE = 0.0015  # IDX broker fee (0.15% — from bot backtester)
 SLIPPAGE_RATE = 0.0015
 
 STRATEGIES = (
+    "tsmom",
     "momentum",
     "meanreversion",
     "buyhold",
@@ -54,6 +55,13 @@ _CROSS_MAS = {
     "cross_3_5": ("ema", 3, 5),  # fast scalp pair
     "cross_9_21": ("ema", 9, 21),  # swing pair
 }
+
+
+TSMOM_LOOKBACK = 252  # ~12 months of trading days
+
+# Indicator warmup before a sub-window's trades count as valid
+# (covers SMA50, MACD/RSI/Stoch and the 252-bar TSMOM lookback).
+WARMUP_BARS = 260
 
 
 def _signals(df: pd.DataFrame, strategy: str) -> pd.Series:
@@ -111,6 +119,16 @@ def _signals(df: pd.DataFrame, strategy: str) -> pd.Series:
         sig[chg > 0.04] = -1
         return sig
 
+    if strategy == "tsmom":
+        # Time series momentum (Moskowitz, Ooi & Pedersen 2012): long while
+        # the past 12-month own return is positive, exit when it turns
+        # negative. One lookback, own price only — deliberately simple.
+        ret_12m = close_s.pct_change(TSMOM_LOOKBACK)
+        sig = pd.Series(0, index=df.index)
+        sig[ret_12m > 0] = 1
+        sig[ret_12m < 0] = -1
+        return sig
+
     if strategy == "momentum":
         sig = pd.Series(0, index=df.index)
         cross_up = (macd_line > macd_signal_line) & (
@@ -166,16 +184,30 @@ def run_backtest(
     trailing_stop_pct: float = TRAILING_STOP_PCT,
     fee_rate: float = FEE_RATE,
     slippage_rate: float = SLIPPAGE_RATE,
+    start_idx: int | None = None,
 ) -> dict[str, Any]:
     """Run a backtest over history records.
 
     Returns trades, equity curve, and performance stats. Mirrors the
     fill semantics of trading-simulator/backtester.py:simulate_trades but
     adds an equity curve, per-trade records and fees/slippage.
+
+    ``start_idx`` skips simulation of the first N bars (indicator warmup)
+    while still computing signals over the full series.
     """
     if strategy not in STRATEGIES:
         strategy = "momentum"
     df = history_to_frame(history)
+    if start_idx:
+        if start_idx >= len(df) - 30:
+            return {
+                "error": "Not enough data after warmup (need >= 30 bars)",
+                "trades": [],
+                "equity": [],
+                "stats": {},
+            }
+        df = df.iloc[start_idx:].reset_index(drop=False)
+        df = df.set_index(df.columns[0])
     if len(df) < 30:
         return {
             "error": "Not enough data (need >= 30 bars)",
@@ -342,6 +374,41 @@ def _compute_stats(
 
 def fee_note() -> str:
     return f"broker {FEE_RATE * 100:.2f}% + slippage {SLIPPAGE_RATE * 100:.2f}%"
+
+
+def walk_forward(
+    history: list[dict[str, Any]],
+    strategy: str,
+    initial_capital: float = 10_000_000.0,
+) -> dict[str, Any] | None:
+    """Rough out-of-sample check: backtest the first half (in-sample) and
+    the second half (out-of-sample, with a warmup overlap so indicators
+    are defined). Flags when a strategy only worked in-sample.
+
+    Fixed-rule strategies aren't tuned on this data, so this is an
+    underperformance guard, not a full walk-forward optimization harness.
+    Returns None when there isn't enough data to split meaningfully.
+    """
+    n = len(history)
+    half = n // 2
+    if half < WARMUP_BARS + 30 or n - half < 30:
+        return None
+    ins = run_backtest(history[:half], strategy, initial_capital)
+    oos = run_backtest(
+        history[half - WARMUP_BARS :], strategy, initial_capital, start_idx=WARMUP_BARS
+    )
+    is_stats, oos_stats = ins.get("stats") or {}, oos.get("stats") or {}
+    if "total_return_pct" not in is_stats or "total_return_pct" not in oos_stats:
+        return None
+    is_ret = round(_f(is_stats.get("total_return_pct")), 2)
+    oos_ret = round(_f(oos_stats.get("total_return_pct")), 2)
+    # Consistent = OOS didn't lose money while IS made it.
+    consistent = not (is_ret > 0 and oos_ret < 0)
+    return {
+        "is_return_pct": is_ret,
+        "oos_return_pct": oos_ret,
+        "consistent": consistent,
+    }
 
 
 def pattern_backtests(ticker: str, force: bool = False) -> dict[str, Any]:

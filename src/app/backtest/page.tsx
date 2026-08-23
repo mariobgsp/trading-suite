@@ -7,6 +7,7 @@ import { ChangeBadge, SectionHeader, StatCard } from "@/components/ui";
 import { SimpleLineChart } from "@/components/MarketChart";
 
 const STRATEGIES = [
+	{ id: "tsmom", label: "TSMOM (12-month)" },
 	{ id: "momentum", label: "Momentum (MACD + RSI)" },
 	{ id: "meanreversion", label: "Mean Reversion (Stoch + RSI)" },
 	{ id: "buyhold", label: "Buy & Hold" },
@@ -14,7 +15,7 @@ const STRATEGIES = [
 
 export default function BacktestPage() {
 	const [ticker, setTicker] = useState("BBCA");
-	const [strategy, setStrategy] = useState("momentum");
+	const [strategy, setStrategy] = useState("tsmom");
 	const [period, setPeriod] = useState("2y");
 	const [result, setResult] = useState<BacktestResult | null>(null);
 	const [loading, setLoading] = useState(false);
@@ -27,7 +28,10 @@ export default function BacktestPage() {
 			setResult(cached);
 			setError(null);
 			// background revalidate in case backend recomputed
-			void api.getCached<BacktestResult>(path).then((fresh) => setResult(fresh)).catch(()=>{});
+			void api
+				.getCached<BacktestResult>(path)
+				.then((fresh) => setResult(fresh))
+				.catch(() => {});
 			return;
 		}
 		setLoading(true);
@@ -47,9 +51,9 @@ export default function BacktestPage() {
 	return (
 		<Shell>
 			<SectionHeader
-				eyebrow="Momentum · Mean reversion · Buy & hold"
+				eyebrow="TSMOM · Momentum · Mean reversion · Buy & hold"
 				title="Backtest"
-				subtitle="Three strategies with 5% stop-loss, 10% trailing stop, and IDR-accurate fees — equity curves and per-trade logs."
+				subtitle="Fixed-rule strategies with 5% stop-loss, 10% trailing stop, IDR-accurate fees. Every run includes a first-half vs second-half out-of-sample check."
 			/>
 
 			{/* Controls */}
@@ -103,7 +107,11 @@ export default function BacktestPage() {
 				</div>
 			)}
 
-			{loading && <div className="border border-dashed border-[var(--line)] bg-[var(--panel-2)] p-4 font-mono text-xs text-[var(--text-faint)]">$ backtest {ticker} --strategy {strategy} | running…</div>}
+			{loading && (
+				<div className="border border-dashed border-[var(--line)] bg-[var(--panel-2)] p-4 font-mono text-xs text-[var(--text-faint)]">
+					$ backtest {ticker} --strategy {strategy} | running…
+				</div>
+			)}
 
 			{result?.error && (
 				<div className="panel mb-4 p-4 text-sm text-[var(--down)]">
@@ -137,6 +145,53 @@ export default function BacktestPage() {
 							sub={`${fmtIdr(10_000_000)} start`}
 						/>
 					</div>
+
+					{/* Out-of-sample guard */}
+					{result.validation && (
+						<div
+							className={`panel mb-6 flex flex-wrap items-center gap-x-6 gap-y-2 p-4 font-mono text-xs ${result.validation.consistent ? "" : "border-[var(--down)]/40"}`}
+						>
+							<span className="font-bold uppercase tracking-wider text-[var(--text-dim)]">
+								Out-of-sample check
+							</span>
+							<span className="text-[var(--text-faint)]">
+								1st half{" "}
+								<span
+									className={
+										result.validation.is_return_pct >= 0
+											? "text-[var(--up)]"
+											: "text-[var(--down)]"
+									}
+								>
+									{result.validation.is_return_pct.toFixed(2)}%
+								</span>
+							</span>
+							<span className="text-[var(--text-faint)]">
+								2nd half{" "}
+								<span
+									className={
+										result.validation.oos_return_pct >= 0
+											? "text-[var(--up)]"
+											: "text-[var(--down)]"
+									}
+								>
+									{result.validation.oos_return_pct.toFixed(2)}%
+								</span>
+							</span>
+							{result.validation.consistent ? (
+								<span className="text-[var(--up)]">consistent</span>
+							) : (
+								<span className="text-[var(--down)]">
+									profitable in-sample only — treat with caution
+								</span>
+							)}
+						</div>
+					)}
+					<p className="mb-4 text-[11px] leading-relaxed text-[var(--text-faint)]">
+						Note: academic evidence for 12-month momentum is strong globally but mixed
+						for IDX equities specifically — treat results as one input, not a
+						guarantee.
+					</p>
 
 					{/* Equity curve */}
 					<div className="panel mb-6 p-4">
@@ -182,19 +237,10 @@ export default function BacktestPage() {
 									</thead>
 									<tbody>
 										{result.trades.map((t, i) => (
-											<tr
-												key={i}
-												className="border-b border-[var(--border)]/50"
-											>
-												<td className="tabular py-2 font-mono text-xs">
-													{t.entry_date}
-												</td>
-												<td className="tabular py-2 font-mono text-xs">
-													{t.exit_date}
-												</td>
-												<td className="py-2 text-xs text-[var(--text-dim)]">
-													{t.trigger}
-												</td>
+											<tr key={i} className="border-b border-[var(--border)]/50">
+												<td className="tabular py-2 font-mono text-xs">{t.entry_date}</td>
+												<td className="tabular py-2 font-mono text-xs">{t.exit_date}</td>
+												<td className="py-2 text-xs text-[var(--text-dim)]">{t.trigger}</td>
 												<td className="tabular py-2 text-right font-mono text-xs">
 													{fmtNum(t.shares, 0)}
 												</td>
@@ -209,9 +255,7 @@ export default function BacktestPage() {
 												</td>
 												<td
 													className={`tabular py-2 text-right font-mono text-xs ${
-														t.pnl_idr >= 0
-															? "text-[var(--up)]"
-															: "text-[var(--down)]"
+														t.pnl_idr >= 0 ? "text-[var(--up)]" : "text-[var(--down)]"
 													}`}
 												>
 													{fmtNum(t.pnl_idr, 0)}
@@ -229,7 +273,10 @@ export default function BacktestPage() {
 			{!result && !loading && (
 				<div className="panel grid-texture p-8 font-mono text-xs leading-relaxed text-[var(--text-faint)]">
 					<div className="text-[var(--accent)]">$ backtest --help</div>
-					<div className="mt-2">Configure a ticker and strategy, then run. No load — terminal renders instantly.</div>
+					<div className="mt-2">
+						Configure a ticker and strategy, then run. No load — terminal renders
+						instantly.
+					</div>
 				</div>
 			)}
 		</Shell>

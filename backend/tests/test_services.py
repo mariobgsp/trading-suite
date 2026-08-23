@@ -51,6 +51,38 @@ def test_backtest_runs_and_returns_expected_shape():
     assert result["stats"]["total_trades"] >= 0
 
 
+def test_tsmom_runs_and_needs_warmup():
+    from app.backtest import TSMOM_LOOKBACK, WARMUP_BARS, run_backtest
+
+    history = _synthetic_history(n=WARMUP_BARS * 2 + 100)
+    result = run_backtest(history, strategy="tsmom", initial_capital=10_000_000)
+    assert "error" not in result or not result.get("error")
+    assert len(result["equity"]) > 0
+    # With warmup trimming, simulation covers only the tail of the series.
+    trimmed = run_backtest(
+        history, strategy="tsmom", initial_capital=10_000_000, start_idx=TSMOM_LOOKBACK + 10
+    )
+    assert len(trimmed["equity"]) == len(result["equity"]) - (TSMOM_LOOKBACK + 10)
+    # Too little data after warmup -> explicit error, not a crash.
+    short = run_backtest(
+        _synthetic_history(n=120), strategy="tsmom", initial_capital=10_000_000,
+        start_idx=100,
+    )
+    assert short.get("error")
+
+
+def test_walk_forward_shape():
+    from app.backtest import walk_forward
+
+    # Long enough to split; uptrend should be consistent.
+    v = walk_forward(_synthetic_history(n=800), "buyhold")
+    assert v is not None
+    assert set(v) == {"is_return_pct", "oos_return_pct", "consistent"}
+    assert isinstance(v["consistent"], bool)
+    # Too short to split -> None, no crash.
+    assert walk_forward(_synthetic_history(n=200), "buyhold") is None
+
+
 def test_indicators_bundle_shapes():
     from app.indicators import compute_indicators
 

@@ -2,7 +2,7 @@
 # One-shot launcher for the trading suite: backend (FastAPI) + frontend (Next.js).
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BACKEND="$ROOT/backend"
 
 echo "▶ Starting Trading Suite backend on http://localhost:8000 ..."

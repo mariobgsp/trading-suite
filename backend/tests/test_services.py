@@ -280,3 +280,110 @@ def test_sentiment_degraded_flag_on_empty_fetch():
     assert payload.get("degraded") is True
     # and the cache must not contain the empty payload
     assert cache_db.get("sentiment:news") is None
+
+
+# ─── Flow accuracy harness (signal-quality measurement) ────────────────
+
+
+def _monotonic_history(n: int, start: float, daily_growth: float) -> list[dict]:
+    """Strictly increasing price series. Sign of Close.diff() is always +1,
+    so a bar-direction flow column (cvd_bar or inst_flow) is also always +.
+    Forward 5-day return is always +. Hit rate should be exactly 1.0.
+    """
+    from datetime import date, timedelta
+
+    rows = []
+    d = date(2026, 1, 1)
+    price = start
+    for i in range(n):
+        o = price
+        c = price * (1 + daily_growth)
+        hi = max(o, c) * 1.001
+        lo = min(o, c) * 0.999
+        rows.append(
+            {
+                "date": (d + timedelta(days=i)).isoformat(),
+                "open": round(o, 2),
+                "high": round(hi, 2),
+                "low": round(lo, 2),
+                "close": round(c, 2),
+                "volume": int(1_000_000),
+            }
+        )
+        price = c
+    return rows
+
+
+def _populate_validator_columns(df):
+    """Run the validator's flow-column build so the frame has
+    inst_flow_ma (and the post-refactor cvd_bar / cvd_ma5) on it.
+
+    Mirrors the slice of analyze() that produces those columns; the rest
+    of analyze() (intent, score, radar) isn't needed for the harness.
+    """
+    import pandas as pd
+
+    from app.validator import BandarmologyAnalyzer
+
+    df = df.copy()
+    analyzer = BandarmologyAnalyzer()
+    df["vol_ma"] = df["Volume"].rolling(20).mean()
+    df["vwap"] = analyzer.calculate_vwap_rolling(df, 20)
+    df["nvi"] = analyzer.calculate_nvi(pd.Series(df["Close"]), pd.Series(df["Volume"]))
+    df["nvi_ma"] = df["nvi"].rolling(20).mean()
+    analyzer.calculate_advanced_metrics(df)
+    return df
+
+
+def test_flow_accuracy_monotonic_up_market_perfect():
+    """In a strictly rising market, every bar's flow sign matches every
+    future 5-day return sign → hit rate must be 1.0."""
+    from app.flow_accuracy import baseline_signal_accuracy  # pyright: ignore[reportMissingImports]
+
+    out = baseline_signal_accuracy(
+        _monotonic_history(120, 100.0, 0.005),
+        compute_flows=_populate_validator_columns,
+    )
+    assert "error" not in out, out
+    assert out["overall"]["n"] > 50
+    assert out["overall"]["hit_rate_pct"] == 100.0
+    assert out["overall"]["correct"] == out["overall"]["n"]
+
+
+def test_flow_accuracy_alternating_returns_low_hit_rate():
+    """An oscillating market (close ↑ then close ↓ alternating) should
+    produce a bar-direction flow signal that whipsaws; with horizon 5 the
+    5-day forward return is non-monotonic, so hit rate is not 1.0. Guards
+    against the trivial 'always returns 100' bug."""
+    from datetime import date, timedelta
+
+    from app.flow_accuracy import baseline_signal_accuracy  # pyright: ignore[reportMissingImports]
+
+    rows = []
+    d = date(2026, 1, 1)
+    price = 100.0
+    for i in range(120):
+        # strong oscillation: +2% then -2% alternating
+        drift = 0.02 if i % 2 == 0 else -0.02
+        o = price
+        c = price * (1 + drift)
+        hi = max(o, c) * 1.001
+        lo = min(o, c) * 0.999
+        rows.append(
+            {
+                "date": (d + timedelta(days=i)).isoformat(),
+                "open": round(o, 2),
+                "high": round(hi, 2),
+                "low": round(lo, 2),
+                "close": round(c, 2),
+                "volume": int(1_000_000),
+            }
+        )
+        price = c
+    out = baseline_signal_accuracy(
+        rows, compute_flows=_populate_validator_columns
+    )
+    assert "error" not in out, out
+    # Hit rate should be far from 100 — the strict guard is that it's NOT 100.
+    assert out["overall"]["hit_rate_pct"] < 100.0
+    assert out["overall"]["n"] > 50

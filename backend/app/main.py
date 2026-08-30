@@ -67,12 +67,64 @@ def _warm_bbca_cache() -> None:
     threading.Thread(target=_run, daemon=True).start()
 
 
+def _warm_stockbit_jwt() -> None:
+    """Ensure Stockbit JWT cached on startup (username/password → JWT). Survivable."""
+    import threading
+
+    def _run() -> None:
+        try:
+            from app.stockbit import load_jwt, stockbit_status
+
+            # Trigger auto-login via .env username/password if no valid JWT
+            jwt = load_jwt()
+            st = stockbit_status()
+            if jwt and st.get("available"):
+                logging.getLogger(__name__).info("Stockbit JWT ready: %s h left", st.get("hours_left"))
+            elif not st.get("available"):
+                logging.getLogger(__name__).info("Stockbit JWT not ready: %s (set STOCKBIT_USERNAME/PASSWORD or STOCKBIT_JWT_TOKEN in .env)", st.get("reason"))
+        except Exception as e:  # noqa: BLE001
+            logging.getLogger(__name__).warning("Stockbit warm failed: %s", e)
+
+    threading.Thread(target=_run, daemon=True, name="warm-stockbit").start()
+
+
+def _warm_universe_history() -> None:
+    """Background-warm the full universe's 2y history (parallel, deduped).
+
+    Makes the first screener scan of the 900+ universe hit cache instead of
+    yfinance. Runs once at startup; daily refresh handled by the same
+    warm_universe idempotence + hist TTL (12h)."""
+    import threading
+
+    def _run() -> None:
+        try:
+            from app.cache import prune, warm_universe
+            from app.screener import get_ticker_universe
+
+            # Cap the cache before growing it.
+            try:
+                prune(max_entries=5000, max_age_days=30)
+            except Exception as exc:  # noqa: BLE001
+                logging.getLogger(__name__).warning("prune failed: %s", exc)
+            try:
+                tickers = get_ticker_universe()[:1000]
+            except Exception as exc:  # noqa: BLE001
+                logging.getLogger(__name__).warning("universe warm fetch failed: %s", exc)
+                return
+            warm_universe(tickers, period="2y", interval="1d", workers=8)
+            logging.getLogger(__name__).info("universe history warm scheduled (%d tickers)", len(tickers))
+        except Exception as exc:  # noqa: BLE001
+            logging.getLogger(__name__).warning("universe warm init failed: %s", exc)
+
+    threading.Thread(target=_run, daemon=True, name="warm-universe").start()
+
+
 app = FastAPI(
     title="Trading Suite API",
     description="Merged IDX trading platform: backtester, screener, validator, "
     "portfolio, sentiment radar, regime filter.",
     version="0.1.0",
-    on_startup=[_warm_bbca_cache],
+    on_startup=[_warm_bbca_cache, _warm_stockbit_jwt, _warm_universe_history],
 )
 
 app.add_middleware(

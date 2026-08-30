@@ -23,7 +23,7 @@ const INDEX_SYMBOLS = ["^JKSE", "^JKLQ45"];
 export default function OverviewPage() {
 	const indices = usePolling<Quote[]>(
 		() => api.getCached<Quote[]>("/api/market/indices"),
-		30000,
+		45000,
 		"",
 		{ cacheKey: "/api/market/indices" },
 	);
@@ -33,7 +33,7 @@ export default function OverviewPage() {
 			api
 				.getCached<{ quotes: Record<string, Quote> }>(watchlistPath)
 				.then((r) => r.quotes),
-		15000,
+		60000,
 		watchlistPath,
 		{ cacheKey: watchlistPath },
 	);
@@ -74,17 +74,40 @@ export default function OverviewPage() {
 
 			{/* Indices strip — terminal: always rendered, never blocks */}
 			<div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3 rise-in font-mono">
-				{(indexQuotes.length ? indexQuotes : INDEX_SYMBOLS.map((s) => ({ symbol: s, name: s, price: null, change_percent: null, open: null, day_high: null, day_low: null } as unknown as Quote))).map((q) => (
+				{(indexQuotes.length
+					? indexQuotes
+					: INDEX_SYMBOLS.map(
+							(s) =>
+								({
+									// SAFETY: placeholder Quote for loading state — missing fields are null-checked before render
+									symbol: s,
+									name: s,
+									price: null,
+									change_percent: null,
+									open: null,
+									day_high: null,
+									day_low: null,
+								}) as unknown as Quote,
+						)
+				).map((q) => (
 					<StatCard
 						key={q.symbol}
 						label={q.name ?? q.symbol}
 						value={q.price != null ? fmtNum(q.price) : "—"}
-						tone={q.change_percent != null && q.change_percent >= 0 ? "up" : q.change_percent == null ? "default" : "down"}
+						tone={
+							q.change_percent != null && q.change_percent >= 0
+								? "up"
+								: q.change_percent == null
+									? "default"
+									: "down"
+						}
 						sub={
 							q.price != null ? (
 								<div className="flex items-center gap-2">
 									<ChangeBadge value={q.change_percent} />
-									<span className="text-[var(--text-faint)]">O {fmtNum(q.open)} · H {fmtNum(q.day_high)} · L {fmtNum(q.day_low)}</span>
+									<span className="text-[var(--text-faint)]">
+										O {fmtNum(q.open)} · H {fmtNum(q.day_high)} · L {fmtNum(q.day_low)}
+									</span>
 								</div>
 							) : (
 								<span className="text-[var(--text-ghost)]">$ loading…</span>
@@ -109,53 +132,53 @@ export default function OverviewPage() {
 						</Link>
 					</div>
 					<div className="overflow-x-auto">
-					<table className="w-full text-sm">
-						<thead>
-							<tr className="border-b border-[var(--border)] text-left font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--text-faint)]">
-								<th className="pb-3 font-semibold">Ticker</th>
-								<th className="pb-3 text-right font-semibold">Last</th>
-								<th className="pb-3 text-right font-semibold">Chg %</th>
-								<th className="pb-3 text-right font-semibold">Volume</th>
-								<th className="pb-3 text-right font-semibold">Day Range</th>
-							</tr>
-						</thead>
-						<tbody>
-							{WATCHLIST.map((t) => {
-								const q = watchlist.data?.[`${t}.JK`] ?? watchlist.data?.[t];
-								return (
-									<tr key={t} className="border-b border-[var(--border)]/50">
-										<td className="py-2">
-											<Link
-												href={`/markets?ticker=${t}`}
-												className="font-semibold text-[var(--accent)] hover:underline"
-											>
-												{t}
-											</Link>
-											<span className="ml-1 text-[10px] text-[var(--text-faint)]">
-												JK
-											</span>
-										</td>
-										<td className="tabular py-2 text-right font-mono">
-											{q ? (
-												fmtNum(q.price)
-											) : (
-												<span className="text-[var(--text-faint)]">…</span>
-											)}
-										</td>
-										<td className="py-2 text-right">
-											{q ? <ChangeBadge value={q.change_percent} /> : "…"}
-										</td>
-										<td className="tabular py-2 text-right font-mono text-xs text-[var(--text-dim)]">
-											{q?.volume ? fmtNum(q.volume, 0) : "…"}
-										</td>
-										<td className="tabular py-2 text-right font-mono text-xs text-[var(--text-dim)]">
-											{q ? `${fmtNum(q.day_low)} – ${fmtNum(q.day_high)}` : "…"}
-										</td>
-									</tr>
-								);
-							})}
-						</tbody>
-					</table>
+						<table className="w-full text-sm">
+							<thead>
+								<tr className="border-b border-[var(--border)] text-left font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--text-faint)]">
+									<th className="pb-3 font-semibold">Ticker</th>
+									<th className="pb-3 text-right font-semibold">Last</th>
+									<th className="pb-3 text-right font-semibold">Chg %</th>
+									<th className="pb-3 text-right font-semibold">Volume</th>
+									<th className="pb-3 text-right font-semibold">Day Range</th>
+								</tr>
+							</thead>
+							<tbody>
+								{WATCHLIST.map((t) => {
+									const q = watchlist.data?.[`${t}.JK`] ?? watchlist.data?.[t];
+									return (
+										<tr key={t} className="border-b border-[var(--border)]/50">
+											<td className="py-2">
+												<Link
+													href={`/markets?ticker=${t}`}
+													className="font-semibold text-[var(--accent)] hover:underline"
+												>
+													{t}
+												</Link>
+												<span className="ml-1 text-[10px] text-[var(--text-faint)]">
+													JK
+												</span>
+											</td>
+											<td className="tabular py-2 text-right font-mono">
+												{q ? (
+													fmtNum(q.price)
+												) : (
+													<span className="text-[var(--text-faint)]">…</span>
+												)}
+											</td>
+											<td className="py-2 text-right">
+												{q ? <ChangeBadge value={q.change_percent} /> : "…"}
+											</td>
+											<td className="tabular py-2 text-right font-mono text-xs text-[var(--text-dim)]">
+												{q?.volume ? fmtNum(q.volume, 0) : "…"}
+											</td>
+											<td className="tabular py-2 text-right font-mono text-xs text-[var(--text-dim)]">
+												{q ? `${fmtNum(q.day_low)} – ${fmtNum(q.day_high)}` : "…"}
+											</td>
+										</tr>
+									);
+								})}
+							</tbody>
+						</table>
 					</div>
 				</div>
 
@@ -169,17 +192,41 @@ export default function OverviewPage() {
 					</div>
 
 					<div className="panel p-5 rise-in-3 font-mono">
-						<h2 className="mb-3 font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--text-dim)]">$ regime --json</h2>
+						<h2 className="mb-3 font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--text-dim)]">
+							$ regime --json
+						</h2>
 						{regime.data?.error ? (
 							<p className="text-xs text-[var(--down)]">{regime.data.error}</p>
 						) : (
 							<div className="space-y-2 text-sm">
-								<Row k="Classification" v={regime.data?.regime ?? (regime.loading ? "…" : "—")} />
-								<Row k="Index Close" v={regime.data ? fmtNum(regime.data.close) : "—"} />
-								<Row k="SMA short / long" v={regime.data ? `${fmtNum(regime.data.sma_short)} / ${fmtNum(regime.data.sma_long)}` : "—"} />
-								<Row k="ATR(14)" v={regime.data ? fmtNum(regime.data.atr_value) : "—"} />
-								<Row k="Hurst" v={regime.data ? fmtNum(regime.data.hurst_value, 3) : "—"} />
-								<Row k="As of" v={regime.data?.as_of_date ?? (regime.loading ? "syncing…" : "—")} />
+								<Row
+									k="Classification"
+									v={regime.data?.regime ?? (regime.loading ? "…" : "—")}
+								/>
+								<Row
+									k="Index Close"
+									v={regime.data ? fmtNum(regime.data.close) : "—"}
+								/>
+								<Row
+									k="SMA short / long"
+									v={
+										regime.data
+											? `${fmtNum(regime.data.sma_short)} / ${fmtNum(regime.data.sma_long)}`
+											: "—"
+									}
+								/>
+								<Row
+									k="ATR(14)"
+									v={regime.data ? fmtNum(regime.data.atr_value) : "—"}
+								/>
+								<Row
+									k="Hurst"
+									v={regime.data ? fmtNum(regime.data.hurst_value, 3) : "—"}
+								/>
+								<Row
+									k="As of"
+									v={regime.data?.as_of_date ?? (regime.loading ? "syncing…" : "—")}
+								/>
 							</div>
 						)}
 					</div>
@@ -208,7 +255,15 @@ function RegimeChart() {
 		cacheKey: "/api/regime/history",
 	});
 	// terminal: never blocks with skeleton — show axes instantly
-	const points = (data.data?.history ?? []).map((h) => ({ date: h.date, value: h.close }));
-	if (!points.length) return <div className="flex h-[230px] items-center justify-center border border-dashed border-[var(--line)] bg-[var(--panel-2)] font-mono text-xs text-[var(--text-faint)]">$ plot --history | {data.loading ? "fetching…" : "no data"}</div>;
+	const points = (data.data?.history ?? []).map((h) => ({
+		date: h.date,
+		value: h.close,
+	}));
+	if (!points.length)
+		return (
+			<div className="flex h-[230px] items-center justify-center border border-dashed border-[var(--line)] bg-[var(--panel-2)] font-mono text-xs text-[var(--text-faint)]">
+				$ plot --history | {data.loading ? "fetching…" : "no data"}
+			</div>
+		);
 	return <SimpleLineChart data={points} height={230} />;
 }

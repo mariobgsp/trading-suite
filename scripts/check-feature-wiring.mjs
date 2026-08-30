@@ -24,12 +24,13 @@ const ok = (msg) => console.log(`ok   ${msg}`);
 // ── Parse apps.ts ──────────────────────────────────────────────────────
 const appsSrc = readFileSync(join(root, "src/lib/apps.ts"), "utf8");
 const appBlocks = appsSrc.split(/\{\s*\n\s*num:/).slice(1);
-const apps = appBlocks.map((block) => {
+let apps = appBlocks.map((block) => {
 	const href = block.match(/href:\s*"([^"]+)"/)?.[1];
 	const endpoints = [...block.matchAll(/"(\/api\/[^"]+)"/g)].map((m) => m[1]);
 	return { href, endpoints };
 });
-if (apps.length < 12)
+apps = apps.filter((a) => a.href);
+if (apps.length < 5)
 	fail(`apps.ts has only ${apps.length} apps — entries were removed`);
 
 // ── 1+2: page exists per app, references its endpoints ────────────────
@@ -78,29 +79,19 @@ ok("backend routes cover all declared app endpoints");
 // ── 4: feature markers that must not disappear ────────────────────────
 const MARKERS = [
 	[
-		"src/app/alerts/page.tsx",
-		["PREMIUM", "BREAKOUT", "spike_pagi", "full_ladder"],
-		"D-Signal groups",
+		"src/app/markets/page.tsx",
+		["ForeignBarsPanel", "showLpm", "showIntensity"],
+		"Markets foreign bars + LPM toggles",
 	],
 	[
-		"src/app/konglo/page.tsx",
-		["net_foreign_idr", "count_saham", "members"],
-		"Konglo map",
+		"src/app/profiler/page.tsx",
+		["ValidatorDetail", "StockbitBrokerPanel", "Bandarmology"],
+		"Profiler merged validator",
 	],
 	[
-		"src/app/ownership/page.tsx",
-		["controlling", "cum", "OwnerElsewhere", "shareholders"],
-		"Ownership register",
-	],
-	[
-		"src/app/rotation/page.tsx",
-		["valid_accumulation", "rank_delta", "movers"],
-		"Sector rotation",
-	],
-	[
-		"src/app/backtest/page.tsx",
-		["tsmom", "Out-of-sample check", "validation"],
-		"TSMOM + walk-forward",
+		"src/app/screener/page.tsx",
+		["SSE", "behavior", "vault"],
+		"Screener backend filter",
 	],
 ];
 for (const [file, needles, label] of MARKERS) {

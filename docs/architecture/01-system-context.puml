@@ -1,0 +1,48 @@
+@startuml 01-system-context
+' System Context — IDX Trading Suite (Lean Desk)
+skinparam backgroundColor white
+skinparam defaultFontName Inter, Helvetica, Arial
+skinparam defaultFontSize 13
+skinparam Shadowing false
+skinparam RoundCorner 12
+skinparam ActorStyle awesome
+skinparam PackageStyle rectangle
+skinparam defaultTextAlignment center
+skinparam ArrowColor #64748b
+skinparam ArrowThickness 1.4
+
+title System Context — Trading Suite (Lean Desk, 5 Tools)
+
+actor "Trader" as User #0ea5e9
+rectangle "Trading Suite" as Suite {
+  rectangle "Next.js 16 Desk\n(5 routes)" as Web #ffffff
+  rectangle "FastAPI Backend\n(:8000)" as API #f8fafc
+  database "SQLite cache.db\n(WAL)" as DB #f1f5f9
+}
+
+cloud "IDX Official API\nGetStockSummary / Remarks X" as IDX #e0f2fe
+cloud "yfinance (.JK / ^JKSE)\nquotes + history" as YF #fef9c3
+cloud "TradingView Scanner\nsector rotation" as TV #fce7f3
+cloud "Stockbit (optional)\nbroker attribution" as SB #dcfce7
+
+User --> Web : browser :3000
+Web --> API : REST + SSE\nNEXT_PUBLIC_API_URL
+API --> DB : SWR cache.serve()\nttl_for() / get_fresh
+API --> IDX : curl_cffi Chrome\none daily call
+API --> YF : yfinance history/quote\nper-ticker + batch
+API --> TV : POST scanner (~885 rows)
+API --> SB : JWT / marketdetectors\n(optional)
+
+note right of Web
+  5 routes only:
+  /overview  /markets(+foreign bars)
+  /screener  /profiler(merged validator)
+  /calculators
+  Suspended = backend-only filter
+end note
+
+note bottom of DB
+  File-based SQLite — no Redis/Postgres
+  Stale-while-revalidate + dedupe
+end note
+@enduml

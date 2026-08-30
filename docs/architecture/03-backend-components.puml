@@ -1,0 +1,58 @@
+@startuml
+skinparam backgroundColor white
+skinparam defaultFontName Inter, Helvetica, Arial
+skinparam defaultFontSize 11
+skinparam Shadowing false
+skinparam RoundCorner 8
+skinparam ArrowColor #64748b
+skinparam ArrowThickness 1.2
+
+title Backend Components - Routers > Services > Cache Seam
+
+rectangle "market.py\n/indices /quote /history /beta" as RMarket #ffffff
+rectangle "intel.py\n/foreign/* /suspended /stockbit/*" as RIntel #ffffff
+rectangle "screener.py\n/scan/stream /analyze" as RScreener #ffffff
+rectangle "validator.py\n/{ticker}" as RValidator #ffffff
+rectangle "analysis.py\n/entry/{ticker}" as RAnalysis #ffffff
+rectangle "regime.py\n/snapshot /history" as RRegime #ffffff
+
+rectangle "SMarket\nfetch_history / fetch_quote" as SMarket #f8fafc
+rectangle "SIdx\nforeign_flow_universe\nsuspended_stocks" as SIdx #f8fafc
+rectangle "SScreener\nrun_universe_scan" as SScreener #f8fafc
+rectangle "SValidator\nbandarmology" as SValidator #f8fafc
+rectangle "SStockbit\nbroker_summary" as SStockbit #f8fafc
+
+rectangle "cache.py\nTTL_POLICY serve dedupe" as CCache #f1f5f9
+database "cache.db WAL" as DB #e2e8f0
+rectangle "900+ tickers\nconfig/tickers.py" as Tickers #fefce8
+
+RMarket --> SMarket
+RIntel --> SIdx
+RIntel --> SStockbit
+RScreener --> SScreener
+RScreener --> SIdx : suspended_set
+RValidator --> SValidator
+RAnalysis --> SValidator
+RRegime --> SMarket
+
+SMarket --> CCache
+SIdx --> CCache
+SScreener --> CCache
+SValidator --> CCache
+SStockbit --> CCache
+
+CCache --> DB
+SScreener --> Tickers
+
+note right of CCache
+ Single policy longest-prefix
+ stale -> return + refresh
+ miss -> blocking fetch
+end note
+
+note bottom of SIdx
+ Whole-universe foreign flow
+ one IDX call ~963 rows
+ Suspended = Remarks ends X
+end note
+@enduml

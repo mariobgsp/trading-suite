@@ -45,5 +45,14 @@ __pycache__/
 .pi/
 .pi-tasks/*.log
 
+# plans — never commit generated plans/specs (live in vault)
+PLAN.md
+plans/
+docs/PLAN.md
+docs/SPEC.md
+specs/PLAN-*.md
+specs/SPEC-*.md
+specs/tech-architecture/
+
 # tanstack router temp files
 pilot/.tanstack/

@@ -1,0 +1,48 @@
+@startuml 05-sequence-screener
+skinparam backgroundColor white
+skinparam defaultFontName Inter, Helvetica, Arial
+skinparam defaultFontSize 11
+skinparam Shadowing false
+skinparam RoundCorner 6
+skinparam ArrowColor #475569
+skinparam ArrowThickness 1.2
+
+title Screener SSE — Suspended Filter Backend-Only
+
+actor User
+participant "ScreenerPage" as FE
+participant "FastAPI /scan/stream" as API
+participant "run_universe_scan" as Scan
+participant "suspended_stocks()" as Susp
+database "cache.db" as Cache
+participant "ThreadPool 8" as Pool
+participant "yfinance" as YF
+
+User -> FE : Start scan behavior limit 30
+FE -> API : EventSource GET /scan/stream
+API --> FE : event info total:30
+API -> Scan : run_universe_scan tickers[:30]
+activate Scan
+Scan -> Susp : suspended_stocks()
+Susp -> Cache : cache.serve intel:suspension
+Cache --> Susp : Remarks X rows
+Susp --> Scan : suspended_set
+note right of Scan
+ Backend-only no FE filter
+ Tagged == suspended X
+ Filter BEFORE ThreadPool
+end note
+Scan -> Pool : submit per ticker filtered
+loop as_completed
+  Pool -> YF : fetch_history 2y
+  YF --> Pool : history or error
+  Pool -> Pool : analyze scoring
+  Pool --> Scan : result
+  Scan --> API : SSE ticker event
+  API --> FE : event ticker
+end
+Scan --> API : results sorted
+API --> FE : event done
+FE --> User : table STRONG BUY first
+deactivate Scan
+@enduml

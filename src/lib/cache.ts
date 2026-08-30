@@ -15,20 +15,30 @@ type Entry<T = unknown> = {
 const mem = new Map<string, Entry>();
 const pending = new Map<string, Promise<unknown>>();
 
-// TTL defaults tuned to IDX volatility — see getDefaultTTL
+// TTL policy — lean: only survivors (overview, markets, screener, profiler, calculators)
+// Mirrors backend/app/cache.py:TTL_POLICY (longest-prefix match via resolveTTL)
+const TTL_TABLE: [string, number][] = [
+	["/api/market/indices", 45_000],
+	["/api/market/quotes", 60_000],
+	["/api/market/quote/", 60_000],
+	["/api/market/history/", 120_000],
+	["/api/intel/foreign", 3_600_000],
+	["/api/intel/stockbit", 43_200_000],
+	["/api/regime/snapshot", 60_000],
+	["/api/validator/", 60_000],
+	["/api/screener/", 30_000],
+	["/api/analysis/", 60_000],
+];
 function getDefaultTTL(path: string): number {
-	if (path.includes("/api/market/indices")) return 20_000;
-	if (path.includes("/api/market/quotes")) return 12_000;
-	if (path.includes("/api/market/quote/")) return 12_000;
-	if (path.includes("/api/market/history/")) return 60_000;
-	if (path.includes("/api/regime/snapshot")) return 45_000;
-	if (path.includes("/api/regime/history")) return 120_000;
-	if (path.includes("/api/portfolio/state")) return 15_000;
-	if (path.includes("/api/sentiment/news")) return 180_000;
-	if (path.includes("/api/validator/")) return 60_000;
-	if (path.includes("/api/screener/")) return 30_000;
-	if (path.includes("/api/backtest/")) return 120_000;
-	return 30_000;
+	let best = 30_000;
+	let bestLen = -1;
+	for (const [prefix, ttl] of TTL_TABLE) {
+		if (path.includes(prefix) && prefix.length > bestLen) {
+			best = ttl;
+			bestLen = prefix.length;
+		}
+	}
+	return best;
 }
 
 const SS_PREFIX = "ts:cache:";
@@ -60,7 +70,9 @@ function isFresh(entry: Entry): boolean {
 	return Date.now() - entry.fetchedAt < entry.ttl;
 }
 
-export function getFromCache<T>(key: string): { data: T; stale: boolean } | null {
+export function getFromCache<T>(
+	key: string,
+): { data: T; stale: boolean } | null {
 	let entry = mem.get(key) as Entry<T> | undefined;
 	if (!entry) {
 		const ss = ssGet<T>(key);
@@ -79,7 +91,9 @@ export function setCache<T>(key: string, data: T, ttl?: number) {
 		fetchedAt: Date.now(),
 		ttl: ttl ?? getDefaultTTL(key),
 	};
+	// SAFETY: mem stores untyped Entry; Entry<T> is safe to erase here (data is opaque)
 	mem.set(key, entry as unknown as Entry);
+	// SAFETY: same erasure for sessionStorage serialization — value is JSON-serialized
 	ssSet(key, entry as unknown as Entry);
 }
 
@@ -104,7 +118,11 @@ export function invalidateCache(prefix?: string) {
 					if (k?.startsWith(SS_PREFIX)) sessionStorage.removeItem(k);
 				}
 			}
-		} catch {}
+		} catch (e) {
+			if (e) {
+				/* storage unavailable — memory already cleared */
+			}
+		}
 		return;
 	}
 	// prefix match against the *path* part before any fallback suffix
@@ -120,7 +138,11 @@ export function invalidateCache(prefix?: string) {
 				}
 			}
 		}
-	} catch {}
+	} catch (e) {
+		if (e) {
+			/* storage unavailable — memory already cleared */
+		}
+	}
 }
 
 /**

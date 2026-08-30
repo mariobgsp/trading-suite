@@ -7,10 +7,9 @@ import { APPS, type AppMeta } from "@/lib/apps";
 const GROUP_LABELS: Record<AppMeta["group"], string> = {
 	market: "MARKET",
 	signals: "SIGNALS",
-	flow: "FLOW & INTEL",
 	desk: "DESK",
 };
-const GROUP_ORDER: AppMeta["group"][] = ["market", "signals", "flow", "desk"];
+const GROUP_ORDER: AppMeta["group"][] = ["market", "signals", "desk"];
 
 export default function Sidebar({ active }: { active: string }) {
 	return (

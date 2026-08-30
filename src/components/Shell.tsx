@@ -13,6 +13,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 	const active = pathname === "/" ? "/" : `/${pathname.split("/")[1]}`;
 	const [cmdOpen, setCmdOpen] = useState(false);
 	const [cmdQuery, setCmdQuery] = useState("");
+	const [clock, setClock] = useState<string | null>(null); // null = SSR, set on mount
 
 	// ⌘K / Ctrl+K — instant palette, no load
 	useEffect(() => {
@@ -27,18 +28,25 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 		return () => window.removeEventListener("keydown", onKey);
 	}, []);
 
-	// Eager BBCA warm — makes BBCA markets/overview instant even on first visit.
-	// Frontend cache (sessionStorage) + backend warm means second navigation is 0ms.
+	// Lean warm — only BBCA (markets/overview share it). No fan-out to 5 tickers × 4 periods.
 	useEffect(() => {
-		const popular = ["BBCA", "BBRI", "BMRI", "BBNI", "TLKM"];
-		for (const t of popular) {
-			api.prefetch(`/api/market/quote/${t}`);
-		}
-		for (const p of ["3mo", "6mo", "1y", "2y"]) {
-			api.prefetch(`/api/market/history/BBCA?period=${p}`);
-		}
+		api.prefetch("/api/market/quote/BBCA");
+		api.prefetch("/api/market/history/BBCA?period=1y");
 		api.prefetch("/api/market/indices");
 		api.prefetch("/api/regime/snapshot");
+	}, []);
+
+	// Title-bar clock — ticks every 30s. Initial render stays null to avoid hydration mismatch.
+	useEffect(() => {
+		const fmt = () =>
+			new Date().toLocaleTimeString("id-ID", {
+				hour: "2-digit",
+				minute: "2-digit",
+				hour12: false,
+				timeZone: "Asia/Jakarta",
+			});
+		const id = setInterval(() => setClock(fmt()), 30_000);
+		return () => clearInterval(id);
 	}, []);
 
 	const filtered = APPS.filter(
@@ -71,10 +79,19 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 						<span className="ml-3 font-mono text-[11px] tracking-wide text-[var(--text-faint)]">
 							trading-suite — zsh — 80×24
 						</span>
-						<span className="ml-auto hidden items-center gap-2 font-mono text-[10px] text-[var(--text-ghost)] sm:flex">
-							<span className="hidden sm:inline">⌘K palette</span>
-							<span className="h-1.5 w-1.5 rounded-full bg-[var(--up)]" />
-							online
+						<span className="ml-auto hidden items-center gap-3 font-mono text-[10px] text-[var(--text-ghost)] sm:flex">
+							<span className="status-pill">
+								<span className="status-dot live" />
+								<span>online</span>
+							</span>
+							{clock && (
+								<span
+									className="hidden md:inline text-[var(--text-faint)]"
+									suppressHydrationWarning
+								>
+									{clock} WIB
+								</span>
+							)}
 						</span>
 					</div>
 					{/* prompt bar — instant, no API */}

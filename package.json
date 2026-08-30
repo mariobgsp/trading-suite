@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     	"lint": "eslint",
-		"test": "node scripts/check-feature-wiring.mjs && cd backend && .venv/bin/python -m pytest tests -q"
+		"test": "node --experimental-strip-types --test src/lib/cache.test.ts src/lib/api/format.test.ts src/lib/api/transport.test.ts && node scripts/check-feature-wiring.mjs && cd backend && .venv/bin/python -m pytest tests -q"
   },
   "dependencies": {
     "lightweight-charts": "^5.2.0",

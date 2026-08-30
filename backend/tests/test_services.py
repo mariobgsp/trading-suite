@@ -177,7 +177,7 @@ def test_normalize_ticker_never_munges_us_symbols():
 
 def test_fifo_engine_rejects_phantom_sell():
     """Regression: SELL without a matching BUY lot must raise, not book fake P&L."""
-    from app.services.fifo_engine import FIFOEngine
+    from app._fifo import FIFOEngine  # pyright: ignore[reportMissingImports]
 
     engine = FIFOEngine(live_forex=16300.0)
     hist_forex: dict[str, float] = {}
@@ -217,7 +217,7 @@ def test_fifo_engine_rejects_phantom_sell():
 
 def test_fifo_engine_partial_sell_then_remaining():
     """Partial SELL within holdings works; oversell of the remainder still raises."""
-    from app.services.fifo_engine import FIFOEngine
+    from app._fifo import FIFOEngine  # pyright: ignore[reportMissingImports]
 
     engine = FIFOEngine(live_forex=16300.0)
     hist: dict[str, float] = {}

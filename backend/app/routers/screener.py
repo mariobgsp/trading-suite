@@ -56,7 +56,7 @@ async def squeeze(ticker: str, force: bool = False) -> dict[str, Any]:
 
 @router.get("/scan")
 async def scan(
-    mode: str = Query("behavior", description="behavior | squeeze | vault"),
+    mode: str = Query("behavior", description="behavior | squeeze | vault | bull_div"),
     limit: int = Query(30, ge=1, le=900),
     force: bool = Query(False),
 ) -> dict[str, Any]:
@@ -90,7 +90,7 @@ async def vault(ticker: str, force: bool = False) -> dict[str, Any]:
 
 @router.get("/scan/stream")
 async def scan_stream(
-    mode: str = Query("behavior", description="behavior | squeeze | vault"),
+    mode: str = Query("behavior", description="behavior | squeeze | vault | bull_div"),
     limit: int = Query(30, ge=1, le=900),
     force: bool = Query(False),
 ) -> StreamingResponse:

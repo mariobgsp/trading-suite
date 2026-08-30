@@ -127,6 +127,24 @@ def clear() -> int:
         return 0
 
 
+def prune(max_entries: int = 5000, max_age_days: int = 30) -> int:
+    """Cap the cache: drop entries older than max_age_days, then the oldest
+    beyond max_entries. Returns number of rows deleted."""
+    try:
+        cutoff = _now() - max_age_days * 86400
+        cur = _get_conn().execute("DELETE FROM kv_cache WHERE fetched_at < ?", (cutoff,))
+        _get_conn().commit()
+        # keep only the newest max_entries (by fetched_at) after age-cull
+        cur = _get_conn().execute(
+            "DELETE FROM kv_cache WHERE key NOT IN (SELECT key FROM kv_cache ORDER BY fetched_at DESC LIMIT ?)",
+            (max_entries,),
+        )
+        _get_conn().commit()
+        return cur.rowcount
+    except (sqlite3.Error, ValueError, TypeError):
+        return 0
+
+
 def stats() -> dict[str, Any]:
     try:
         row = (

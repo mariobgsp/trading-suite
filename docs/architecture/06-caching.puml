@@ -1,0 +1,40 @@
+@startuml
+skinparam backgroundColor white
+skinparam defaultFontName Inter, Helvetica, Arial
+skinparam defaultFontSize 11
+skinparam Shadowing false
+skinparam RoundCorner 8
+skinparam ArrowColor #475569
+skinparam ArrowThickness 1.2
+
+title Caching - Frontend + Backend SWR
+
+rectangle "Browser :3000" as Browser
+rectangle "Mem + sessionStorage\n400k cap" as Mem #ffffff
+rectangle "usePolling" as Poll #f8fafc
+rectangle "TTL_TABLE\n60s/3600s lean" as FPolicy #f1f5f9
+rectangle "FastAPI :8000" as Backend
+rectangle "cache.serve\nttl_for + dedupe" as Serve #ffffff
+rectangle "TTL_POLICY" as BPolicy #f8fafc
+database "cache.db WAL" as DB #e2e8f0
+cloud "yfinance" as YF #fef9c3
+cloud "IDX" as IDX #e0f2fe
+
+Poll --> Mem : getFromCache
+Mem --> Serve : GET /api/*
+Serve --> BPolicy : ttl_for
+BPolicy --> DB : get_fresh?
+DB --> Serve : hit / stale + refresh / miss
+Serve --> YF : on miss
+Serve --> IDX : on miss
+YF --> DB : set
+IDX --> DB : set
+Serve --> Mem : json
+Mem --> Mem : setCache + ss
+
+note bottom of DB
+ /backend/data/cache.db
+ prune 5k / 30d
+ stale-while-revalidate
+end note
+@enduml

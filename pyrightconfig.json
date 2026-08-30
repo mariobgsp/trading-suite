@@ -3,7 +3,7 @@
   "venv": ".venv",
   "include": ["backend"],
   "exclude": ["node_modules", "src", "backend/data", "backend/logs", "backend/.venv"],
-  "ignore": ["backend/app/services", "backend/core", "backend/config"],
+  "ignore": ["backend/app/services", "backend/app/_fifo.py", "backend/core", "backend/config"],
   "executionEnvironments": [
     {
       "root": "backend",

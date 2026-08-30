@@ -13,7 +13,7 @@ from typing import Any
 from app import db
 from app.market import fetch_history
 
-CACHE_TTL = 43200  # 12h
+CACHE_TTL = 43200  # 12h — keep local; cache.ttl_for("beta:*") mirrors this
 
 
 def _log_returns(prices: list[float]) -> list[float]:
@@ -67,12 +67,13 @@ def _to_float(val: Any) -> float | None:
 
 
 def beta_correlation(ticker: str, force: bool = False) -> dict[str, Any]:
-    """Beta/rho/excess-return vs ^JKSE over 3M/6M/1Y."""
+    """Beta/rho/excess-return vs ^JKSE over 3M/6M/1Y — 12h TTL."""
     cache_key = f"beta:{ticker}"
     if not force:
         cached = db.get_fresh(cache_key, CACHE_TTL)
         if cached is not None:
             return cached
+    # ponytail: cache.serve seam available for future SWR here; direct get_fresh/set kept — beta is recomputed not fetched upstream
 
     idx = fetch_history("^JKSE", period="1y", interval="1d")
     stock = fetch_history(ticker, period="1y", interval="1d")

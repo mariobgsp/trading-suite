@@ -131,7 +131,7 @@ def _scan_one(ticker: str) -> dict[str, Any] | None:
     breakout = bool(high20 > 0 and close >= high20 * 0.999)
     last_vol = _to_float(volumes.iloc[-1]) or 0.0
     premium = bool(
-        rsi is not None and rsi < 40 and close > vwap and vol_ma20 > 0 and last_vol > 1.5 * vol_ma20
+        rsi is not None and rsi < 45 and close > vwap * 0.998 and vol_ma20 > 0 and last_vol > 1.2 * vol_ma20
     )
     spike_pagi = bool(vol_ma20 > 0 and last_vol >= 2 * vol_ma20 and change_pct > 0)
 

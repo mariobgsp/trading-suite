@@ -16,6 +16,8 @@ import json
 import os
 import urllib.request
 
+import pytest
+
 BASE = os.environ.get("TS_API_BASE", "http://localhost:8000")
 
 
@@ -41,7 +43,7 @@ def _require(cond: bool, msg: str) -> None:
 
 def test_alerts_contract():
     if not _server_up():
-        raise SystemExit("backend not running on " + BASE)
+        pytest.skip(f"backend not running on {BASE}")
     d = _get("/api/alerts?limit=50")
     _require(
         {"count", "scanned", "failed", "available", "counts", "items"} <= set(d),
@@ -77,7 +79,7 @@ def test_alerts_contract():
 
 def test_konglo_contract():
     if not _server_up():
-        raise SystemExit("backend not running on " + BASE)
+        pytest.skip(f"backend not running on {BASE}")
     d = _get("/api/intel/konglo")
     _require(
         {"available", "groups_counted", "tickers_mapped", "groups"} <= set(d),
@@ -103,7 +105,7 @@ def test_konglo_contract():
 
 def test_rotation_contract():
     if not _server_up():
-        raise SystemExit("backend not running on " + BASE)
+        pytest.skip(f"backend not running on {BASE}")
     d = _get("/api/intel/rotation?days=20")
     _require({"days_archived", "sectors"} <= set(d), "rotation missing keys")
     for s in d["sectors"][:5]:
@@ -143,7 +145,7 @@ def test_rotation_contract():
 
 def test_ownership_contract():
     if not _server_up():
-        raise SystemExit("backend not running on " + BASE)
+        pytest.skip(f"backend not running on {BASE}")
     d = _get("/api/intel/ownership/BBCA")
     _require(d.get("available") is not False, "ownership BBCA marked unavailable")
     _require("shareholders" in d, "ownership missing shareholders list")
@@ -169,14 +171,14 @@ def test_ownership_contract():
 
 def test_backtest_strategies_include_tsmom():
     if not _server_up():
-        raise SystemExit("backend not running on " + BASE)
+        pytest.skip(f"backend not running on {BASE}")
     d = _get("/api/backtest/strategies")
     _require("tsmom" in d["strategies"], "tsmom strategy removed")
 
 
 def test_backtest_result_shape_and_validation():
     if not _server_up():
-        raise SystemExit("backend not running on " + BASE)
+        pytest.skip(f"backend not running on {BASE}")
     d = _get("/api/backtest/BBCA?strategy=buyhold&period=6mo")
     _require(
         {"trades", "equity", "stats", "validation"} <= set(d),

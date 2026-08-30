@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 import numpy as np
@@ -336,20 +337,37 @@ def run_universe_scan(
     max_tickers: int | None = None,
     ma_squeeze: bool = False,
     mode: str = "behavior",
+    excluded: set[str] | None = None,
 ) -> dict[str, Any]:
     """Scan the universe with throttled yfinance calls.
 
     `on_ticker` is invoked after each ticker completes (SSE progress).
     Returns {"results": [...], "errors": [...], "scanned": n} — failing
     tickers are reported, never silently dropped.
-    mode: "behavior" | "squeeze" | "vault" (vault = NYAHAM MA-positioning)
+    mode: "behavior" | "squeeze" | "vault" | "stealth" | "bull_div" (vault = NYAHAM MA-positioning, bull_div = price vs RSI bullish divergence)
     """
     if max_tickers:
         tickers = tickers[:max_tickers]
     results: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
 
-    for i, ticker in enumerate(tickers):
+    # Suspended / special-monitoring names must not be scored — yfinance keeps
+    # stale history for them, making them look scannable. Reuse the same IDX
+    # Remarks-X signal as /api/intel/suspended; skip their fetch entirely.
+    # `excluded` override is for tests (inject a fake suspended set).
+    if excluded is not None:
+        suspended_set: set[str] = {s.upper() for s in excluded}
+    else:
+        suspended_set = set()
+        try:
+            from app.idx import suspended_stocks
+
+            susp = suspended_stocks(force=False)
+            suspended_set = {str(r.get("ticker")).upper() for r in susp.get("rows", [])}
+        except Exception:  # noqa: BLE001 — filter is best-effort, never break the scan
+            suspended_set = set()
+
+    def _scan_one(i: int, ticker: str) -> dict[str, Any]:
         try:
             history = fetch_history(ticker, period="2y", interval="1d")
             if not history:
@@ -359,12 +377,12 @@ def run_universe_scan(
                 res = vault_ma_score(history, ticker, avg_price)
             elif ma_squeeze or mode == "squeeze":
                 res = ma_squeeze_score(history, ticker, avg_price)
+            elif mode == "bull_div":
+                res = bull_divergence_scan(history, ticker, avg_price)
             else:
                 res = analyze_single(history, ticker, avg_price)
             res["rank"] = i + 1
-            results.append(res)
-            if on_ticker:
-                on_ticker({**res, "progress": i + 1, "total": len(tickers)})
+            return res
         except (
             ValueError,
             ConnectionError,
@@ -373,18 +391,25 @@ def run_universe_scan(
             AttributeError,
             IndexError,
         ) as exc:
-            # a failing ticker must not abort the scan, but it must not
-            # vanish silently either
-            failures.append({"ticker": ticker, "error": str(exc)[:120]})
+            return {"ticker": ticker, "error": str(exc)[:120]}
+
+    # Parallel fetch+compute (cache-deduped via fetch_history SWR); results
+    # stream per-ticker as each completes so SSE progress still ticks live.
+    tickers = [t for t in tickers if t.upper() not in suspended_set]
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futs = {pool.submit(_scan_one, i, t): (i, t) for i, t in enumerate(tickers)}
+        for fut in as_completed(futs):
+            i, ticker = futs[fut]
+            try:
+                res = fut.result()
+            except Exception as exc:  # noqa: BLE001 — never abort the scan
+                res = {"ticker": ticker, "error": str(exc)[:120]}
+            if "error" in res:
+                failures.append({"ticker": ticker, "error": res["error"]})
+            else:
+                results.append(res)
             if on_ticker:
-                on_ticker(
-                    {
-                        "ticker": ticker,
-                        "error": str(exc)[:120],
-                        "progress": i + 1,
-                        "total": len(tickers),
-                    }
-                )
+                on_ticker({**res, "progress": i + 1, "total": len(tickers)})
 
     results.sort(key=lambda r: r.get("score", 0), reverse=True)
     return {"results": results, "errors": failures, "scanned": len(results) + len(failures)}
@@ -578,4 +603,72 @@ def vault_signal(
         "pivot": round(p, 2),
         "in_buy_zone": in_zone,
         "bull_cross": bool(bull_cross),
+    }
+
+
+# ─── Bull divergence: price lower low + RSI higher low ──────────────────────
+# ponytail: tiny divergence check, no need for full swing engine
+def bull_divergence_scan(
+    history: list[dict[str, Any]],
+    ticker: str,
+    avg_price_idr: float | None = None,  # noqa: ARG001 — parity with other scanners
+) -> dict[str, Any]:
+    """Detect bullish divergence: price makes lower low, RSI makes higher low.
+
+    Uses last 40 bars split 20/20. Divergence when late_price < early_price
+    and late_rsi > early_rsi. Score = RSI_gain + price_drop contribution.
+    """
+    df = history_to_frame(history)
+    if len(df) < 40:
+        return {"ticker": ticker, "eligible": False, "reason": "not enough data"}
+    df = _compute_columns(df)
+    # need at least 40 with valid RSI
+    window = df.tail(40)
+    if window["RSI"].dropna().empty:
+        return {"ticker": ticker, "eligible": False, "reason": "no RSI"}
+    early = window.iloc[:20]
+    late = window.iloc[20:]
+    # find lowest close in each half and its RSI
+    try:
+        e_idx = early["Close"].idxmin()
+        l_idx = late["Close"].idxmin()
+        e_price = _safe_float(early.loc[e_idx, "Close"]) or 0.0
+        l_price = _safe_float(late.loc[l_idx, "Close"]) or 0.0
+        e_rsi = _safe_float(early.loc[e_idx, "RSI"]) or 50.0
+        l_rsi = _safe_float(late.loc[l_idx, "RSI"]) or 50.0
+    except Exception:  # noqa: BLE001
+        return {"ticker": ticker, "eligible": False, "reason": "calc failed"}
+    price_lower = l_price < e_price * 0.995  # at least 0.5% lower low
+    rsi_higher = l_rsi > e_rsi + 1.0  # at least 1 pt higher
+    divergence = bool(price_lower and rsi_higher)
+    # filter: RSI should be oversold-ish in early low to be meaningful
+    oversold_context = e_rsi < 40 and l_rsi < 50
+    score = 0.0
+    if divergence:
+        rsi_gain = l_rsi - e_rsi
+        price_drop = (e_price - l_price) / e_price * 100 if e_price else 0
+        # weight RSI gain more; price drop adds conviction
+        score = rsi_gain * 2 + min(price_drop * 3, 15)
+        if oversold_context:
+            score += 10
+        score = max(0, min(100, score))
+    close = _safe_float(df.iloc[-1]["Close"]) or 0.0
+    return {
+        "ticker": ticker,
+        "eligible": divergence and oversold_context if divergence else divergence,
+        "divergence": divergence,
+        "score": round(score, 1),
+        "close": round(close, 2),
+        "early_price": round(e_price, 2),
+        "late_price": round(l_price, 2),
+        "early_rsi": round(e_rsi, 1),
+        "late_rsi": round(l_rsi, 1),
+        "price_change_pct": round((l_price - e_price) / e_price * 100, 2) if e_price else None,
+        "rsi_gain": round(l_rsi - e_rsi, 1),
+        "oversold_context": oversold_context,
+        "checks": [
+            f"price {e_price:.2f}→{l_price:.2f} {'lower low' if price_lower else 'no lower low'}",
+            f"RSI {e_rsi:.1f}→{l_rsi:.1f} {'higher low' if rsi_higher else 'no higher low'}",
+            "oversold context" if oversold_context else "not oversold",
+        ],
     }

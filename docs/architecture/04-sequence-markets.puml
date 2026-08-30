@@ -1,0 +1,59 @@
+@startuml 04-sequence-markets
+skinparam backgroundColor white
+skinparam defaultFontName Inter, Helvetica, Arial
+skinparam defaultFontSize 11
+skinparam Shadowing false
+skinparam RoundCorner 6
+skinparam ArrowColor #475569
+skinparam ArrowThickness 1.2
+
+title Markets Page — Candles + Foreign Bars
+
+actor User
+participant "MarketsPage" as FE
+participant "cache.ts" as FCache
+participant "MarketChart" as Chart
+participant "ForeignBarsPanel" as FB
+participant "FastAPI" as API
+participant "cache.py + DB" as BCache
+participant "Upstream" as Up
+
+User -> FE : open /markets?ticker=BBCA
+activate FE
+FE -> FCache : getFromCache(history/BBCA)
+alt fresh
+  FCache --> FE : return 0ms
+  FE -> Chart : render candles + SMA
+else stale SWR
+  FCache --> FE : stale + background fetch
+  FE -> Chart : render stale instantly
+  FCache -> API : GET /api/market/history/BBCA
+  API -> BCache : cache.serve
+  BCache -> Up : yfinance on miss
+  Up --> BCache : OHLCV
+  BCache --> API : json
+  API --> FCache : setCache
+  FE -> Chart : rerender fresh
+else miss
+  FE -> API : blocking fetch
+end
+
+FE -> Chart : toggle LPM / Intensity
+note right of Chart
+ Fix: teardown before early-return
+ disabled -> removeSeries
+end note
+
+User -> FB : Enable Foreign Flow
+FB -> FCache : get /api/intel/foreign/universe
+alt disabled
+  FB --> User : enable to load
+else enabled
+  FCache -> API : GET /api/intel/foreign/universe
+  API -> BCache : cache.serve
+  BCache -> Up : IDX GetStockSummary ~963 rows
+  API --> FCache : rows
+  FB --> User : top10 Buy + Sell bars
+end
+deactivate FE
+@enduml

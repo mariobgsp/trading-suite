@@ -34,19 +34,20 @@ from typing import Any
 from curl_cffi import requests as cf_requests
 from curl_cffi.requests import Session as CFSession
 
-from app import db
+from app import cache, db
 
 logger = logging.getLogger(__name__)
 
 IDX_BASE = "https://www.idx.co.id"
 IDX_API = f"{IDX_BASE}/primary"
 
-# Cache TTLs (seconds) — EOD data, so a daily-ish refresh is plenty.
-FOREIGN_TTL = 3600
-OWNERSHIP_TTL = 86400  # shareholder structure changes rarely
+# TTL policy — delegated to app.cache.TTL_POLICY (single source).
+# Keep names for greppability / backwards compat.
+FOREIGN_TTL = cache.ttl_for("intel:foreign:__probe__")
+OWNERSHIP_TTL = cache.ttl_for("intel:ownership:__probe__")
 OWNERSHIP_HIST_MAX = 24  # keep ~2 years of monthly-ish snapshots per ticker
-ANNOUNCEMENT_TTL = 600
-BROKER_TTL = 3600
+ANNOUNCEMENT_TTL = cache.ttl_for("intel:announcements:__probe__")
+BROKER_TTL = cache.ttl_for("intel:broker:__probe__")
 
 _UA = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
@@ -297,249 +298,262 @@ def _fetch_daily_summary(date: str | None = None) -> list[dict[str, Any]]:
 
 
 def foreign_flow(ticker: str, force: bool = False) -> dict[str, Any]:
-    """Net foreign flow for one ticker from the official daily summary."""
+    """Net foreign flow for one ticker — via Cache seam (stale-while-revalidate)."""
     ticker = ticker.upper()
     cache_key = f"intel:foreign:{ticker}"
-    if not force:
-        cached = db.get_fresh(cache_key, FOREIGN_TTL)
-        if cached is not None:
-            return cached
-    try:
+
+    def _fetcher() -> dict[str, Any] | None:
         rows = _fetch_daily_summary()
+        row = next((r for r in rows if str(r.get("StockCode", "")).upper() == ticker), None)
+        if row is None:
+            return None  # don't cache missing-ticker error
+        fb = _to_float(row.get("ForeignBuy")) or 0.0
+        fs = _to_float(row.get("ForeignSell")) or 0.0
+        close = _to_float(row.get("Close")) or 0.0
+        volume = _to_float(row.get("Volume")) or 0.0
+        return {
+            "ticker": ticker,
+            "available": True,
+            "as_of": row.get("Date") or datetime.now(UTC).isoformat(),
+            "price": close,
+            "net_foreign_lots": round((fb - fs) / 100, 2),
+            "net_foreign_idr": round((fb - fs) * close),
+            "foreign_buy_lots": round(fb / 100, 2),
+            "foreign_sell_lots": round(fs / 100, 2),
+            "foreign_buy_idr": round(fb * close),
+            "foreign_sell_idr": round(fs * close),
+            "total_volume": volume,
+            "broker_count": 0,
+            "rows": [
+                {
+                    "broker": "IDX",
+                    "side": "buy",
+                    "type": "Asing",
+                    "lots": round(fb / 100, 2),
+                    "value_idr": round(fb * close),
+                    "avg_price": close,
+                },
+                {
+                    "broker": "IDX",
+                    "side": "sell",
+                    "type": "Asing",
+                    "lots": round(fs / 100, 2),
+                    "value_idr": round(fs * close),
+                    "avg_price": close,
+                },
+            ],
+        }
+
+    try:
+        result = cache.serve(cache_key, _fetcher, force=force)
     except Exception as exc:  # noqa: BLE001
         logger.warning("foreign flow %s failed: %s", ticker, exc)
         stale = db.get(cache_key)
         if stale is not None:
             return stale
         return {"ticker": ticker, "available": True, "error": "IDX upstream unavailable"}
-    row = next((r for r in rows if str(r.get("StockCode", "")).upper() == ticker), None)
-    if row is None:
-        return {
-            "ticker": ticker,
-            "available": True,
-            "error": f"{ticker} not in today's IDX summary",
-        }
-    fb = _to_float(row.get("ForeignBuy")) or 0.0
-    fs = _to_float(row.get("ForeignSell")) or 0.0
-    close = _to_float(row.get("Close")) or 0.0
-    volume = _to_float(row.get("Volume")) or 0.0
-    payload = {
-        "ticker": ticker,
-        "available": True,
-        "as_of": row.get("Date") or datetime.now(UTC).isoformat(),
-        "price": close,
-        "net_foreign_lots": round((fb - fs) / 100, 2),
-        "net_foreign_idr": round((fb - fs) * close),
-        "foreign_buy_lots": round(fb / 100, 2),
-        "foreign_sell_lots": round(fs / 100, 2),
-        "foreign_buy_idr": round(fb * close),
-        "foreign_sell_idr": round(fs * close),
-        "total_volume": volume,
-        "broker_count": 0,
-        "rows": [
-            {
-                "broker": "IDX",
-                "side": "buy",
-                "type": "Asing",
-                "lots": round(fb / 100, 2),
-                "value_idr": round(fb * close),
-                "avg_price": close,
-            },
-            {
-                "broker": "IDX",
-                "side": "sell",
-                "type": "Asing",
-                "lots": round(fs / 100, 2),
-                "value_idr": round(fs * close),
-                "avg_price": close,
-            },
-        ],
-    }
-    db.set(cache_key, payload)
-    return payload
+    if result is None:
+        stale = db.get(cache_key)
+        if stale is not None:
+            return stale
+        return {"ticker": ticker, "available": True, "error": f"{ticker} not in today's IDX summary"}
+    return result
 
 
 def foreign_flow_universe(force: bool = False) -> dict[str, Any]:
-    """Net foreign flow for the whole IDX universe — ONE IDX call."""
+    """Net foreign flow for the whole IDX universe — ONE IDX call, via Cache seam."""
     cache_key = "intel:foreign:universe"
-    if not force:
-        cached = db.get_fresh(cache_key, FOREIGN_TTL)
-        if cached is not None:
-            return cached
-    try:
+
+    def _fetcher() -> dict[str, Any] | None:
         rows = _fetch_daily_summary()
+        # IDX's summary has no sector; join TradingView's universe for sector labels.
+        sector_by_ticker: dict[str, str] = {}
+        try:
+            from app.movers import fetch_universe
+
+            for u in fetch_universe():
+                sector_by_ticker[u["symbol"]] = str(u.get("sector") or "—")
+        except Exception as exc:  # noqa: BLE001 - sector enrichment is best-effort
+            logger.warning("sector enrichment skipped: %s", exc)
+        out: list[dict[str, Any]] = []
+        for r in rows:
+            fb = _to_float(r.get("ForeignBuy")) or 0.0
+            fs = _to_float(r.get("ForeignSell")) or 0.0
+            close = _to_float(r.get("Close")) or 0.0
+            prev = _to_float(r.get("Previous")) or 0.0
+            if close <= 0:
+                continue
+            symbol = str(r.get("StockCode", "")).upper()
+            change_pct = ((close - prev) / prev * 100) if prev > 0 else None
+            out.append(
+                {
+                    "ticker": symbol,
+                    "name": str(r.get("StockName", "")),
+                    "sector": sector_by_ticker.get(symbol, "—"),
+                    "price": round(close, 2),
+                    "change_percent": round(change_pct, 2) if change_pct is not None else None,
+                    "net_foreign_idr": round((fb - fs) * close),
+                    "net_foreign_lots": round((fb - fs) / 100, 2),
+                    "foreign_buy_lots": round(fb / 100, 2),
+                    "foreign_sell_lots": round(fs / 100, 2),
+                    "volume": _to_float(r.get("Volume")) or 0.0,
+                }
+            )
+        out.sort(key=lambda x: x["net_foreign_idr"], reverse=True)
+        if not out:
+            return None
+        return {
+            "available": True,
+            "count": len(out),
+            "as_of": datetime.now(UTC).isoformat(),
+            "rows": out,
+        }
+
+    try:
+        result = cache.serve(cache_key, _fetcher, force=force)
     except Exception as exc:  # noqa: BLE001
         logger.warning("foreign universe failed: %s", exc)
         stale = db.get(cache_key)
         if stale is not None:
             return stale
         return {"available": True, "error": str(exc)[:200], "rows": []}
-    # IDX's summary has no sector; join TradingView's universe for sector labels.
-    sector_by_ticker: dict[str, str] = {}
-    try:
-        from app.movers import fetch_universe
-
-        for u in fetch_universe():
-            sector_by_ticker[u["symbol"]] = str(u.get("sector") or "—")
-    except Exception as exc:  # noqa: BLE001 - sector enrichment is best-effort
-        logger.warning("sector enrichment skipped: %s", exc)
-    out: list[dict[str, Any]] = []
-    for r in rows:
-        fb = _to_float(r.get("ForeignBuy")) or 0.0
-        fs = _to_float(r.get("ForeignSell")) or 0.0
-        close = _to_float(r.get("Close")) or 0.0
-        prev = _to_float(r.get("Previous")) or 0.0
-        if close <= 0:
-            continue
-        symbol = str(r.get("StockCode", "")).upper()
-        # GetStockSummary's `Change` is the absolute price move, not a %.
-        change_pct = ((close - prev) / prev * 100) if prev > 0 else None
-        out.append(
-            {
-                "ticker": symbol,
-                "name": str(r.get("StockName", "")),
-                "sector": sector_by_ticker.get(symbol, "—"),
-                "price": round(close, 2),
-                "change_percent": round(change_pct, 2) if change_pct is not None else None,
-                "net_foreign_idr": round((fb - fs) * close),
-                "net_foreign_lots": round((fb - fs) / 100, 2),
-                "foreign_buy_lots": round(fb / 100, 2),
-                "foreign_sell_lots": round(fs / 100, 2),
-                "volume": _to_float(r.get("Volume")) or 0.0,
-            }
-        )
-    out.sort(key=lambda x: x["net_foreign_idr"], reverse=True)
-    payload = {
-        "available": True,
-        "count": len(out),
-        "as_of": datetime.now(UTC).isoformat(),
-        "rows": out,
-    }
-    if out:
-        db.set(cache_key, payload)
-    return payload
+    if result is None:
+        stale = db.get(cache_key)
+        if stale is not None:
+            return stale
+        return {"available": True, "error": "no foreign flow", "rows": []}
+    return result
 
 
 # ─── Broker summary (exchange level) ──────────────────────────────────────────
 
 
 def broker_summary(force: bool = False) -> dict[str, Any]:
-    """Exchange-level broker volume/value/frequency ranking (all of IDX)."""
+    """Exchange-level broker ranking — via Cache seam."""
     cache_key = "intel:broker:summary"
-    if not force:
-        cached = db.get_fresh(cache_key, BROKER_TTL)
-        if cached is not None:
-            return cached
-    rows: list[dict[str, Any]] = []
-    as_of = datetime.now(UTC).isoformat()
-    d = datetime.now(UTC).date()
-    for _ in range(5):
-        day = d.strftime("%Y%m%d")
-        try:
+
+    def _fetcher() -> dict[str, Any] | None:
+        rows: list[dict[str, Any]] = []
+        as_of = datetime.now(UTC).isoformat()
+        d = datetime.now(UTC).date()
+        for _ in range(5):
+            day = d.strftime("%Y%m%d")
             j = _get_json(
                 "/TradingSummary/GetBrokerSummary",
                 {"length": 9999, "start": 0, "date": day},
             )
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("broker summary failed: %s", exc)
-            stale = db.get(cache_key)
-            if stale is not None:
-                return stale
-            return {"available": True, "error": str(exc)[:200], "rows": []}
-        rows = j.get("data") or []
-        if rows:
-            as_of = day
-            break
-        d -= timedelta(days=1)
-    out = [
-        {
-            "broker": str(r.get("FirmName", "")),
-            "code": str(r.get("IDFirm", "")),
-            "volume": _to_float(r.get("Volume")) or 0.0,
-            "value_idr": _to_float(r.get("Value")) or 0.0,
-            "frequency": _to_float(r.get("Frequency")) or 0.0,
-            # IDX does not publish net buy/sell direction per broker.
-            "net_lots": 0,
-            "net_idr": 0,
-            "type": "IDX",
-            "tickers": [],
-            "ticker_count": 0,
+            rows = j.get("data") or []
+            if rows:
+                as_of = day
+                break
+            d -= timedelta(days=1)
+        if not rows:
+            return None
+        out = [
+            {
+                "broker": str(r.get("FirmName", "")),
+                "code": str(r.get("IDFirm", "")),
+                "volume": _to_float(r.get("Volume")) or 0.0,
+                "value_idr": _to_float(r.get("Value")) or 0.0,
+                "frequency": _to_float(r.get("Frequency")) or 0.0,
+                "net_lots": 0,
+                "net_idr": 0,
+                "type": "IDX",
+                "tickers": [],
+                "ticker_count": 0,
+            }
+            for r in rows
+        ]
+        out.sort(key=lambda x: x["value_idr"], reverse=True)
+        return {
+            "available": True,
+            "count": len(out),
+            "as_of": as_of,
+            "covered_tickers": len(out),
+            "rows": out,
         }
-        for r in rows
-    ]
-    out.sort(key=lambda x: x["value_idr"], reverse=True)
-    payload = {
-        "available": True,
-        "count": len(out),
-        "as_of": as_of,
-        "covered_tickers": len(out),
-        "rows": out,
-    }
-    if out:
-        db.set(cache_key, payload)
-    return payload
+
+    try:
+        result = cache.serve(cache_key, _fetcher, force=force)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("broker summary failed: %s", exc)
+        stale = db.get(cache_key)
+        if stale is not None:
+            return stale
+        return {"available": True, "error": str(exc)[:200], "rows": []}
+    if result is None:
+        stale = db.get(cache_key)
+        if stale is not None:
+            return stale
+        return {"available": True, "error": "no broker data", "rows": []}
+    return result
 
 
 # ─── Ownership ────────────────────────────────────────────────────────────────
 
 
 def ownership_structure(ticker: str, force: bool = False) -> dict[str, Any]:
-    """Shareholder / board structure from IDX company profiles (PemegangSaham)."""
+    """Shareholder / board structure — via Cache seam."""
     ticker = ticker.upper()
     cache_key = f"intel:ownership:{ticker}"
-    if not force:
-        cached = db.get_fresh(cache_key, OWNERSHIP_TTL)
-        if cached is not None:
-            return cached
-    try:
+
+    def _fetcher() -> dict[str, Any] | None:
         j = _get_json(
             "/ListedCompany/GetCompanyProfilesDetail",
             {"KodeEmiten": ticker, "language": "id-id"},
         )
+        profile = (j.get("Profiles") or [{}])[0]
+        shareholders = [
+            {
+                "name": str(s.get("Nama", "")),
+                "shares": s.get("Jumlah"),
+                "percent": s.get("Persentase"),
+                "category": str(s.get("Kategori", "")),
+                "controlling": bool(s.get("Pengendali")),
+            }
+            for s in j.get("PemegangSaham") or []
+        ]
+        return {
+            "ticker": ticker,
+            "available": True,
+            "as_of": datetime.now(UTC).isoformat(),
+            "name": profile.get("NamaEmiten"),
+            "sector": profile.get("Sektor"),
+            "sub_sector": profile.get("SubSektor"),
+            "listing_date": profile.get("TanggalPencatatan"),
+            "shareholders": shareholders,
+            "board": {
+                "direktur": [
+                    {"name": str(d.get("Nama", "")), "position": str(d.get("Jabatan", ""))}
+                    for d in j.get("Direktur") or []
+                ],
+                "komisaris": [
+                    {"name": str(d.get("Nama", "")), "position": str(d.get("Jabatan", ""))}
+                    for d in j.get("Komisaris") or []
+                ],
+            },
+            "subsidiaries": [
+                {"name": str(a.get("Nama", "")), "percent": a.get("Persentase")}
+                for a in j.get("AnakPerusahaan") or []
+            ],
+        }
+
+    try:
+        result = cache.serve(cache_key, _fetcher, force=force)
+        if result is not None and "shareholders" in result:
+            _ownership_snapshot(ticker, result["shareholders"])
     except Exception as exc:  # noqa: BLE001
         logger.warning("ownership %s failed: %s", ticker, exc)
         stale = db.get(cache_key)
         if stale is not None:
             return stale
         return {"ticker": ticker, "available": False, "error": str(exc)[:200]}
-    profile = (j.get("Profiles") or [{}])[0]
-    shareholders = [
-        {
-            "name": str(s.get("Nama", "")),
-            "shares": s.get("Jumlah"),
-            "percent": s.get("Persentase"),
-            "category": str(s.get("Kategori", "")),
-            "controlling": bool(s.get("Pengendali")),
-        }
-        for s in j.get("PemegangSaham") or []
-    ]
-    payload = {
-        "ticker": ticker,
-        "available": True,
-        "as_of": datetime.now(UTC).isoformat(),
-        "name": profile.get("NamaEmiten"),
-        "sector": profile.get("Sektor"),
-        "sub_sector": profile.get("SubSektor"),
-        "listing_date": profile.get("TanggalPencatatan"),
-        "shareholders": shareholders,
-        "board": {
-            "direktur": [
-                {"name": str(d.get("Nama", "")), "position": str(d.get("Jabatan", ""))}
-                for d in j.get("Direktur") or []
-            ],
-            "komisaris": [
-                {"name": str(d.get("Nama", "")), "position": str(d.get("Jabatan", ""))}
-                for d in j.get("Komisaris") or []
-            ],
-        },
-        "subsidiaries": [
-            {"name": str(a.get("Nama", "")), "percent": a.get("Persentase")}
-            for a in j.get("AnakPerusahaan") or []
-        ],
-    }
-    db.set(cache_key, payload)
-    _ownership_snapshot(ticker, shareholders)
-    return payload
+    if result is None:
+        stale = db.get(cache_key)
+        if stale is not None:
+            return stale
+        return {"ticker": ticker, "available": False, "error": "IDX unavailable"}
+    return result
 
 
 def _ownership_snapshot(ticker: str, shareholders: list[dict[str, Any]]) -> None:
@@ -715,15 +729,12 @@ def _ownership_diff(
 
 
 def announcements(limit: int = 30, force: bool = False) -> dict[str, Any]:
-    """Official IDX announcements with attachment PDF links."""
+    """Official IDX announcements with attachment PDF links — via Cache seam."""
     cache_key = f"intel:announcements:{limit}"
-    if not force:
-        cached = db.get_fresh(cache_key, ANNOUNCEMENT_TTL)
-        if cached is not None:
-            return cached
-    date_to = datetime.now(UTC).date()
-    date_from = date_to - timedelta(days=45)
-    try:
+
+    def _fetcher() -> dict[str, Any] | None:
+        date_to = datetime.now(UTC).date()
+        date_from = date_to - timedelta(days=45)
         j = _get_json(
             "/ListedCompany/GetAnnouncement",
             {
@@ -735,68 +746,62 @@ def announcements(limit: int = 30, force: bool = False) -> dict[str, Any]:
                 "lang": "id",
             },
         )
+        items: list[dict[str, Any]] = []
+        for reply in j.get("Replies") or []:
+            p = reply.get("pengumuman") or {}
+            atts = reply.get("attachments") or []
+            link = None
+            if atts:
+                link = f"{IDX_BASE}/StaticData/{atts[0].get('FullSavePath', '').lstrip('/')}"
+            items.append(
+                {
+                    "title": str(p.get("JudulPengumuman", "")),
+                    "category": str(p.get("JenisPengumuman", "")),
+                    "date": str(p.get("TglPengumuman", "")),
+                    "ticker": str(p.get("Kode_Emiten", "")),
+                    "link": link,
+                }
+            )
+        if not items:
+            return None  # don't cache empty — let stale survive
+        return {
+            "available": True,
+            "count": len(items),
+            "as_of": datetime.now(UTC).isoformat(),
+            "items": items,
+        }
+
+    try:
+        result = cache.serve(cache_key, _fetcher, force=force)
     except Exception as exc:  # noqa: BLE001
         logger.warning("announcements failed: %s", exc)
         stale = db.get(cache_key)
         if stale is not None:
             return stale
         return {"available": True, "error": str(exc)[:200], "items": []}
-    items = []
-    for reply in j.get("Replies") or []:
-        p = reply.get("pengumuman") or {}
-        atts = reply.get("attachments") or []
-        link = None
-        if atts:
-            link = f"{IDX_BASE}/StaticData/{atts[0].get('FullSavePath', '').lstrip('/')}"
-        items.append(
-            {
-                "title": str(p.get("JudulPengumuman", "")),
-                "category": str(p.get("JenisPengumuman", "")),
-                "date": str(p.get("TglPengumuman", "")),
-                "ticker": str(p.get("Kode_Emiten", "")),
-                "link": link,
-            }
-        )
-    payload = {
-        "available": True,
-        "count": len(items),
-        "as_of": datetime.now(UTC).isoformat(),
-        "items": items,
-    }
-    if items:
-        db.set(cache_key, payload)
-    return payload
+    if result is None:
+        stale = db.get(cache_key)
+        if stale is not None:
+            return stale
+        return {"available": True, "error": "no announcements", "items": []}
+    return result
 
 
 # ─── Heatmap (whole-market treemap data) ─────────────────────────────────────
 
 
 def _swr(cache_key: str, builder, force: bool = False) -> dict[str, Any] | None:
-    """Stale-while-revalidate helper for slow IDX-scrape endpoints.
+    """Thin wrapper over cache.serve for slow heatmap/movers endpoints.
 
-    Returns fresh cache if valid; otherwise serves the stale copy instantly
-    and kicks off a background refresh; only blocks on the very first fetch
-    (no cache at all). Builders must return a payload dict or None on failure
-    (None is never cached).
+    Kept for call-site stability; ownership/broker/foreign now call cache.serve
+    directly (deeper seam). New callers should use cache.serve instead.
     """
-    if not force:
-        cached = db.get_fresh(cache_key, FOREIGN_TTL)
-        if cached is not None:
-            return cached
-        stale = db.get(cache_key)
-        if stale is not None:
-            # Refresh in background; users get the stale copy now (~0ms).
-            def refresh() -> None:
-                try:
-                    payload = builder()
-                    if payload is not None:
-                        db.set(cache_key, payload)
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning("background refresh %s failed: %s", cache_key, exc)
-
-            threading.Thread(target=refresh, daemon=True, name=f"swr:{cache_key}").start()
-            return stale
-    return builder()
+    try:
+        result = cache.serve(cache_key, builder, force=force)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("_swr %s failed: %s", cache_key, exc)
+        return None
+    return result  # type: ignore[no-any-return]
 
 
 def _heatmap_builder() -> dict[str, Any] | None:
@@ -988,3 +993,67 @@ def _movers_builder(range_days: int, limit: int) -> dict[str, Any] | None:
         "laggards": laggards,
     }
     return payload
+
+
+def suspended_stocks(force: bool = False) -> dict[str, Any]:
+    """Suspended / special-monitoring names from the IDX daily summary.
+
+    IDX's GetStockSummary Remarks field carries a trailing `X` marker for
+    stocks on the papan pemantauan khusus (special-monitoring / suspension)
+    board. Volume 0 confirms no trading that session. Rows: ticker, name,
+    last close (pre-suspension), volume, board marker, UMA flag.
+    """
+    cache_key = "intel:suspension"
+    try:
+        payload = cache.serve(
+            cache_key,
+            lambda: _suspension_builder(),
+            force=force,
+        )
+    except Exception as exc:  # noqa: BLE001
+        stale = db.get(cache_key)
+        if stale is not None:
+            return stale
+        return {"available": False, "error": str(exc)[:200], "rows": []}
+    if payload is None:
+        stale = db.get(cache_key)
+        if stale is not None:
+            return stale
+        return {"available": True, "error": "no market data", "rows": []}
+    return payload
+
+
+def _suspension_builder() -> dict[str, Any] | None:
+    """Shape the suspension list from the cached daily summary rows."""
+    rows = _fetch_daily_summary()
+    if not rows:
+        return None
+    out: list[dict[str, Any]] = []
+    for r in rows:
+        remarks = str(r.get("Remarks") or "")
+        if not remarks.endswith("X"):
+            continue
+        symbol = str(r.get("StockCode", "")).upper()
+        if not symbol:
+            continue
+        out.append(
+            {
+                "ticker": symbol,
+                "name": str(r.get("StockName", "")),
+                "price": _to_float(r.get("Close")),
+                "previous_close": _to_float(r.get("Previous")),
+                "volume": _to_float(r.get("Volume")) or 0.0,
+                "traded": (_to_float(r.get("Volume")) or 0.0) > 0,
+                "uma": remarks.startswith("--U"),
+                "board": remarks[2] if len(remarks) > 2 else None,
+                "remarks": remarks,
+            }
+        )
+    out.sort(key=lambda x: (x["traded"], x["ticker"]))
+    return {
+        "available": True,
+        "count": len(out),
+        "as_of": datetime.now(UTC).isoformat(),
+        "rows": out,
+        "note": "Trailing X in IDX Remarks = special-monitoring/suspension board. UMA prefix = UMA warning.",
+    }

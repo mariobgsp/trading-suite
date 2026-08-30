@@ -7,6 +7,7 @@ import { usePolling } from "@/lib/usePolling";
 import Shell from "@/components/Shell";
 import { ChangeBadge, SectionHeader, StatCard } from "@/components/ui";
 import MarketChart from "@/components/MarketChart";
+import ForeignBarsPanel from "@/components/ForeignBarsPanel";
 
 const POPULAR = [
 	"BBCA",
@@ -32,7 +33,10 @@ export default function MarketsPage() {
 function MarketsLoading() {
 	return (
 		<Shell>
-			<SectionHeader title="Markets" subtitle="$ markets --ticker BBCA --period 1y" />
+			<SectionHeader
+				title="Markets"
+				subtitle="$ markets --ticker BBCA --period 1y"
+			/>
 		</Shell>
 	);
 }
@@ -48,6 +52,9 @@ function MarketsInner() {
 		"sma200",
 	]);
 	const [showVolume, setShowVolume] = useState(false);
+	const [showLpm, setShowLpm] = useState(true);
+	const [showIntensity, setShowIntensity] = useState(true);
+	const [foreignEnabled, setForeignEnabled] = useState(false);
 
 	const historyPath = `/api/market/history/${ticker}?period=${period}`;
 	const quotePath = `/api/market/quote/${ticker}`;
@@ -62,6 +69,22 @@ function MarketsInner() {
 		15000,
 		ticker,
 		{ cacheKey: quotePath, keepPreviousData: true },
+	);
+	const lpmPath = `/api/intel/stockbit/lpm/${ticker}?days=60`;
+	const stockbitLpm = usePolling<{
+		lpm: (number | null)[];
+		intensity: number[];
+		available: boolean;
+	} | null>(
+		() =>
+			api.getCached<{
+				lpm: (number | null)[];
+				intensity: number[];
+				available: boolean;
+			} | null>(lpmPath),
+		120000,
+		`${ticker}:stockbit-lpm`,
+		{ cacheKey: lpmPath },
 	);
 
 	const toggleOverlay = (name: string) =>
@@ -121,29 +144,88 @@ function MarketsInner() {
 					>
 						VOL
 					</button>
+					<button
+						onClick={() => setShowLpm((v) => !v)}
+						className={`rounded-pill px-3 py-1.5 font-mono text-[11px] font-semibold transition-all ${showLpm ? "bg-[var(--panel-2)] text-[var(--accent)] ring-1 ring-[var(--accent-dim)]" : "bg-[var(--panel)] text-[var(--text-faint)] hover:bg-[var(--panel-2)]"}`}
+					>
+						LPM
+					</button>
+					<button
+						onClick={() => setShowIntensity((v) => !v)}
+						className={`rounded-pill px-3 py-1.5 font-mono text-[11px] font-semibold transition-all ${showIntensity ? "bg-[var(--panel-2)] text-[var(--accent)] ring-1 ring-[var(--accent-dim)]" : "bg-[var(--panel)] text-[var(--text-faint)] hover:bg-[var(--panel-2)]"}`}
+					>
+						INTENSITY
+					</button>
 				</div>
 			</div>
 
 			{/* Quote strip — terminal: always inline, never gated */}
 			<div className="mb-4 grid grid-cols-2 gap-4 sm:grid-cols-4 font-mono">
-				<StatCard label={`${ticker} Last`} value={quote.data ? fmtNum(quote.data.price) : "—"} tone={quote.data?.change_percent != null && quote.data.change_percent >= 0 ? "up" : quote.data?.change_percent == null ? "default" : "down"} sub={quote.data ? <ChangeBadge value={quote.data.change_percent} /> : <span className="text-[var(--text-ghost)]">$ quote --sync</span>} />
+				<StatCard
+					label={`${ticker} Last`}
+					value={quote.data ? fmtNum(quote.data.price) : "—"}
+					tone={
+						quote.data?.change_percent != null && quote.data.change_percent >= 0
+							? "up"
+							: quote.data?.change_percent == null
+								? "default"
+								: "down"
+					}
+					sub={
+						quote.data ? (
+							<ChangeBadge value={quote.data.change_percent} />
+						) : (
+							<span className="text-[var(--text-ghost)]">$ quote --sync</span>
+						)
+					}
+				/>
 				<StatCard label="Open" value={quote.data ? fmtNum(quote.data.open) : "—"} />
-				<StatCard label="Day High" value={quote.data ? fmtNum(quote.data.day_high) : "—"} tone="up" />
-				<StatCard label="Day Low" value={quote.data ? fmtNum(quote.data.day_low) : "—"} tone="down" />
+				<StatCard
+					label="Day High"
+					value={quote.data ? fmtNum(quote.data.day_high) : "—"}
+					tone="up"
+				/>
+				<StatCard
+					label="Day Low"
+					value={quote.data ? fmtNum(quote.data.day_low) : "—"}
+					tone="down"
+				/>
 			</div>
 
 			{/* Chart — terminal: never skeleton, stream in place */}
 			<div className="panel p-4 font-mono">
 				<div className="mb-2 flex items-center gap-2 text-[11px] text-[var(--text-faint)]">
-					<span className="text-[var(--accent)]">▸</span> {ticker} · {period} · {overlays.join(" ")} {data.isValidating ? "· syncing…" : data.loading && !data.data ? "· fetching…" : "· live"}
+					<span className="text-[var(--accent)]">▸</span> {ticker} · {period} ·{" "}
+					{overlays.join(" ")}{" "}
+					{data.isValidating
+						? "· syncing…"
+						: data.loading && !data.data
+							? "· fetching…"
+							: "· live"}
 				</div>
 				{!data.data ? (
-					<div className="flex h-[420px] items-center justify-center border border-dashed border-[var(--line)] bg-[var(--panel-2)] text-xs text-[var(--text-faint)]">$ load {ticker} --period {period} | fetching…</div>
+					<div className="flex h-[420px] items-center justify-center border border-dashed border-[var(--line)] bg-[var(--panel-2)] text-xs text-[var(--text-faint)]">
+						$ load {ticker} --period {period} | fetching…
+					</div>
 				) : data.data.error ? (
-					<p className="py-16 text-center text-sm text-[var(--down)]">{data.data.error}</p>
+					<p className="py-16 text-center text-sm text-[var(--down)]">
+						{data.data.error}
+					</p>
 				) : (
 					<>
-						<MarketChart history={data.data.history} indicators={data.data.indicators} height={420} options={{ showVolume, overlayIndicators: overlays }} />
+						<MarketChart
+							history={data.data.history}
+							indicators={data.data.indicators}
+							height={420}
+							options={{
+								showVolume,
+								showLpm,
+								showIntensity,
+								overlayIndicators: overlays,
+							}}
+							stockbitLpm={stockbitLpm.data?.lpm}
+							stockbitIntensity={stockbitLpm.data?.intensity}
+						/>
 						{/* Momentum + latest indicator readout */}
 						<div className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-6">
 							<Readout
@@ -188,6 +270,9 @@ function MarketsInner() {
 					</>
 				)}
 			</div>
+
+			{/* Foreign flow bars — collapsible, backend cached, disabled = no fetch */}
+			<ForeignBarsPanel enabled={foreignEnabled} onToggle={setForeignEnabled} />
 
 			{/* Popular tickers */}
 			<div className="mt-6 flex flex-wrap gap-2">

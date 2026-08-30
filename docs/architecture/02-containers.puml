@@ -1,0 +1,46 @@
+@startuml
+skinparam backgroundColor white
+skinparam defaultFontName Inter, Helvetica, Arial
+skinparam defaultFontSize 12
+skinparam Shadowing false
+skinparam RoundCorner 10
+skinparam ArrowColor #475569
+skinparam ArrowThickness 1.3
+
+title Container Diagram — Lean Desk (5 Routes)
+
+actor "Trader" as User #0ea5e9
+rectangle "Next.js 16 App\nlightweight-charts" as Next #ffffff
+rectangle "Frontend Cache\nmem + sessionStorage\nSWR dedupe 400k cap" as FrontCache #f8fafc
+rectangle "Shell + Sidebar\n5 APPS" as Shell #f1f5f9
+rectangle "FastAPI :8000\n11 routers" as FastAPI #ffffff
+rectangle "Service Layer\nmarket idx screener\nvalidator stockbit" as Services #f8fafc
+rectangle "Cache Seam\nTTL_POLICY + WAL" as CacheSeam #f1f5f9
+database "cache.db\nkv_cache WAL" as DB #e2e8f0
+cloud "IDX Daily Summary" as IDX #e0f2fe
+cloud "yfinance" as YF #fef9c3
+cloud "TradingView" as TV #fce7f3
+cloud "Stockbit" as SB #dcfce7
+
+User --> Next : navigates
+Next --> Shell : renders
+Next --> FrontCache : get/set cache
+FrontCache --> FastAPI : fetch /api/*
+FastAPI --> Services : route handlers
+Services --> CacheSeam : cache.serve
+CacheSeam --> DB : get_fresh / set
+CacheSeam --> IDX : on miss
+CacheSeam --> YF : on miss
+CacheSeam --> TV : rotation
+Services --> SB : broker (JWT optional)
+
+note right of FrontCache
+ TTL_TABLE mirrors backend TTL_POLICY
+ mem -> ss -> network (SWR)
+end note
+
+note bottom of DB
+ /backend/data/cache.db
+ prune 5k / 30d
+end note
+@enduml

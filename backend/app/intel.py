@@ -32,8 +32,13 @@ UNIVERSE_LIMIT = 40
 
 
 def stockbit_available() -> bool:
-    """Deprecated gate — IDX is always the source. Kept for router compat."""
-    return True
+    """Whether Stockbit JWT is configured (per-ticker broker attribution)."""
+    try:
+        from app.stockbit import stockbit_available as _sb_avail  # type: ignore[import-untyped]
+
+        return _sb_avail()  # type: ignore[no-any-return]
+    except Exception:  # noqa: BLE001
+        return False
 
 
 # ─── Foreign flow ─────────────────────────────────────────────────────────────

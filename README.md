@@ -1,232 +1,221 @@
-# Trading Suite — IDX (Indonesia) Trading Platform
+# Trading Suite — IDX Lean Desk (5 Routes)
 
-A self-hosted Indonesian stock-market platform: live quotes, charting, screening,
-bandarmology (smart-money) validation, ownership & shareholder intelligence,
-portfolio FIFO accounting, regime filter, backtesting, AI summaries, and
-rule-based entry plans — all backed by real data for the 900+ ticker IDX
-universe.
+> Self-hosted Indonesian stock platform, **simplified**. 22 tools → **5 routes** + backend-only suspended filter. No bloat, no Redis, just SQLite WAL + SWR caching and a one-command runner.
 
-```text
-┌─────────────┐     /api/* proxy      ┌──────────────┐
-│  pilot web  │ ─────────────────────▶ │  FastAPI     │──▶ IDX official API
-│ (:3001 SSR) │                        │  (:8000)     │──▶ yfinance
-└─────────────┘                        │              │──▶ TradingView scanner
-        ▲                              └──────────────┘
-        │ (legacy Next.js app also ships: :3000)
+```
+┌─────────────┐    /api/* + SSE     ┌──────────────┐     ┌─────────────────────┐
+│ Next.js 16  │ ──────────────────▶ │ FastAPI :8000│────▶│ IDX / yfinance /    │
+│ :3000 (5)   │◀────────────────── │ cache.serve()│     │ TradingView / SB    │
+└─────────────┘  stale-while-reval  └──────┬───────┘     └─────────────────────┘
+                                           │ WAL
+                                    ┌──────▼───────┐
+                                    │ cache.db     │
+                                    │ kv_cache     │
+                                    └──────────────┘
 ```
 
-## Monorepo layout
+**Quick start — one command:**
+
+```sh
+chmod +x ./trading-suite
+./trading-suite run     # backend :8000 + frontend :3000 (dev, hot-reload)
+# open http://localhost:3000  → 5 cards: Overview / Markets (+foreign bars) / Screener / Profiler (merged) / Calculators
+./trading-suite stop    # kill both
+./trading-suite logs    # tail -f /tmp/trading-suite/*.log
+```
+
+Or raw:
+
+```sh
+backend/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload --app-dir backend &
+npm run dev   # :3000, NEXT_PUBLIC_API_URL=http://localhost:8000
+```
+
+---
+
+## Architecture — 1 Main + 2 Supporting Diagrams
+
+> All PlantUML sources are in `docs/architecture/*.puml` with `skinparam backgroundColor white` (clear, printable). Rendered SVGs live alongside (`*.svg`). Re-render: `curl -X POST https://kroki.io/plantuml/svg --data-binary @docs/architecture/01-system-context.puml -o docs/architecture/01-system-context.svg`.
+
+### Main Diagram — System Context (Lean Desk)
+
+Shows the lean boundary: 5 UI routes, FastAPI, file-based SQLite, and four upstreams. Suspended/tagged is **backend-only** (no UI).
+
+![System Context](docs/architecture/01-system-context.svg)
+
+*Source: `docs/architecture/01-system-context.puml`* — 5 routes only (`/overview`, `/markets` with foreign bars, `/screener`, `/profiler` merged validator, `/calculators`). Backend `cache.serve()` fans out to IDX (one `GetStockSummary` daily call, Remarks trailing `X` = suspended), yfinance, TradingView, and optional Stockbit.
+
+```plantuml
+@startuml
+skinparam backgroundColor white
+actor "Trader" as User
+rectangle "Trading Suite" as Suite {
+  rectangle "Next.js 16 Desk (5 routes)" as Web
+  rectangle "FastAPI Backend (:8000)" as API
+  database "SQLite cache.db (WAL)" as DB
+}
+cloud "IDX Official API" as IDX
+cloud "yfinance" as YF
+User --> Web : browser :3000
+Web --> API : REST + SSE
+API --> DB : SWR cache.serve()
+API --> IDX : curl_cffi Chrome
+API --> YF : per-ticker
+@enduml
+```
+
+### Supporting Diagram A — Container & Caching (Frontend + Backend SWR)
+
+How one logical cache seam serves both layers cheaply.
+
+![Containers](docs/architecture/02-containers.svg)
+
+*Source: `docs/architecture/02-containers.puml` + `docs/architecture/06-caching.puml`* — Frontend `src/lib/cache.ts:TTL_TABLE` mirrors backend `app/cache.py:TTL_POLICY` (longest-prefix). Frontend: `mem → sessionStorage → network` (stale-while-revalidate + dedupe, 400k guard). Backend: `cache.serve(key, fetcher)` → `get_fresh` → stale return + `_spawn_refresh` daemon → miss blocks. Only survivors have TTLs (indices 45s,quotes 60s,history 120s,foreign 3600s,stockbit 43200s,validator 60s,screener 30s). Prefetch trimmed to `BBCA quote + 1y history` only. SQLite at `backend/data/cache.db` (WAL, per-thread conn, prune 5k/30d).
+
+Supporting details: `docs/architecture/02-containers.puml` (container view) and `docs/architecture/03-backend-components.puml` (routers → services → cache seam) and `docs/architecture/06-caching.puml` expand this.
+
+### Supporting Diagram B — Screener SSE with Suspended Backend-Only Filter
+
+The only place suspended/tagged appears — filtered *before* the ThreadPool, never in UI.
+
+![Screener Sequence](docs/architecture/05-sequence-screener.svg)
+
+*Source: `docs/architecture/05-sequence-screener.puml`* — `run_universe_scan()` loads `suspended_stocks()` (Remarks trailing `X`, `intel:suspension` cached 1h), builds `suspended_set`, filters `tickers = [t for t in tickers if t not in suspended_set]` pre-scan, then `ThreadPoolExecutor(8)` streams `SSE ticker` events. Tagged == suspended (single signal). Testable via `excluded` param.
+
+Markets twin: `docs/architecture/04-sequence-markets.puml` — candle history SWR + LPM/Intensity toggle fix (teardown before early-return, `removeSeries` + `scaleMargins` reset) + foreign flow bars collapsible (disabled = `interval null`, no fetch; enabled = lazy `GET /api/intel/foreign/universe`, one IDX call).
+
+---
+
+## What Changed (Lean)
+
+| Before (22 apps) | After (5 routes) | Where |
+| --- | --- | --- |
+| 22 APPS across 4 groups | 5 APPS: Overview, Markets, Screener, Profiler, Calculators | `src/lib/apps.ts`, `src/components/Sidebar.tsx` |
+| Markets: LPM stuck on | Fixed: `MarketChart.tsx` tears down on toggle-off | `src/components/MarketChart.tsx` |
+| Foreign flow separate page | Collapsible panel inside Markets, Enable/Disable, no poll when disabled | `src/components/ForeignBarsPanel.tsx`, `src/app/markets/page.tsx` |
+| Validator standalone | Merged into Profiler (`ValidatorDetail` + `StockbitBrokerPanel`) | `src/app/profiler/page.tsx` |
+| Suspended has UI | Backend-only: `GET /api/intel/suspended` stays, `src/app/suspended` deleted, screener excludes | `backend/app/screener.py`, `backend/app/idx.py`, `next.config.ts` redirects |
+| 15 sunset pages | Hard redirects in `next.config.ts` (e.g. `/foreignflow→/markets`, `/brokerintel→/profiler`) | `next.config.ts` |
+| Prefetch 5 tickers × 4 periods | Prefetch BBCA only | `src/components/Shell.tsx` |
+| TTL for 20 feeds | TTL for 10 survivors only | `src/lib/cache.ts` |
+
+---
+
+## Monorepo Layout
 
 | Path | What it is |
 | --- | --- |
-| `backend/` | FastAPI service: market data, indicators, screener, validator, ownership, portfolio, regime, backtest, sentiment, AI summaries, entry plans |
-| `backend/app/` | API routers + services (`market`, `idx`, `intel`, `ownership`, `validator`, `portfolio`, `regime`, `backtest`, `sentiment`, `entry`, `ai`, `indicators`, …) |
-| `backend/app/routers/` | FastAPI route modules (`/api/*`) |
-| `backend/core/` | Canonical technical-indicator math (SMA/EMA/RSI/MACD/ATR/Stochastic/CMF/MFI/PSAR/A-D line, …) |
-| `backend/config/` | 900+ ticker IDX universe, index symbols |
-| `backend/tests/` | Offline pytest suite (synthetic data — no network) |
-| `pilot/` | Main frontend: TanStack Start + Hono SSR, Vite, lightweight-charts |
-| `pilot/src/routes/` | Pilot pages: `/`, `/overview`, `/markets`, `/ownership`, `/profiler`, `/validator`, `/screener`, `/portfolio`, `/backtest`, `/regime`, `/foreignflow`, `/brokerintel`, … (20 tools) |
-| `src/` | Legacy Next.js frontend (runs alongside; compare mode) |
-| `legacy/` | Archived original source repos (six merged codebases) |
-| `docker-compose.yml` | Runs backend + frontend + pilot as containers |
+| `src/app/{overview,markets,screener,profiler,calculators}` | **Lean Next.js 16 routes** (only survivors) |
+| `src/lib/apps.ts` | Single source for nav (5 APPS) |
+| `src/lib/cache.ts` | Frontend SWR cache (mem + sessionStorage) |
+| `src/components/{MarketChart,ForeignBarsPanel,Shell,Sidebar}` | Chart + new foreign bars panel |
+| `backend/app/routers/` | FastAPI routers: `market, intel, screener, validator, analysis, regime` |
+| `backend/app/{market,idx,screener,validator,stockbit,cache,db}.py` | Services + cache seam |
+| `backend/config/tickers.py` | 900+ IDX universe |
+| `backend/data/cache.db*` | SQLite WAL cache (gitignored) |
+| `docs/architecture/` | PlantUML sources (`*.puml`, white bg) + rendered `*.svg` |
+| `trading-suite` / `trading-suite.sh` | One-command runner (`run/dev/build/start/stop/logs/clean`) |
+| `legacy/`, `pilot/` | Archived repos (not in lean nav) |
 
 ## Prerequisites
 
-- Python 3.11+ with `backend/.venv` (project virtualenv; `python-dotenv` in requirements)
-- Node.js 22+ (pilot uses `tsx`, Vite 6, TanStack Start)
-- Docker / Podman (optional — for the compose stack)
+- Python 3.11+ (`backend/.venv`), Node 22+, Docker optional.
 
 ## Setup
 
-### 1. Backend
+### Backend
 
 ```sh
 cd backend
 python -m venv .venv
 .venv/bin/pip install -r requirements.txt
-cp .env.example .env   # optional secrets; the stack runs fine empty
-.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --env-file .env
+cp ../.env.example .env   # optional; runs empty
+.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload --app-dir .
+# or
+../trading-suite run
 ```
 
-API health: <http://127.0.0.1:8000/api/health> · Swagger: <http://127.0.0.1:8000/docs>
+Health: <http://127.0.0.1:8000/api/health> · Swagger: <http://127.0.0.1:8000/docs>
 
-> The backend never calls `load_dotenv()` — pass `--env-file .env` (as above) or
-> export the variables in the process environment.
-
-### 2. Pilot web app (the main UI)
-
-```sh
-cd pilot
-npm install
-npm run dev          # Vite dev server on :3001
-# or production SSR:
-npm run build && npm start   # Hono + TanStack Start on :3001
-```
-
-`pilot` proxies `/api/*` to the backend at `:8000` (Vite dev proxy / Hono gateway),
-so the frontend is same-origin — no `VITE_API_URL` needed locally.
-
-### 3. Legacy Next.js app (optional)
+### Frontend (Lean)
 
 ```sh
 npm install
-npm run dev          # Next.js on :3000
+npm run dev   # :3000
+# prod
+npm run build && npm run start
 ```
 
-### 4. Docker stack (optional)
+Env: `NEXT_PUBLIC_API_URL=http://localhost:8000` (default).
 
-```sh
-cp .env.example .env
-docker compose up -d --build     # backend :8000, frontend :3000, pilot :3001
-```
-
-## Environment variables
-
-All are optional — the suite runs with empty secrets (AI features fall back to
-deterministic text).
+## Environment Variables (all optional)
 
 | Variable | Purpose |
 | --- | --- |
-| `OPENCODE_GO_API_KEY` | API key for the opencode-go / deepseek model — enables AI summaries & entry-plan narration |
-| `OPENCODE_GO_BASE_URL` | Default `https://opencode.ai/zen/go/v1` |
-| `OPENCODE_GO_MODEL` | Default `deepseek-v4-flash` |
-| `STOCKBIT_JWT_TOKEN` | Stockbit feed / bandarmology detector (optional) |
-| `GEMINI_API_KEY` | Legacy bot pipeline (optional) |
-| `YFINANCE_CACHE_TTL` / `YFINANCE_HISTORY_CACHE_TTL` / `FOREX_CACHE_TTL` | Cache TTLs in seconds (quotes 1h, history 12h, forex 1h) |
-| `CORS_ORIGINS` | Allowed browser origins (comma-separated) |
-| `NEXT_PUBLIC_API_URL` | Legacy frontend → API base (default `http://localhost:8000`) |
+| `STOCKBIT_JWT_TOKEN` / `STOCKBIT_USERNAME/PASSWORD` | Stockbit broker feed (else degraded msg) |
+| `YFINANCE_CACHE_TTL` etc. | Override TTLs |
+| `CORS_ORIGINS` | Allowed origins |
+| `OPENCODE_GO_API_KEY` | AI summaries (fallback deterministic) |
 
-Secrets live in gitignored `.env` files; never commit real keys.
+## Data Sources & Caching
 
-## Data sources
+- **IDX**: `GetStockSummary` (one call → ~963 rows, foreign flow + Remarks `X` for suspended). `curl_cffi` Chrome + stale-while-revalidate.
+- **yfinance**: `.JK` quotes/history via `fetch_history` (SWR, 12h history TTL).
+- **TradingView**: sector rotation (5-min cache).
+- **SQLite WAL** (`backend/data/cache.db`): per-feed TTLs above, `_spawn_refresh` dedupe, `prune 5k/30d`.
 
-- **IDX official API** — `www.idx.co.id/primary/*` (GetStockSummary,
-  GetCompanyProfilesDetail, GetBrokerSummary, GetAnnouncement, …). Used for the
-  heatmap, movers, foreign flow, broker radar, ownership, announcements, and
-  sector rotation. Fetched with curl_cffi Chrome impersonation + Playwright
-  fallback; responses cached in SQLite with per-feed TTLs, plus
-  stale-while-revalidate so slow IDX scrapes never block the UI.
-- **Quotes / history** — yfinance (`.JK` symbols, `^JKSE` etc.), cached in SQLite
-  (`backend/data/cache.db`) with TTLs; stale-cache fallback on upstream failures.
-- **TradingView scanner** — top gainers/losers + sector rotation (one POST
-  returns the full ~885-ticker universe with sector + % change; 5-minute cache).
-- **AI model** — opencode-go chat-completions endpoint via `backend/app/ai.py`.
-  When unconfigured/unreachable, summaries and narrations fall back to
-  deterministic data-derived text so the UI never hard-fails.
+## API Endpoints (Lean Subset)
 
-## Caching & performance
+| Group | Endpoint | Notes |
+| --- | --- | --- |
+| Market | `GET /api/market/indices`, `/quote/{t}`, `/quotes`, `/history/{t}`, `/beta/{t}` | history returns `{history, indicators, momentum}` |
+| Intel | `GET /api/intel/foreign/universe`, `GET /api/intel/foreign/{t}`, `GET /api/intel/suspended` | suspended stays backend/debug only |
+| Intel/Stockbit | `GET /api/intel/stockbit/broker/{t}` | JWT optional |
+| Screener | `GET /api/screener/scan/stream` (SSE), `GET /api/screener/analyze/{t}` | suspended filtered pre-ThreadPool |
+| Validator | `GET /api/validator/{t}` | merged into profiler |
+| Analysis/Regime | `GET /api/analysis/entry/{t}`, `GET /api/regime/snapshot` | profiler + overview |
 
-- SQLite `kv_cache` (WAL) with per-feed TTLs: quotes 1h, history 12h, ownership
-  24h, broker/foreign 1h, announcements 10m.
-- **Stale-while-revalidate** on the slow IDX feeds (heatmap, movers): stale data
-  is served instantly while a background thread refreshes — no request ever
-  blocks on an IDX scrape.
-- **Entry plans** are cached per ticker (10 min) including the AI narration;
-  the profiler's Analyze button forces a fresh recompute.
-- **Ownership history** keeps a per-ticker snapshot archive (up to 24 snapshots)
-  that powers period-over-period diffs and 5/25/50% threshold watch.
-- The pilot shows a global pending bar + per-panel refresh spinners while any
-  data view is loading; all motion honors `prefers-reduced-motion`.
+## Pages (Lean)
 
-## API endpoints
-
-### Market (`/api/market`)
-
-| Endpoint | Description |
+| Route | Shows |
 | --- | --- |
-| `GET /indices` | IHSG / LQ45 / IDX30 / IDX80 / BISNIS-27 / INFOBANK15 quotes |
-| `GET /quote/{ticker}` | Single quote (`?force=true` bypasses cache) |
-| `GET /quotes?tickers=BBCA,BBRI` | Batch quotes |
-| `GET /history/{ticker}?period=1y&interval=1d` | OHLCV + indicator bundle (`indicators`, `latest_indicators`, `momentum`) |
-| `GET /beta/{ticker}` | Beta / correlation / excess return vs ^JKSE (3M/6M/1Y) + classification |
-| `GET /movers?side=gainers&limit=20` | Top gainers/losers by % change (IDX convention) |
-| `GET /sectors` | Per-sector avg % change, gainer/loser counts (rotation view) |
-| `GET /forex` | USD/IDR |
-| `GET /cache/stats` | Cache diagnostics |
+| `/` | Launcher (5 cards) |
+| `/overview` | Indices strip, watchlist (60000ms poll relaxed), regime |
+| `/markets` | Candles + SMA/EMA/Volume + LPM/Intensity (fixed toggles) + **Foreign Flow bars** (Enable/Disable) |
+| `/screener` | SSE streamed scan (suspended backend-only) |
+| `/profiler?ticker=BBCA` | Quote + chart + beta + regime + bandarmology + intent radar + broker panel + entry plan |
+| `/calculators` | Client-only math |
 
-Indicators emitted by `/history`: SMA20/50/200, EMA9/21, RSI(14), ATR(14), MACD,
-**Stochastic 10,3,3**, OBV, VWAP, **CMF(20)**, **MFI(14)**, **PSAR** (0.02/0.02/0.20),
-**A/D line**, **VOL MA20**.
+Sunset routes redirect (e.g. `/foreignflow→/markets`, `/brokerintel→/profiler`, `/suspended→/screener`, `/validator→/profiler`, `/regime→/overview`).
 
-### Intel — IDX market intelligence (`/api/intel`)
-
-| Endpoint | Description |
-| --- | --- |
-| `GET /heatmap` | Whole-IDX treemap (market cap √-scaled sizes, ±6% change colors, sector grouping) |
-| `GET /movers?range_days=1&limit=50` | Leaders/laggards by JCI point contribution |
-| `GET /foreign/universe` · `/foreign/{ticker}` | Net foreign flow — whole board + per ticker |
-| `GET /broker/radar` · `/broker/{ticker}` | Exchange-level broker volume/value ranking; per-ticker foreign flow context |
-| `GET /ownership/{ticker}` · `/ownership/{ticker}/history` | Shareholder / board / subsidiaries + snapshot-diff archive |
-| `GET /announcements` | Official IDX announcements (45-day window, PDF links) |
-| `GET /rotation?days=20` | Sector rotation |
-
-### Validator (`/api/validator`)
-
-| Endpoint | Description |
-| --- | --- |
-| `GET /{ticker}` | Bandarmology: bandar phase, institutional flow, hidden-intent radar (newest-first), liquidity, CMF/MFI, RSI |
-
-### Screener (`/api/screener`)
-
-| Endpoint | Description |
-| --- | --- |
-| `GET /tickers` | Universe list |
-| `GET /analyze/{ticker}` | Single-ticker behavior score |
-| `GET /squeeze/{ticker}` | MA-squeeze check |
-| `GET /vault/{ticker}` | Vault MA-positioning score |
-| `GET /scan` / `GET /scan/stream` | Universe scan (REST + SSE streaming) |
-
-### Regime / sentiment / portfolio / backtest
-
-| Endpoint | Description |
-| --- | --- |
-| `GET /api/regime/snapshot` · `/api/regime/history` | IHSG regime filter + index history |
-| `GET /api/sentiment/news` · `/api/sentiment/idx` | News sentiment radar |
-| `GET /api/portfolio/state` · `/watchlist` · `/journal` · `/pending-orders` | FIFO ledger (GET/POST) |
-| `GET /api/backtest/strategies` · `/{ticker}` | Strategy backtests |
-
-### AI & analysis
-
-| Endpoint | Description |
-| --- | --- |
-| `GET /api/summary/{page}?ticker=` | AI summary per page (`launcher`…`regime`); model call or offline fallback |
-| `GET /api/analysis/entry/{ticker}` | Rule-based entry plan (score, zone, stop, targets, triggers) + AI narration |
-
-## Pilot pages
-
-| Route | What it shows |
-| --- | --- |
-| `/` | App launcher (all tools) |
-| `/overview` | Indices strip, **IDX heatmap** (whole market at a glance), **JCI movers** (point contribution), regime filter |
-| `/markets` | Multi-pane chart: candles + SMA/EMA + PSAR dots · volume + VOL MA20 (always on) · Stochastic 10,3,3 (always on) · MFI/CMF/A-D line (toggleable panes) · beta vs IHSG |
-| `/ownership` | **Connection web** (2.5D radial graph: shareholders/board/subsidiaries, d3-force drift, hover-highlight, click-focus, parallax) · shareholder table · ownership-change diff archive · board lists |
-| `/profiler` | One-screen full picture: quote, price action, beta, bandarmology, regime, **entry plan** — Analyze refreshes everything |
-| `/foreignflow` | Foreign buy / sell split tables (top 10 + see-more), per-ticker breakdown |
-| `/brokerintel` | Broker radar (exchange-level volume/value ranking) + per-ticker foreign flow context |
-| `/validator` | Bandarmology analysis + entry plan + AI summary + intent radar (newest-first) |
-| `/screener` | Single-ticker analysis + streaming universe scan (SSE) |
-| `/portfolio` | FIFO positions, cash, realized/unrealized P&L |
-| `/backtest` | Strategy backtests |
-| `/sentiment` | News sentiment radar |
-| `/regime` | IHSG regime + bot engine filter |
-| `/announcements` | Official IDX announcements |
-| `/watchlist` / `/journal` / `/msci` / `/sector-rotation` / `/calculators` / `/wiki` | Ledger, MSCI watch, rotation, calculators, wiki |
-
-## Testing & checks
+## Runner (`trading-suite`)
 
 ```sh
-# Backend: offline unit tests (synthetic data, no network)
-( cd backend && .venv/bin/python -m pytest -q )
-
-# Backend: typecheck
-( cd backend && pyright . )
-
-# Pilot: lint + build
-( cd pilot && npx eslint . )
-( cd pilot && npm run build )
+./trading-suite run    # dev both
+./trading-suite build  # next build + wiring + pytest
+./trading-suite start  # prod
+./trading-suite stop
+./trading-suite logs
+./trading-suite clean
 ```
+
+Also as `trading-suite.sh` (same).
+
+## Testing & Checks
+
+```sh
+npm run build                         # Next 16.3 turbopack
+node scripts/check-feature-wiring.mjs # 5 APPS + lean markers
+cd backend && .venv/bin/python -m pytest -q   # 39 passed
+cd backend && .venv/bin/pyright .
+```
+
+## Operations
+
+- Plans/specs never commit: `.gitignore` ignores `PLAN.md`, `plans/`, `docs/PLAN.md`, `specs/PLAN-*.md`, etc.
+- Cache: file-based, safe on persistent host. Delete `backend/data/cache.db*` to reset.
+- Deploy: `docker compose up -d --build` (backend :8000, frontend :3000).
 
 ## License
 
-Released under the [MIT License](LICENSE).
+[MIT](LICENSE)

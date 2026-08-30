@@ -143,6 +143,8 @@ p {
 	border: 1px solid var(--border);
 	border-radius: var(--radius-card);
 	overflow: hidden;
+	content-visibility: auto;
+	contain-intrinsic-size: auto 320px;
 }
 .panel-2 {
 	background: var(--panel-2);
@@ -150,11 +152,175 @@ p {
 	border-radius: var(--radius-control);
 }
 
+/* Responsive table surface — horizontal scroll on narrow, stable gutter */
+.table-scroll {
+	overflow-x: auto;
+	-webkit-overflow-scrolling: touch;
+	scrollbar-gutter: stable;
+}
+.table-scroll table {
+	min-width: 640px;
+}
+@media (max-width: 640px) {
+	.table-scroll table {
+		min-width: 560px;
+	}
+}
+
 /* Quiet divider */
 .hr-soft {
 	height: 1px;
 	background: var(--line);
 }
+
+/* ── Table primitives — Bloomberg/TradingView density ─────────────
+ *  Apply to <table class="tty-table"> or wrap with .table-scroll
+ *  - .num  : right-aligned tabular numerics (codifies ad-hoc)
+ *  - .table-zebra : alternate row tint (3% wash, makes horizontal scan cheaper)
+ *  - .num-sign   : green/red for change with sign prefix
+ */
+.tty-table {
+	width: 100%;
+	border-collapse: separate;
+	border-spacing: 0;
+	font-size: 12px;
+	line-height: 1.25;
+	font-variant-numeric: tabular-nums;
+}
+.tty-table thead th {
+	font-weight: 600;
+	font-size: 10px;
+	letter-spacing: 0.12em;
+	text-transform: uppercase;
+	color: var(--text-faint);
+	text-align: left;
+	padding: 8px 12px;
+	border-bottom: 1px solid var(--border);
+	background: var(--bg-subtle);
+	white-space: nowrap;
+}
+.tty-table tbody td {
+	padding: 6px 12px;
+	border-bottom: 1px solid var(--line-3);
+	white-space: nowrap;
+}
+.tty-table tbody tr:last-child td {
+	border-bottom: none;
+}
+.tty-table tbody tr:hover td {
+	background: rgba(77, 159, 255, 0.04);
+}
+.tty-table.table-zebra tbody tr:nth-child(even) td {
+	background: rgba(255, 255, 255, 0.012);
+}
+.tty-table.table-zebra tbody tr:nth-child(even):hover td {
+	background: rgba(77, 159, 255, 0.05);
+}
+.tty-table .num {
+	text-align: right;
+	font-variant-numeric: tabular-nums;
+	font-feature-settings: "tnum" 1;
+}
+.tty-table .num-sign-up { color: var(--up); }
+.tty-table .num-sign-down { color: var(--down); }
+.tty-table .num-sign-zero { color: var(--text-faint); }
+
+/* Standalone .num class — for non-table contexts (cards, inline) */
+.num {
+	font-variant-numeric: tabular-nums;
+	font-feature-settings: "tnum" 1;
+}
+.num.right { text-align: right; display: inline-block; }
+
+/* Filter chip strip — Bloomberg-style active filters above tables */
+.chip-strip {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	font-family: var(--font-mono);
+	font-size: 10px;
+	letter-spacing: 0.08em;
+}
+.chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	padding: 3px 7px 3px 9px;
+	border: 1px solid var(--border);
+	background: var(--panel-2);
+	border-radius: 4px;
+	color: var(--text-dim);
+	text-transform: uppercase;
+	font-weight: 600;
+}
+.chip button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 12px;
+	height: 12px;
+	color: var(--text-faint);
+	font-size: 11px;
+	line-height: 1;
+	cursor: pointer;
+	border-radius: 2px;
+}
+.chip button:hover {
+	color: var(--down);
+	background: var(--down-dim);
+}
+.chip-key { color: var(--accent); }
+
+/* Hotkey legend strip — terminal footer, persistent */
+.hk-strip {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 14px;
+	font-family: var(--font-mono);
+	font-size: 10px;
+	color: var(--text-ghost);
+	letter-spacing: 0.05em;
+}
+.hk-strip kbd {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 16px;
+	height: 14px;
+	padding: 0 4px;
+	margin-right: 5px;
+	border: 1px solid var(--border);
+	background: var(--panel-2);
+	border-radius: 3px;
+	color: var(--text-dim);
+	font-family: var(--font-mono);
+	font-size: 9px;
+	font-weight: 600;
+}
+.hk-strip span { display: inline-flex; align-items: center; }
+
+/* Status pill — connection/market session state */
+.status-pill {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-family: var(--font-mono);
+	font-size: 10px;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--text-faint);
+	font-weight: 600;
+}
+.status-dot {
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: var(--text-faint);
+	flex-shrink: 0;
+}
+.status-dot.live { background: var(--up); box-shadow: 0 0 0 2px var(--up-dim); }
+.status-dot.warn { background: var(--gold); }
+.status-dot.dead { background: var(--down); }
 
 /* Ticker flash for live updates — softer */
 @keyframes flash-up {

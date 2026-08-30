@@ -1,6 +1,6 @@
 """Portfolio service: FIFO engine wrapper + JSON persistence.
 
-Wraps the copied trading-simulator FIFOEngine (app/services/fifo_engine.py)
+Wraps the FIFOEngine (app/_fifo.py — extracted from the old trading-simulator)
 as a service, with journal/watchlist/pending_orders stored under the
 backend data directory instead of the repo root.
 """
@@ -15,7 +15,7 @@ from typing import Any
 from app import db
 from app.config import DATA_DIR
 from app.market import fetch_forex, fetch_quote
-from app.services.fifo_engine import FIFOEngine, load_json, save_json
+from app._fifo import FIFOEngine, load_json, save_json
 
 logger = logging.getLogger(__name__)
 

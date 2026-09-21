@@ -19,7 +19,7 @@ function AppViz({ viz }: { viz: AppMeta["viz"] }) {
 							className="viz-eq-bar"
 							style={{
 								height: `${h}%`,
-								background: i % 2 === 0 ? "var(--accent)" : "rgba(232,239,248,0.14)",
+								background: i % 2 === 0 ? "var(--accent)" : "var(--border)",
 								animationDelay: `${-i * 0.18}s`,
 								opacity: i % 2 === 0 ? 0.95 : 0.9,
 							}}
@@ -36,7 +36,7 @@ function AppViz({ viz }: { viz: AppMeta["viz"] }) {
 							className="viz-bar"
 							style={{
 								height: `${h}%`,
-								background: i === 4 ? "var(--accent)" : "rgba(232,239,248,0.13)",
+								background: i === 4 ? "var(--accent)" : "var(--border)",
 							}}
 						/>
 					))}

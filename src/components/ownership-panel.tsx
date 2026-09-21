@@ -139,7 +139,7 @@ export function ShareholdersPanel({
               onClick={() => setCat(cat === c ? null : c)}
               className={`rounded-full px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-wider ${
                 cat === c
-                  ? "bg-[var(--accent)] text-black"
+                  ? "bg-[var(--accent)] text-white"
                   : "panel-2 text-[var(--text-dim)] hover:text-[var(--accent)]"
               }`}
             >
@@ -205,7 +205,7 @@ export function ShareholdersPanel({
                     <td className={`${td} font-semibold text-[var(--text)]`}>
                       {r.name}
                       {r.controlling && (
-                        <span className="ml-2 rounded-sm bg-[var(--gold)] px-1 font-mono text-[8px] font-bold uppercase text-black">
+                        <span className="ml-2 rounded-sm bg-[var(--gold)] px-1 font-mono text-[8px] font-bold uppercase text-white">
                           controlling
                         </span>
                       )}
@@ -410,7 +410,7 @@ function OwnerElsewhere({
           title={`${m.category || "holder"}${m.controlling ? " · controlling" : ""}${m.as_of ? ` · as of ${m.as_of}` : ""}`}
           className={`max-w-[22rem] truncate rounded-sm px-1.5 py-0.5 font-mono text-[10px] font-bold ${
             m.controlling
-              ? "bg-[var(--gold)] text-black"
+              ? "bg-[var(--gold)] text-white"
               : "panel-2 text-[var(--accent)] hover:text-black"
           }`}
         >

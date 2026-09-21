@@ -13,13 +13,13 @@ import {
 import type { HistoryRecord, IndicatorColumns } from "@/lib/api";
 
 const PALETTE = {
-	grid: "rgba(27, 38, 57, 0.9)",
-	rsi: "#4d9fff",
-	stochK: "#a78bfa",
-	stochD: "#facc15",
-	ref: "rgba(125, 138, 168, 0.55)",
-	refOverbought: "rgba(255, 93, 115, 0.45)",
-	refOversold: "rgba(63, 214, 140, 0.45)",
+	grid: "#EAEAEA",
+	rsi: "#2563eb",
+	stochK: "#7c3aed",
+	stochD: "#956400",
+	ref: "rgba(17, 17, 17, 0.18)",
+	refOverbought: "rgba(220, 38, 38, 0.40)",
+	refOversold: "rgba(21, 128, 61, 0.40)",
 };
 
 /** A bounded 0–100 momentum sub-pane (RSI or Stochastic K/D).
@@ -49,8 +49,8 @@ export default function MomentumPane({
 			height,
 			layout: {
 				background: { type: ColorType.Solid, color: "transparent" },
-				textColor: "#73809a",
-				fontFamily: "'JetBrains Mono', monospace",
+				textColor: "#6F6E6C",
+				fontFamily: "ui-monospace, Menlo, Consolas, monospace",
 				fontSize: 10,
 			},
 			grid: {
@@ -60,20 +60,20 @@ export default function MomentumPane({
 			crosshair: {
 				mode: 0,
 				vertLine: {
-					color: "rgba(77,159,255,0.35)",
-					labelBackgroundColor: "#0e7490",
+					color: "rgba(37, 99, 235, 0.35)",
+					labelBackgroundColor: "#EAEAEA",
 				},
 				horzLine: {
-					color: "rgba(77,159,255,0.35)",
-					labelBackgroundColor: "#0e7490",
+					color: "rgba(37, 99, 235, 0.35)",
+					labelBackgroundColor: "#EAEAEA",
 				},
 			},
 			rightPriceScale: {
-				borderColor: "#1f1f24",
+				borderColor: "#EAEAEA",
 				// Bounded 0–100 scale; autoScale false so ref lines stay fixed.
 				autoScale: false,
 			},
-			timeScale: { borderColor: "#1f1f24", timeVisible: true },
+			timeScale: { borderColor: "#EAEAEA", timeVisible: true },
 		});
 		chart.priceScale("right").applyOptions({
 			scaleMargins: { top: 0.08, bottom: 0.08 },
@@ -196,7 +196,7 @@ export default function MomentumPane({
 			const hist = chart.addSeries(HistogramSeries, {
 				priceScaleId: "",
 				priceFormat: { type: "volume" },
-				color: "rgba(90,200,120,0.7)",
+				color: "rgba(21, 128, 61, 0.55)",
 			});
 			hist.setData(
 				history.map((h, i) => {
@@ -206,10 +206,10 @@ export default function MomentumPane({
 						value: v,
 						color:
 							v > 1.2
-								? "rgba(90,200,120,0.85)"
+								? "rgba(21, 128, 61, 0.85)"
 								: v > 0.8
-									? "rgba(245,197,66,0.75)"
-									: "rgba(255,255,255,0.15)",
+									? "rgba(149, 100, 0, 0.7)"
+									: "rgba(17, 17, 17, 0.15)",
 					};
 				}),
 			);

@@ -48,14 +48,14 @@ export function BrokerChart({
           height: 260,
           layout: {
             background: { color: "transparent" },
-            textColor: "#9aa0a6",
+            textColor: "#6F6E6C",
           },
           grid: {
-            vertLines: { color: "rgba(255,255,255,0.06)" },
-            horzLines: { color: "rgba(255,255,255,0.06)" },
+            vertLines: { color: "#EAEAEA" },
+            horzLines: { color: "#EAEAEA" },
           },
           timeScale: { timeVisible: true },
-          rightPriceScale: { borderColor: "rgba(255,255,255,0.12)" },
+          rightPriceScale: { borderColor: "#EAEAEA" },
         }) as unknown as {
           addLineSeries: (o: unknown) => { setData: (d: unknown) => void };
           addHistogramSeries: (o: unknown) => { setData: (d: unknown) => void };
@@ -67,7 +67,7 @@ export function BrokerChart({
         // SAFETY: lightweight-charts Time is string alias; date strings valid
         const toTime = (d: string) => d as unknown as string;
         const priceLine = c.addLineSeries({
-          color: "#f5c542",
+          color: "#956400",
           lineWidth: 1.5,
           priceScaleId: "right",
         });
@@ -80,7 +80,7 @@ export function BrokerChart({
           ? (history.series[brokerPick] ?? [])
           : history.per_day.map((d) => d.top3_net);
         const line = c.addHistogramSeries({
-          color: "#7fb7ff",
+          color: "#2563eb",
           priceScaleId: "left",
         });
         const histData = history.dates.map((d, i) => ({
@@ -88,8 +88,8 @@ export function BrokerChart({
           value: vals[i] ?? 0,
           color:
             (vals[i] ?? 0) >= 0
-              ? "rgba(90,200,120,0.85)"
-              : "rgba(240,90,90,0.85)",
+              ? "rgba(21, 128, 61, 0.85)"
+              : "rgba(220, 38, 38, 0.85)",
         }));
         line.setData(histData);
         c.timeScale().fitContent();

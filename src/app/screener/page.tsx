@@ -187,7 +187,7 @@ export default function ScreenerPage() {
 						<button
 							onClick={() => void analyzeSingle()}
 							disabled={singleLoading}
-							className="shrink-0 rounded-md bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-black hover:opacity-90 disabled:opacity-50"
+							className="shrink-0 rounded-md bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
 						>
 							{singleLoading ? "…" : "Go"}
 						</button>
@@ -283,7 +283,7 @@ export default function ScreenerPage() {
 									<button
 										key={d}
 										onClick={() => setStealthDays(d as 20 | 30 | 60)}
-										className={`rounded-pill px-3 py-1.5 text-xs font-semibold ${stealthDays === d ? "bg-[var(--accent)] text-black" : "panel-2 text-[var(--text-dim)]"}`}
+										className={`rounded-pill px-3 py-1.5 text-xs font-semibold ${stealthDays === d ? "bg-[var(--accent)] text-white" : "panel-2 text-[var(--text-dim)]"}`}
 									>
 										{d}d
 									</button>
@@ -298,7 +298,7 @@ export default function ScreenerPage() {
 						{mode === "stealth" ? (
 							<button
 								onClick={() => void stealthQ.refresh()}
-								className="rounded-md bg-[var(--accent)] px-5 py-2 text-sm font-semibold text-black hover:opacity-90"
+								className="rounded-md bg-[var(--accent)] px-5 py-2 text-sm font-semibold text-white hover:opacity-90"
 							>
 								{stealthQ.loading ? "Scanning…" : "Scan Stealth"}
 							</button>
@@ -308,7 +308,7 @@ export default function ScreenerPage() {
 								className={`rounded-md px-5 py-2 text-sm font-semibold ${
 									running
 										? "bg-[var(--down)] text-white hover:opacity-90"
-										: "bg-[var(--accent)] text-black hover:opacity-90"
+										: "bg-[var(--accent)] text-white hover:opacity-90"
 								}`}
 							>
 								{running ? "Stop Scan" : done ? "Rescan" : "Start Scan"}

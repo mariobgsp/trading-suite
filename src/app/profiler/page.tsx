@@ -105,7 +105,7 @@ function ProfilerInner() {
 				/>
 				<button
 					onClick={analyze}
-					className="rounded-md bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-black hover:opacity-90"
+					className="rounded-md bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
 				>
 					Analyze
 				</button>

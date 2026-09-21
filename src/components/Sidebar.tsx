@@ -16,7 +16,7 @@ export default function Sidebar({ active }: { active: string }) {
 		<aside className="hidden w-[268px] shrink-0 flex-col border-r border-[var(--border)] bg-[var(--panel)] lg:flex sticky top-0 h-dvh">
 			{/* Brand */}
 			<div className="flex h-[72px] shrink-0 items-center gap-3 border-b border-[var(--border)] px-5">
-				<div className="flex h-[36px] w-[36px] items-center justify-center rounded-control bg-[var(--accent-strong)] text-[13px] font-black tracking-tight text-black">
+				<div className="flex h-[36px] w-[36px] items-center justify-center rounded-control bg-[var(--accent)] text-[13px] font-black tracking-tight text-white">
 					TS
 				</div>
 				<div className="min-w-0">
@@ -107,7 +107,7 @@ export default function Sidebar({ active }: { active: string }) {
 						<span className="text-[var(--text-faint)]">sentiment-analysis</span>
 					</div>
 					<div className="mt-3 flex items-center gap-2 font-mono text-[10px] text-[var(--text-ghost)]">
-						<span className="h-1.5 w-1.5 rounded-full bg-[var(--up)]" />
+						<span className="h-1.5 w-1.5 rounded-full bg-[var(--text-ghost)]" />
 						All systems operational
 					</div>
 				</div>

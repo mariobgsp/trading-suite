@@ -14,13 +14,13 @@ import {
 import type { HistoryRecord, IndicatorColumns } from "@/lib/api";
 
 const PALETTE = {
-	up: "#4ade80",
-	down: "#fb7185",
-	line: "#4d9fff",
-	line2: "#a78bfa",
-	line3: "#facc15",
-	volume: "rgba(125, 211, 252, 0.22)",
-	grid: "rgba(27, 38, 57, 0.9)",
+	up: "#15803d",
+	down: "#dc2626",
+	line: "#2563eb",
+	line2: "#7c3aed",
+	line3: "#956400",
+	volume: "rgba(37, 99, 235, 0.18)",
+	grid: "#EAEAEA",
 };
 
 export interface ChartOptions {
@@ -58,8 +58,8 @@ export default function MarketChart({
 			height,
 			layout: {
 				background: { type: ColorType.Solid, color: "transparent" },
-				textColor: "#73809a",
-				fontFamily: "'JetBrains Mono', monospace",
+				textColor: "#6F6E6C",
+				fontFamily: "ui-monospace, Menlo, Consolas, monospace",
 				fontSize: 11,
 			},
 			grid: {
@@ -69,16 +69,16 @@ export default function MarketChart({
 			crosshair: {
 				mode: 0,
 				vertLine: {
-					color: "rgba(77,159,255,0.45)",
-					labelBackgroundColor: "#0e7490",
+					color: "rgba(37, 99, 235, 0.4)",
+					labelBackgroundColor: "#EAEAEA",
 				},
 				horzLine: {
-					color: "rgba(77,159,255,0.45)",
-					labelBackgroundColor: "#0e7490",
+					color: "rgba(37, 99, 235, 0.4)",
+					labelBackgroundColor: "#EAEAEA",
 				},
 			},
-			rightPriceScale: { borderColor: "#1f1f24" },
-			timeScale: { borderColor: "#1f1f24", timeVisible: true },
+			rightPriceScale: { borderColor: "#EAEAEA" },
+			timeScale: { borderColor: "#EAEAEA", timeVisible: true },
 		});
 		chartRef.current = chart;
 
@@ -299,7 +299,7 @@ export default function MarketChart({
 				.filter((x): x is { time: UTCTimestamp; value: number } => x !== null);
 			if (lpmData.length) {
 				const lpmSeries = chart.addSeries(LineSeries, {
-					color: "#f5c542",
+					color: "#956400",
 					lineWidth: 1,
 					priceLineVisible: false,
 					lastValueVisible: false,
@@ -345,7 +345,7 @@ export default function MarketChart({
 		const intensitySeries = chart.addSeries(HistogramSeries, {
 			priceScaleId: "",
 			priceFormat: { type: "volume" },
-			color: "rgba(90,200,120,0.7)",
+			color: "rgba(21, 128, 61, 0.55)",
 		});
 		intensitySeries.setData(
 			history.map((h, i) => {
@@ -355,10 +355,10 @@ export default function MarketChart({
 					value: v,
 					color:
 						v > 1.2
-							? "rgba(90,200,120,0.85)"
+							? "rgba(21, 128, 61, 0.85)"
 							: v > 0.8
-								? "rgba(245,197,66,0.75)"
-								: "rgba(255,255,255,0.15)",
+								? "rgba(149, 100, 0, 0.7)"
+								: "rgba(17, 17, 17, 0.15)",
 				};
 			}),
 		);
@@ -421,16 +421,16 @@ export function SimpleLineChart({
 			height,
 			layout: {
 				background: { type: ColorType.Solid, color: "transparent" },
-				textColor: "#73809a",
-				fontFamily: "'JetBrains Mono', monospace",
+				textColor: "#6F6E6C",
+				fontFamily: "ui-monospace, Menlo, Consolas, monospace",
 				fontSize: 11,
 			},
 			grid: {
 				vertLines: { color: PALETTE.grid },
 				horzLines: { color: PALETTE.grid },
 			},
-			rightPriceScale: { borderColor: "#1f1f24" },
-			timeScale: { borderColor: "#1f1f24" },
+			rightPriceScale: { borderColor: "#EAEAEA" },
+			timeScale: { borderColor: "#EAEAEA" },
 		});
 		const series = chart.addSeries(LineSeries, { color, lineWidth: 2 });
 		series.setData(

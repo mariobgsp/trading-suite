@@ -82,7 +82,7 @@ export default function ForeignBarsPanel({ enabled, onToggle }: Props) {
             onToggle(next);
             setExpanded(next);
           }}
-          className={`rounded-pill px-3 py-1.5 font-mono text-[11px] font-semibold transition-all ${enabled ? "bg-[var(--accent)] text-black" : "bg-[var(--panel-2)] text-[var(--text-faint)] hover:text-[var(--text-dim)]"}`}
+          className={`rounded-pill px-3 py-1.5 font-mono text-[11px] font-semibold transition-all ${enabled ? "bg-[var(--accent)] text-white" : "bg-[var(--panel-2)] text-[var(--text-faint)] hover:text-[var(--text-dim)]"}`}
         >
           {enabled ? "Enabled" : "Disabled"}
         </button>

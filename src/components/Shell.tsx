@@ -61,7 +61,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 		<div className="flex min-h-dvh overflow-hidden bg-[var(--bg)] font-mono">
 			<a
 				href="#main"
-				className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-control focus:bg-[var(--accent)] focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-black"
+				className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-control focus:bg-[var(--accent)] focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-white"
 			>
 				skip
 			</a>
@@ -73,10 +73,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 				<div className="sticky top-0 z-30 border-b border-[var(--border)] bg-[var(--panel)]">
 					{/* title bar like macOS terminal */}
 					<div className="flex h-7 items-center gap-1.5 px-3">
-						<span className="h-3 w-3 rounded-full bg-[#ff5f56]" />
-						<span className="h-3 w-3 rounded-full bg-[#ffbd2e]" />
-						<span className="h-3 w-3 rounded-full bg-[#27c93f]" />
-						<span className="ml-3 font-mono text-[11px] tracking-wide text-[var(--text-faint)]">
+						<span className="font-mono text-[11px] tracking-wide text-[var(--text-faint)]">
 							trading-suite — zsh — 80×24
 						</span>
 						<span className="ml-auto hidden items-center gap-3 font-mono text-[10px] text-[var(--text-ghost)] sm:flex">
@@ -96,7 +93,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 					</div>
 					{/* prompt bar — instant, no API */}
 					<div className="flex items-center gap-2 border-t border-[var(--line)] bg-[var(--bg-subtle)] px-3 py-1.5">
-						<span className="font-mono text-[11px] font-bold text-[var(--up)]">
+						<span className="font-mono text-[11px] font-bold text-[var(--text-dim)]">
 							mario@desk
 						</span>
 						<span className="text-[var(--text-ghost)]">:</span>
@@ -152,7 +149,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 					</div>
 					<footer className="mx-auto max-w-[1380px] px-4 pb-6 sm:px-6 lg:px-8">
 						<div className="border-t border-[var(--line)] pt-4 font-mono text-[11px] leading-relaxed text-[var(--text-ghost)]">
-							<span className="text-[var(--up)]">●</span> live ·{" "}
+							<span className="text-[var(--text-ghost)]">●</span> live ·{" "}
 							<span className="text-[var(--text-faint)]">IDX delayed</span> · no advice
 							·{" "}
 							<span className="underline decoration-[var(--line-2)] underline-offset-4">
@@ -174,7 +171,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 					onClick={() => setCmdOpen(false)}
 				>
 					<div
-						className="panel w-full max-w-[560px] overflow-hidden rounded-[14px] border-[var(--border-strong)] shadow-[0_16px_48px_rgba(0,0,0,0.6)]"
+						className="panel w-full max-w-[560px] overflow-hidden border-[var(--border)]"
 						onClick={(e) => e.stopPropagation()}
 					>
 						<div className="flex items-center gap-3 border-b border-[var(--border)] px-4 py-3">

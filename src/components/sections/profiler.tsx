@@ -10,7 +10,6 @@ import {
 } from "@/lib/api";
 import type { PatternBacktest } from "@/lib/api/types-profiler";
 import { useProfiler } from "@/lib/profiler/useProfiler";
-import Shell from "@/components/Shell";
 import {
 	ChangeBadge,
 	SectionHeader,
@@ -52,15 +51,15 @@ const POPULAR = [
 	"AMMN",
 ];
 
-export default function ProfilerPage() {
+export function ProfilerSection() {
 	// ?ticker= deep links need useSearchParams, which requires a Suspense
 	// boundary for static prerender.
 	return (
 		<Suspense
 			fallback={
-				<Shell>
+				<div className="space-y-5">
 					<Skeleton className="h-[420px]" />
-				</Shell>
+</div>
 			}
 		>
 			<ProfilerInner />
@@ -86,7 +85,7 @@ function ProfilerInner() {
 	}
 
 	return (
-		<Shell>
+		<div className="space-y-5">
 			<SectionHeader
 				title="Stock Profiler"
 				subtitle="One screen, the full picture — quote, price action, beta, bandarmology, regime, and entry plan"
@@ -337,7 +336,7 @@ function ProfilerInner() {
 			{history.data && !history.data.error && history.data.history.length > 0 && (
 				<PriceStats history={history.data} />
 			)}
-		</Shell>
+</div>
 	);
 }
 

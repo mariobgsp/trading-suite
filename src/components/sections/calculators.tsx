@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import { fmtIdr, fmtNum } from "@/lib/api";
-import Shell from "@/components/Shell";
 import { SectionHeader } from "@/components/ui";
 
 /**
@@ -10,9 +9,9 @@ import { SectionHeader } from "@/components/ui";
  * Mirrors the tradersaham calculator set: average price, position sizing,
  * risk/reward, profit & ARA/ARB.
  */
-export default function CalculatorsPage() {
+export function CalculatorsSection() {
 	return (
-		<Shell>
+		<div className="space-y-5">
 			<SectionHeader
 				title="Calculators"
 				subtitle="Position math for the IDX desk — average price, sizing, risk, and corporate-action math"
@@ -23,7 +22,7 @@ export default function CalculatorsPage() {
 				<RiskRewardCalc />
 				<ProfitCalc />
 			</div>
-		</Shell>
+</div>
 	);
 }
 

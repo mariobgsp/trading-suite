@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { usePolling } from "@/lib/usePolling";
 import { api, fmtNum, type Quote, type RegimeSnapshot } from "@/lib/api";
-import Shell from "@/components/Shell";
 import { ChangeBadge, SectionHeader, StatCard } from "@/components/ui";
 import { SimpleLineChart } from "@/components/MarketChart";
 
@@ -20,7 +19,7 @@ const WATCHLIST = [
 // Only symbols that actually resolve on Yahoo Finance (^JKIDX30 etc. are dead)
 const INDEX_SYMBOLS = ["^JKSE", "^JKLQ45"];
 
-export default function OverviewPage() {
+export function OverviewSection() {
 	const indices = usePolling<Quote[]>(
 		() => api.getCached<Quote[]>("/api/market/indices"),
 		45000,
@@ -49,7 +48,7 @@ export default function OverviewPage() {
 	);
 
 	return (
-		<Shell>
+		<div className="space-y-5">
 			<SectionHeader
 				eyebrow="Market desk · IDX composite"
 				title="Overview"
@@ -125,7 +124,7 @@ export default function OverviewPage() {
 							Watchlist — 8 names
 						</h2>
 						<Link
-							href="/markets"
+							href="/#markets"
 							className="inline-flex items-center gap-1 rounded-pill border border-[var(--border)] bg-[var(--panel-2)] px-3 py-1 font-mono text-[11px] font-semibold text-[var(--accent)] transition-colors hover:border-[var(--accent-dim)] hover:bg-[var(--accent-dim)]"
 						>
 							Open Markets →
@@ -149,7 +148,7 @@ export default function OverviewPage() {
 										<tr key={t} className="border-b border-[var(--border)]/50">
 											<td className="py-2">
 												<Link
-													href={`/markets?ticker=${t}`}
+													href={`/?ticker=${t}`}
 													className="font-semibold text-[var(--accent)] hover:underline"
 												>
 													{t}
@@ -232,7 +231,7 @@ export default function OverviewPage() {
 					</div>
 				</div>
 			</div>
-		</Shell>
+</div>
 	);
 }
 

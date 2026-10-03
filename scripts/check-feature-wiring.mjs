@@ -2,18 +2,21 @@
 /**
  * Feature-wiring guard — fails if the suite's features get dismantled:
  *
- *   1. Every app in src/lib/apps.ts must have a Next page at src/app<href>/page.tsx.
- *   2. Every page must reference at least one endpoint declared for it in apps.ts.
+ *   1. Every section in src/lib/sections.ts must have a module at
+ *      src/components/sections/<id>.tsx.
+ *   2. Every section must reference at least one endpoint declared for it.
  *   3. Every declared /api/... endpoint must exist in some backend router file.
- *   4. Core feature strings must survive in the pages that own them
+ *   4. Core feature strings must survive in the sections that own them
  *      (D-Signal groups, Konglo groups, ownership register, rotation accum).
  *
  * No dependencies: plain node + regex. Run: npm test
  */
 import { readFileSync, existsSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const root = process.cwd();
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
 let failures = 0;
 const fail = (msg) => {
 	failures++;
@@ -21,37 +24,37 @@ const fail = (msg) => {
 };
 const ok = (msg) => console.log(`ok   ${msg}`);
 
-// ── Parse apps.ts ──────────────────────────────────────────────────────
-const appsSrc = readFileSync(join(root, "src/lib/apps.ts"), "utf8");
-const appBlocks = appsSrc.split(/\{\s*\n\s*num:/).slice(1);
-let apps = appBlocks.map((block) => {
-	const href = block.match(/href:\s*"([^"]+)"/)?.[1];
-	const endpoints = [...block.matchAll(/"(\/api\/[^"]+)"/g)].map((m) => m[1]);
-	return { href, endpoints };
-});
-apps = apps.filter((a) => a.href);
-if (apps.length < 5)
-	fail(`apps.ts has only ${apps.length} apps — entries were removed`);
+// ── Parse sections.ts ───────────────────────────────────────────────────
+const registrySrc = readFileSync(join(root, "src/lib/sections.ts"), "utf8");
+const apps = [...registrySrc.matchAll(/id:\s*"([^"]+)"([\s\S]*?)endpoints:\s*\[([^\]]*)\]/g)].map(
+	([, id, , eps]) => ({
+		id,
+		endpoints: [...eps.matchAll(/"(\/api\/[^"]*)"/g)].map((m) => m[1]),
+	}),
+);
+if (apps.length < 5) {
+	fail(`sections.ts declares only ${apps.length} sections — entries were removed`);
+}
 
-// ── 1+2: page exists per app, references its endpoints ────────────────
-for (const { href, endpoints } of apps) {
-	const pagePath = join(root, "src/app", href, "page.tsx");
-	if (!existsSync(pagePath)) {
-		fail(`no page for nav entry ${href} (expected ${pagePath})`);
+// ── 1+2: module exists per section, references its endpoints ────────────
+for (const { id, endpoints } of apps) {
+	const file = join(root, "src/components/sections", `${id}.tsx`);
+	if (!existsSync(file)) {
+		fail(`${id}: src/components/sections/${id}.tsx deleted`);
 		continue;
 	}
-	const pageSrc = readFileSync(pagePath, "utf8");
+	const sectionSrc = readFileSync(file, "utf8");
 	const concrete = endpoints.map((e) => e.replace(/\{ticker\}.*/, ""));
 	if (concrete.length === 0) {
-		ok(`${href}: page exists (no API)`);
+		ok(`${id}: section exists (no API)`);
 		continue;
 	}
-	const referenced = concrete.some((e) => pageSrc.includes(e));
-	if (!referenced)
+	const referenced = concrete.some((e) => sectionSrc.includes(e));
+	if (!referenced) {
 		fail(
-			`${href}/page.tsx no longer calls any of its declared endpoints (${endpoints.join(", ")})`,
+			`${id}.tsx no longer calls any of its declared endpoints (${endpoints.join(", ")})`,
 		);
-	else ok(`${href}: page exists, calls its API`);
+	} else ok(`${id}: section exists, calls its API`);
 }
 
 // ── 3: every declared endpoint exists in backend routers ──────────────
@@ -67,29 +70,30 @@ const allRoutes = readdirSync(routersDir)
 		);
 	})
 	.flat();
-for (const { href, endpoints } of apps) {
+for (const { id, endpoints } of apps) {
 	for (const ep of endpoints) {
 		const base = ep.replace(/\{[^}]*\}/g, "{}");
-		if (!allRoutes.includes(base))
-			fail(`endpoint ${ep} (app ${href}) missing from backend routers`);
+		if (!allRoutes.includes(base)) {
+			fail(`endpoint ${ep} (section ${id}) missing from backend routers`);
+		}
 	}
 }
-ok("backend routes cover all declared app endpoints");
+ok("backend routes cover all declared section endpoints");
 
 // ── 4: feature markers that must not disappear ────────────────────────
 const MARKERS = [
 	[
-		"src/app/markets/page.tsx",
+		"src/components/sections/markets.tsx",
 		["ForeignBarsPanel", "showLpm", "showIntensity"],
 		"Markets foreign bars + LPM toggles",
 	],
 	[
-		"src/app/profiler/page.tsx",
+		"src/components/sections/profiler.tsx",
 		["ValidatorDetail", "StockbitBrokerPanel", "Bandarmology"],
 		"Profiler merged validator",
 	],
 	[
-		"src/app/screener/page.tsx",
+		"src/components/sections/screener.tsx",
 		["SSE", "behavior", "vault"],
 		"Screener backend filter",
 	],

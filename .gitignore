@@ -56,3 +56,7 @@ specs/tech-architecture/
 
 # tanstack router temp files
 pilot/.tanstack/
+
+# promotional video — separate project, not part of the suite.
+# Covers its deps, rendered output and public assets.
+video/

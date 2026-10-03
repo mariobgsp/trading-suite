@@ -4,7 +4,6 @@ import { Suspense, useState, useSyncExternalStore } from "react";
 import { useSearchParams } from "next/navigation";
 import { api, fmtNum, type HistoryResponse, type Quote } from "@/lib/api";
 import { usePolling } from "@/lib/usePolling";
-import Shell from "@/components/Shell";
 import { ChangeBadge, SectionHeader, StatCard } from "@/components/ui";
 import MarketChart from "@/components/MarketChart";
 import MomentumPane from "@/components/MomentumPane";
@@ -23,7 +22,7 @@ const POPULAR = [
 	"AMMN",
 ];
 
-export default function MarketsPage() {
+export function MarketsSection() {
 	return (
 		<Suspense fallback={<MarketsLoading />}>
 			<MarketsInner />
@@ -33,12 +32,12 @@ export default function MarketsPage() {
 
 function MarketsLoading() {
 	return (
-		<Shell>
+		<div className="space-y-5">
 			<SectionHeader
 				title="Markets"
 				subtitle="$ markets --ticker BBCA --period 1y"
 			/>
-		</Shell>
+</div>
 	);
 }
 
@@ -109,7 +108,7 @@ function MarketsInner() {
 		);
 
 	return (
-		<Shell>
+		<div className="space-y-5">
 			<SectionHeader
 				eyebrow="OHLCV · SMA / EMA · Volume"
 				title="Markets"
@@ -347,7 +346,7 @@ function MarketsInner() {
 					</button>
 				))}
 			</div>
-		</Shell>
+</div>
 	);
 }
 

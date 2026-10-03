@@ -29,7 +29,6 @@ type StealthResp = {
 	stealth_count: number;
 	note?: string;
 };
-import Shell from "@/components/Shell";
 import { ChangeBadge, SectionHeader, Spinner } from "@/components/ui";
 
 const ACTION_TONE: Record<string, string> = {
@@ -49,7 +48,7 @@ type SseFrame = {
 	results?: ScreenerResult[];
 } & Record<string, unknown>;
 
-export default function ScreenerPage() {
+export function ScreenerSection() {
 	const [mode, setMode] = useState<
 		"behavior" | "squeeze" | "vault" | "stealth" | "bull_div"
 	>("behavior");
@@ -163,7 +162,7 @@ export default function ScreenerPage() {
 	) as VaultRow[];
 
 	return (
-		<Shell>
+		<div className="space-y-5">
 			<SectionHeader
 				eyebrow="Behavior · Squeeze · Vault — SSE streamed"
 				title="Screener"
@@ -399,7 +398,7 @@ export default function ScreenerPage() {
 													className="border-b border-[var(--border)]/50 hover:bg-[var(--panel-2)]/50"
 												>
 													<td className="py-2 font-mono font-semibold text-[var(--text-faint)]">
-														<Link href={`/markets?ticker=${r.ticker}`}>{r.ticker}</Link>
+														<Link href={`/?ticker=${r.ticker}#markets`}>{r.ticker}</Link>
 													</td>
 													<td className="tabular py-2 text-right font-mono">
 														{fmtNum(r.price)}
@@ -445,7 +444,7 @@ export default function ScreenerPage() {
 											className="border-b border-[var(--border)]/50 hover:bg-[var(--panel-2)]/50"
 										>
 											<td className="py-2 font-mono font-semibold text-[var(--accent)]">
-												<Link href={`/markets?ticker=${r.ticker}`}>{r.ticker}</Link>
+												<Link href={`/?ticker=${r.ticker}#markets`}>{r.ticker}</Link>
 											</td>
 											<td className="tabular py-2 text-right font-mono">
 												{fmtNum(r.price)}
@@ -505,7 +504,7 @@ export default function ScreenerPage() {
 													className="border-b border-[var(--border)]/50 hover:bg-[var(--panel-2)]/50"
 												>
 													<td className="py-2 font-mono font-semibold text-[var(--accent)]">
-														<Link href={`/markets?ticker=${row.ticker}`}>{row.ticker}</Link>
+														<Link href={`/?ticker=${row.ticker}#markets`}>{row.ticker}</Link>
 													</td>
 													<td className="tabular py-2 text-right font-mono">
 														{fmtNum(row.close)}
@@ -602,7 +601,7 @@ export default function ScreenerPage() {
 					</div>
 				)}
 			</div>
-		</Shell>
+</div>
 	);
 }
 

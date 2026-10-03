@@ -63,7 +63,13 @@
 	--shadow-elev-hi: var(--elev-hi);
 	--shadow-elev-soft: var(--elev-soft);
 	--font-sans:
-		-apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+		ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue",
+		Helvetica, Arial, sans-serif;
+	/* Editorial serif, used only for display type. System stack on purpose:
+	   no webfont request, no layout shift, no build-time network dependency. */
+	--font-display:
+		Newsreader, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia,
+		"Times New Roman", serif;
 	--font-mono:
 		ui-monospace, Menlo, Consolas, monospace;
 }

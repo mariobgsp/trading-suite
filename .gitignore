@@ -1,5 +1,6 @@
 # dependencies
-/node_modules
+# Unanchored so nested installs (pilot/node_modules) are ignored too.
+node_modules
 /.pnp
 .pnp.*
 

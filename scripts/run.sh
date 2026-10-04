@@ -16,12 +16,9 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-echo "▶ Starting Next.js frontend on http://localhost:3000 ..."
-if command -v bun >/dev/null 2>&1; then
-	echo "▶ Using Bun runtime (bun $(bun --version)) for next dev"
-	(cd "$ROOT" && bun run dev)
-else
-	(cd "$ROOT" && npm run dev)
-fi
+echo "▶ Starting Vite frontend on http://localhost:5173 ..."
+# The Python backend's CORS allowlist already covers :5173, so the Vite
+# default port works without touching backend/app/config.py.
+(cd "$ROOT/frontend-web" && npm run dev)
 
 wait "$BACKEND_PID"

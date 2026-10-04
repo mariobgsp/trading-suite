@@ -3,7 +3,7 @@
  * Feature-wiring guard — fails if the suite's features get dismantled:
  *
  *   1. Every section in src/lib/sections.ts must have a module at
- *      src/components/sections/<id>.tsx.
+ *      src/components/sections/<id>.tsx.   (frontend-web/src/...)
  *   2. Every section must reference at least one endpoint declared for it.
  *   3. Every declared /api/... endpoint must exist in some backend router file.
  *   4. Core feature strings must survive in the sections that own them
@@ -17,6 +17,11 @@ import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
+// The frontend moved to frontend-web/ (Vite) when Next.js was dropped. The
+// guard checks the same section-to-module wiring, so only the frontend paths
+// need repointing - backend/ paths stay relative to root.
+const fe = join(root, "frontend-web");
+
 let failures = 0;
 const fail = (msg) => {
 	failures++;
@@ -25,7 +30,7 @@ const fail = (msg) => {
 const ok = (msg) => console.log(`ok   ${msg}`);
 
 // ── Parse sections.ts ───────────────────────────────────────────────────
-const registrySrc = readFileSync(join(root, "src/lib/sections.ts"), "utf8");
+const registrySrc = readFileSync(join(fe, "src/lib/sections.ts"), "utf8");
 const apps = [...registrySrc.matchAll(/id:\s*"([^"]+)"([\s\S]*?)endpoints:\s*\[([^\]]*)\]/g)].map(
 	([, id, , eps]) => ({
 		id,
@@ -38,7 +43,7 @@ if (apps.length < 5) {
 
 // ── 1+2: module exists per section, references its endpoints ────────────
 for (const { id, endpoints } of apps) {
-	const file = join(root, "src/components/sections", `${id}.tsx`);
+	const file = join(fe, "src/components/sections", `${id}.tsx`);
 	if (!existsSync(file)) {
 		fail(`${id}: src/components/sections/${id}.tsx deleted`);
 		continue;
@@ -99,11 +104,11 @@ const MARKERS = [
 	],
 ];
 for (const [file, needles, label] of MARKERS) {
-	if (!existsSync(join(root, file))) {
+	if (!existsSync(join(fe, file))) {
 		fail(`${label}: ${file} deleted`);
 		continue;
 	}
-	const src = readFileSync(join(root, file), "utf8");
+	const src = readFileSync(join(fe, file), "utf8");
 	const missing = needles.filter((n) => !src.includes(n));
 	if (missing.length) fail(`${label}: lost markers ${missing.join(", ")}`);
 	else ok(`${label}: intact`);

@@ -19,6 +19,7 @@ from app.routers import (  # pyright: ignore[reportAttributeAccessIssue]
     backtest,
     intel,
     market,
+    plan,
     portfolio,
     regime,
     screener,
@@ -136,6 +137,7 @@ app.add_middleware(
 )
 
 for router in (
+    plan.router,
     analysis.router,
     alerts.router,
     intel.router,

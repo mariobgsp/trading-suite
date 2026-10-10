@@ -21,11 +21,25 @@ export interface ChartOptions {
 	overlayIndicators?: string[]; // e.g. ["sma20", "sma50", "sma200", "ema21"]
 }
 
+/**
+ * A horizontal level drawn across the chart. The plan uses these for the
+ * 40-session high the name had to break, plus the target and stop it will
+ * manage the trade to — so the geometry can be checked against the candles by
+ * eye rather than taken on trust.
+ */
+export interface PriceLine {
+	price: number;
+	title: string;
+	/** `solid` for levels a trade is managed against, `dashed` for context. */
+	style?: "solid" | "dashed";
+}
+
 export default function MarketChart({
 	history,
 	indicators,
 	height = 420,
 	options,
+	priceLines,
 	stockbitLpm,
 	stockbitIntensity,
 }: {
@@ -33,6 +47,7 @@ export default function MarketChart({
 	indicators?: IndicatorColumns;
 	height?: number;
 	options?: ChartOptions;
+	priceLines?: PriceLine[];
 	stockbitLpm?: (number | null)[];
 	stockbitIntensity?: number[];
 }) {
@@ -115,6 +130,42 @@ export default function MarketChart({
 			})),
 		);
 	}, [history, theme]);
+
+	// Horizontal levels: the 40-session high a breakout cleared, and the target
+	// and stop the trade is managed to. Redrawn whenever they or the theme move,
+	// because the chart is canvas-painted and the colours are baked in.
+	const priceLineRefs = useRef<ReturnType<ISeriesApi<"Candlestick">["createPriceLine"]>[]>([]);
+
+	useEffect(() => {
+		const candles = seriesRef.current;
+		if (!candles) return;
+
+		// lightweight-charts cannot enumerate existing price lines, so the
+		// handles we created are kept and removed explicitly. Without this a
+		// re-render would stack a fresh set on top of the old one.
+		for (const line of priceLineRefs.current) candles.removePriceLine(line);
+		priceLineRefs.current = [];
+
+		if (!priceLines?.length) return;
+		for (const line of priceLines) {
+			if (!Number.isFinite(line.price)) continue;
+			priceLineRefs.current.push(
+				candles.createPriceLine({
+					price: line.price,
+					color: theme.gold,
+					lineWidth: 1,
+					lineStyle: line.style === "dashed" ? 2 : 0, // 2 = dashed, 0 = solid
+					axisLabelVisible: true,
+					title: line.title,
+				}),
+			);
+		}
+
+		return () => {
+			for (const line of priceLineRefs.current) candles.removePriceLine(line);
+			priceLineRefs.current = [];
+		};
+	}, [priceLines, theme]);
 
 	// Volume histogram (on the price scale, hidden by default per design)
 	useEffect(() => {

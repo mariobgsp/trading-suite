@@ -3,25 +3,46 @@ import {
 	createRootRoute,
 	createRoute,
 	createRouter,
+	Link,
 	Outlet,
 	redirect,
 } from "@tanstack/react-router";
-import { SectionBodies } from "@/components/sections";
 import ThemeToggle from "@/components/ThemeToggle";
-import { SECTIONS } from "@/lib/sections";
-
-/* Next exported these from app/layout.tsx as `metadata`. Vite has no
- * metadata API, so the same two values are written onto the document shell
- * that index.html ships. */
-const TITLE = "Trading Suite — IDX Desk";
-const DESCRIPTION =
-	"The IDX desk on one page: live IHSG indices and regime, candlestick charts with foreign flow and ownership, the screener, a FIFO portfolio profiler, and position calculators.";
+import Tonight from "@/routes/Tonight";
+import Name from "@/routes/Name";
+import Method from "@/routes/Method";
+import Screener from "@/routes/Screener";
 
 /**
- * Port of src/app/layout.tsx. <html>/<body> live in index.html, so this keeps
- * only the in-body markup and renders the child route through <Outlet />.
+ * Four screens, and that is the whole navigation.
+ *
+ *   Tonight  - what to buy, or why not to
+ *   Screener - every name, ranked by how near it is to being buyable
+ *   Method   - the rules and the measured proof
+ *   Name     - one name, priced as a trade, with its chart
+ *
+ * The earlier 22-tool desk is gone. Its chart survives on the Name page, where
+ * the levels the method trades against are drawn on the candles. Everything
+ * else — the portfolio profiler, the ownership panel, the broker feed, the
+ * calculators, the old behaviour screener — was machinery around a different
+ * question and has no place in a tool you open once a night to decide what to
+ * buy.
  */
+
+const TITLE = "Tonight — IDX swing plan";
+const DESCRIPTION =
+	"Which IDX stocks to buy next session and why, from a walk-forward measured swing-trading method: 80%+ win rate and +5% average per trade, with fees inside every trade.";
+
+/** The nav. Order is reading order, not importance. */
+const NAV = [
+	{ to: "/", label: "Tonight" },
+	{ to: "/screener", label: "Screener" },
+	{ to: "/method", label: "Method" },
+] as const;
+
 function RootComponent() {
+	// Vite has no metadata API, so the two values the page needs are written
+	// onto the shell index.html ships.
 	useEffect(() => {
 		document.title = TITLE;
 		document
@@ -38,124 +59,140 @@ function RootComponent() {
 				Skip to content
 			</a>
 			<header className="sticky top-0 z-40 border-b border-[var(--border)] bg-[var(--bg)]">
-				<div className="mx-auto flex max-w-[1380px] items-center justify-between gap-6 px-4 py-3 sm:px-6 lg:px-8">
-					<div className="flex shrink-0 items-center gap-4">
-						<span className="font-display text-[15px] tracking-[-0.01em] text-[var(--text)]">
-							Trading Suite
-						</span>
-						<ThemeToggle />
-					</div>
-					<nav
-						aria-label="Sections"
-						className="flex items-center gap-4 overflow-x-auto sm:gap-6"
-					>
-						{SECTIONS.map(({ id, num, label }) => (
-							<a
-								key={id}
-								href={`#${id}`}
-								className="shrink-0 font-mono text-[11px] uppercase tracking-[0.12em] text-[var(--text-faint)] transition-colors hover:text-[var(--text)]"
+				<div className="mx-auto flex max-w-[1180px] items-center justify-between gap-6 px-4 py-3 sm:px-6 lg:px-8">
+					<Link to="/" className="shrink-0 font-display text-[15px] tracking-[-0.01em] text-[var(--text)]">
+						Tonight
+					</Link>
+					<nav aria-label="Sections" className="flex items-center gap-5 sm:gap-7">
+						{NAV.map(({ to, label }) => (
+							<Link
+								key={to}
+								to={to}
+								activeOptions={{ exact: to === "/" }}
+								activeProps={{ className: "text-[var(--text)]" }}
+								inactiveProps={{ className: "text-[var(--text-ghost)]" }}
+								className="font-mono text-[11px] uppercase tracking-[0.12em] transition-colors hover:text-[var(--text)]"
 							>
-								<span className="text-[var(--text-ghost)]">{num}</span> {label}
-							</a>
+								{label}
+							</Link>
 						))}
 					</nav>
+					<ThemeToggle />
 				</div>
 			</header>
-			<Outlet />
+			<main id="main">
+				<Outlet />
+			</main>
+			<footer className="border-t border-[var(--border)]">
+				<div className="mx-auto max-w-[1180px] px-4 py-8 text-[11px] leading-relaxed text-[var(--text-ghost)] sm:px-6 lg:px-8">
+					<p className="max-w-[80ch]">
+						Every number here is read from a walk-forward backtest of the IDX universe, with fees
+						and slippage inside each trade. It is a research result, not financial advice, and it
+						is not a promise — read{" "}
+						<Link to="/method" className="underline underline-offset-2 hover:text-[var(--text-faint)]">
+							the method page
+						</Link>{" "}
+						before the first trade.
+					</p>
+				</div>
+			</footer>
 		</>
 	);
 }
 
-/** Port of src/app/page.tsx. */
-function IndexComponent() {
-	return (
-		<main id="main" className="mx-auto max-w-[1380px] px-4 sm:px-6 lg:px-8">
-			<div className="border-b border-[var(--border)] py-14 sm:py-20 lg:py-28">
-				<p className="font-mono text-[11px] uppercase tracking-[0.16em] text-[var(--text-ghost)]">
-					$ idx desk
-				</p>
-				<h1 className="mt-4 max-w-[24ch] font-display text-[34px] leading-[1.05] tracking-[-0.02em] text-[var(--text)] sm:text-[44px] lg:text-[54px]">
-					The IDX desk, end to end.
-				</h1>
-				<p className="mt-6 max-w-[58ch] text-[14px] leading-relaxed text-[var(--text-dim)] sm:text-[15px]">
-					Indices and the regime read, candlestick charts with foreign flow and
-					ownership, the screener, a FIFO portfolio profiler, and the position
-					math. Stacked in reading order — no menus between them.
-				</p>
-			</div>
-
-			<SectionBodies />
-
-			<footer className="border-t border-[var(--border)] py-10">
-				<p className="font-mono text-[11px] uppercase tracking-[0.12em] text-[var(--text-ghost)]">
-					Trading Suite · Indonesia Stock Exchange
-				</p>
-			</footer>
-		</main>
-	);
-}
-
-const rootRoute = createRootRoute({ component: RootComponent });
+const rootRoute = createRootRoute({
+	component: RootComponent,
+	notFoundComponent: () => (
+		<div className="mx-auto max-w-[1180px] px-4 py-20 sm:px-6 lg:px-8">
+			<p className="font-mono text-[11px] uppercase tracking-[0.16em] text-[var(--text-ghost)]">404</p>
+			<h1 className="mt-3 font-display text-[32px] text-[var(--text)]">No such screen</h1>
+			<Link to="/" className="mt-4 inline-block font-mono text-[12px] text-[var(--text-faint)] underline underline-offset-4">
+				Back to tonight
+			</Link>
+		</div>
+	),
+});
 
 const indexRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "/",
-	// The only query param the single page reads is ?ticker=, consumed by the
-	// markets and profiler sections via useSearch({ from: "/" }). Declaring it
-	// here gives those reads a type and normalises the URL on navigation.
-	validateSearch: (search: Record<string, unknown>): { ticker?: string } => ({
-		ticker: typeof search.ticker === "string" ? search.ticker : undefined,
+	/* The only query the plan reads is `?ticker=`, used by a retired bookmark to
+	 * land on a specific name. Declaring it here gives the read a type and
+	 * normalises the URL. */
+	validateSearch: (s: Record<string, unknown>): { ticker?: string } => ({
+		ticker: typeof s.ticker === "string" ? s.ticker : undefined,
 	}),
-	component: IndexComponent,
+	component: Tonight,
 });
 
-/* Every entry of the redirect table in the old next.config.ts. Each one is a
- * path plus its `:path*` deep-link variant; all of them are sunset pages, so
- * the surviving single page at "/" is the destination. `/$` is TanStack's
- * splat, the equivalent of Next's `:path*`. */
-const RETIRED_PATHS = [
-	"suspended",
+const nameRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: "/name/$ticker",
+	component: Name,
+});
+
+const methodRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: "/method",
+	component: Method,
+});
+
+const screenerRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: "/screener",
+	component: Screener,
+});
+
+/* A retired tool path. The 22-tool desk is gone, so these land on the plan. A
+ * `?ticker=` carried in from a bookmark is preserved rather than dropped, so an
+ * old "screener?ticker=BBCA" link still opens that name. */
+
+
+/* The retired tool routes. Each had its own page before; they all land on the
+ * plan now, so an old bookmark lands somewhere real instead of a 404. */
+const RETIRED = [
+	"desk",
+	"overview",
+	"markets",
+	"profiler",
+	"calculators",
+	"watchlist",
+	"backtest",
+	"regime",
+	"alerts",
+	"portfolio",
+	"journal",
+	"rotation",
+	"ownership",
+	"sentiment",
+	"announcements",
 	"foreignflow",
 	"brokerintel",
 	"validator",
-	"alerts",
+	"suspended",
 	"konglo",
-	"rotation",
-	"ownership",
 	"msci",
-	"announcements",
-	"regime",
-	"backtest",
-	"sentiment",
-	"watchlist",
-	"journal",
 	"stealth",
 	"wiki",
-	"portfolio",
 ] as const;
 
-function redirectHome() {
-	// `search: {}` clears the query, matching Next's redirect: a redirect
-	// never forwards ?… to its destination. Omitting it would keep the
-	// current search instead.
-	throw redirect({ to: "/", search: {} });
+function toPlan() {
+	throw redirect({ to: "/" });
 }
 
-const redirectRoutes = RETIRED_PATHS.flatMap((path) => [
-	createRoute({
-		getParentRoute: () => rootRoute,
-		path,
-		beforeLoad: redirectHome,
-	}),
-	createRoute({
-		getParentRoute: () => rootRoute,
-		path: `${path}/$`,
-		beforeLoad: redirectHome,
-	}),
+const retiredRoutes = RETIRED.flatMap((path) => [
+	createRoute({ getParentRoute: () => rootRoute, path, beforeLoad: toPlan }),
+	createRoute({ getParentRoute: () => rootRoute, path: `${path}/$`, beforeLoad: toPlan }),
 ]);
 
 export const router = createRouter({
-	routeTree: rootRoute.addChildren([indexRoute, ...redirectRoutes]),
+	routeTree: rootRoute.addChildren([
+		indexRoute,
+		screenerRoute,
+		methodRoute,
+		nameRoute,
+		...retiredRoutes,
+	]),
 });
 
 declare module "@tanstack/react-router" {

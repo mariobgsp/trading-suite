@@ -36,10 +36,15 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
 # Allow both localhost AND 127.0.0.1 (dev server often bound to 127.0.0.1,
 # browser origin is then http://127.0.0.1:3000 — missing that origin silently
 # CORS-blocks every API call and the UI shows no data).
+# 5173 is the Vite dev server, 4173 is `vite preview` (the production build).
+# Both are in the default because a previewed build that cannot reach the API is
+# a confusing failure: the page renders, then every request silently fails.
 CORS_ORIGINS = os.getenv(
     "CORS_ORIGINS",
     "http://localhost:3000,http://localhost:3001,http://localhost:5173,"
-    "http://127.0.0.1:3000,http://127.0.0.1:3001,http://127.0.0.1:5173",
+    "http://localhost:4173,"
+    "http://127.0.0.1:3000,http://127.0.0.1:3001,http://127.0.0.1:5173,"
+    "http://127.0.0.1:4173",
 ).split(",")
 
 # ─── IHSG universe ────────────────────────────────────────────────────────────

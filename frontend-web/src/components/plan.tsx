@@ -1,0 +1,481 @@
+/**
+ * The plan's visual vocabulary.
+ *
+ * Three ideas carry the whole screen:
+ *
+ *  1. The verdict is the largest thing on the page. Open or shut is a fact you
+ *     read in a glance, not a setting you go looking for.
+ *  2. The measured proof sits next to the verdict, always. A number you cannot
+ *     trace is worse than no number, so the win rate, the average and the trade
+ *     count travel with every claim.
+ *  3. A gate is shown as its own fact with its own value, never as a score out
+ *     of ten. "RS 94 vs the 90 it needs" is checkable; "8/10 quality" is not.
+ */
+
+import { useState } from "react";
+import type {
+	Candidate,
+	Evidence,
+	Gate,
+	GateKey,
+	Plan,
+	WatchItem,
+} from "@/lib/api/plan";
+
+/* ── formatters ───────────────────────────────────────────────────────────── */
+
+export const idr = (v: number | null | undefined, dp = 0): string =>
+	v == null || Number.isNaN(v)
+		? "—"
+		: new Intl.NumberFormat("id-ID", {
+				minimumFractionDigits: dp,
+				maximumFractionDigits: dp,
+			}).format(v);
+
+export const pct = (v: number | null | undefined, dp = 1): string =>
+	v == null || Number.isNaN(v) ? "—" : `${(v * 100).toFixed(dp)}%`;
+
+export const pctRaw = (v: number | null | undefined, dp = 1): string =>
+	v == null || Number.isNaN(v) ? "—" : `${v.toFixed(dp)}%`;
+
+/** Human gate names. The key is the seam's; the label is ours. */
+export const GATE_LABEL: Record<string, string> = {
+	breakout: "Breakout",
+	relative_strength: "Momentum rank",
+	breadth: "Market breadth",
+	quiet_vol: "Quiet before",
+	weekly_trend: "Weekly trend",
+	index_above_200: "Index above 200d",
+};
+
+/* ── sections ──────────────────────────────────────────────────────────────── */
+
+/**
+ * A section heading for the plan pages.
+ *
+ * Deliberately not the app's terminal-style `SectionHeader`: that one wraps its
+ * title in monospace with a `>` prompt and its subtitle in a `#` comment, which
+ * reads as a log rather than as a decision. The plan is read, not parsed, so
+ * this uses the sans stack, drops the decoration, and gives the subtitle a
+ * measure that fills the column instead of stopping two-thirds across it.
+ */
+export function Section({
+	id,
+	title,
+	subtitle,
+	right,
+	children,
+}: {
+	id?: string;
+	title: string;
+	subtitle?: string;
+	right?: React.ReactNode;
+	children: React.ReactNode;
+}) {
+	return (
+		<section id={id} className="mt-12 scroll-mt-20 first:mt-0">
+			<div className="mb-4 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
+				<h2 className="text-[17px] font-semibold tracking-[-0.01em] text-[var(--text)]">{title}</h2>
+				{right && <span className="font-mono text-[11px] text-[var(--text-ghost)]">{right}</span>}
+			</div>
+			{subtitle && (
+				<p className="mb-5 max-w-[76ch] text-[13px] leading-relaxed text-[var(--text-faint)]">
+					{subtitle}
+				</p>
+			)}
+			{children}
+		</section>
+	);
+}
+
+/* ── the verdict ───────────────────────────────────────────────────────────── */
+
+export function Verdict({
+	open,
+	headline,
+	sessionLabel,
+	horizon,
+	evidence,
+	coverage,
+	indexClose,
+	universeSize,
+	nextSession,
+	nextSessionBasis,
+}: {
+	open: boolean;
+	headline: string;
+	sessionLabel: string;
+	horizon: string;
+	evidence: Evidence;
+	coverage: Plan["coverage"];
+	indexClose: number | null;
+	universeSize: number;
+	nextSession?: string;
+	nextSessionBasis?: Plan["next_session_basis"];
+}) {
+	const tone = open ? "var(--up)" : "var(--gold)";
+	return (
+		<section
+			className="relative overflow-hidden border border-[var(--border)] bg-[var(--panel)]"
+			style={{ borderLeftWidth: 3, borderLeftColor: tone }}
+			aria-live="polite"
+		>
+			<div className="flex flex-col gap-5 p-5 sm:p-7 lg:flex-row lg:items-start lg:justify-between lg:gap-10">
+				<div className="min-w-0">
+					<p className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--text-ghost)]">
+						{sessionLabel} · plan for {horizon}
+					</p>
+					<p className="mt-2 flex items-center gap-2.5">
+						<span
+							className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
+							style={{ background: tone }}
+							aria-hidden
+						/>
+						<span
+							className="font-display text-[26px] leading-none tracking-[-0.01em] sm:text-[32px]"
+							style={{ color: tone }}
+						>
+							{open ? "Buy list open" : "Nothing to buy"}
+						</span>
+					</p>
+					<p className="mt-3 max-w-[52ch] text-[14px] leading-relaxed text-[var(--text-dim)]">
+						{headline}
+					</p>
+					<p className="mt-4 font-mono text-[11px] leading-relaxed text-[var(--text-ghost)]">
+						{idr(universeSize)} names traded ·{" "}
+						{coverage.codes != null ? `${coverage.codes} in universe` : ""}
+						{indexClose != null ? ` · IHSG ${idr(indexClose)}` : ""}
+					</p>
+					<p className="mt-1 font-mono text-[11px] leading-relaxed text-[var(--text-ghost)]">
+						{nextSession && (
+							<>
+								Next session {nextSession} ·{" "}
+								{nextSessionBasis === "exchange_calendar" ? (
+									<span className="text-[var(--text-dim)]">from the exchange calendar</span>
+								) : (
+									/* Beyond the last known session no calendar can say whether a
+									   public holiday falls, so say that rather than imply
+									   the date is confirmed. */
+									<span title="The exchange calendar ends at the last session in the data. Past that, only weekends are skipped — a public holiday would not be.">
+										next weekday, holiday unverified
+									</span>
+								)}
+							</>
+						)}
+						{coverage.phantom_bars_dropped ? (
+							<span className="text-[var(--gold)]">
+								{" "}
+								· {coverage.phantom_bars_dropped} bars dropped: sessions the exchange never held
+							</span>
+						) : null}
+					</p>
+				</div>
+				<EvidenceBadge evidence={evidence} />
+			</div>
+		</section>
+	);
+}
+
+/**
+ * The measured result, always on screen.
+ *
+ * Every number here is read from the study's own results file, so this card is
+ * a citation, not a claim. The caveat travels with it because the caveat is
+ * part of the number.
+ */
+export function EvidenceBadge({ evidence }: { evidence: Evidence }) {
+	const ok = evidence.clears_bar;
+	return (
+		<div className="w-full shrink-0 border border-[var(--border)] bg-[var(--panel-2)] p-4 lg:w-[300px]">
+			<p className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-faint)]">
+				{evidence.role === "searched" ? "Best of the configurations searched" : "Measured on this method"}
+			</p>
+			<div className="mt-3 grid grid-cols-3 gap-3">
+				<div>
+					<div
+						className="tabular text-[24px] font-bold leading-none"
+						style={{ color: ok ? "var(--up)" : "var(--text)" }}
+					>
+						{pct(evidence.win_rate, 1)}
+					</div>
+					<div className="mt-1 font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--text-faint)]">
+						win rate
+					</div>
+				</div>
+				<div>
+					<div className="tabular text-[24px] font-bold leading-none text-[var(--text)]">
+						{evidence.avg_ret_pct != null ? `+${evidence.avg_ret_pct.toFixed(1)}%` : "—"}
+					</div>
+					<div className="mt-1 font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--text-faint)]">
+						avg / trade
+					</div>
+				</div>
+				<div>
+					<div className="tabular text-[24px] font-bold leading-none text-[var(--text)]">
+						{evidence.oos_trades != null ? idr(evidence.oos_trades) : "—"}
+					</div>
+					<div className="mt-1 font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--text-faint)]">
+						out-of-sample
+					</div>
+				</div>
+			</div>
+			<p className="mt-3 border-t border-[var(--border)] pt-2.5 text-[11px] leading-relaxed text-[var(--text-faint)]">
+				{evidence.measured ? (
+					<>
+						Costs of {pctRaw(0.5, 2)} a round trip are inside every trade.{" "}
+						<a
+							href="/method#holdout"
+							className="underline decoration-[var(--border-strong)] underline-offset-2 hover:text-[var(--text)]"
+						>
+							What it did on unseen data
+						</a>
+					</>
+				) : (
+					"No measured results are available yet — read the rules without a number."
+				)}
+			</p>
+			{evidence.role === "searched" && (
+				<p className="mt-2 text-[11px] leading-relaxed text-[var(--text-ghost)]">
+					A searched figure, not a forecast. This row is one of the configurations the
+					study ranked; the holdout is the expectation.
+				</p>
+			)}
+		</div>
+	);
+}
+
+/* ── gates ─────────────────────────────────────────────────────────────────── */
+
+/** One condition, with its own value. Checkable at a glance. */
+export function GateChip({ gate }: { gate: Gate }) {
+	const color = gate.passed ? "var(--up)" : "var(--text-ghost)";
+	return (
+		<span
+			className="inline-flex items-center gap-1 border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.08em]"
+			style={{
+				color,
+				borderColor: gate.passed ? "color-mix(in srgb, var(--up) 30%, transparent)" : "var(--border)",
+				background: gate.passed ? "color-mix(in srgb, var(--up) 8%, transparent)" : "transparent",
+			}}
+			title={gate.text}
+		>
+			<span aria-hidden>{gate.passed ? "✓" : "✕"}</span>
+			{GATE_LABEL[gate.key] ?? gate.key}
+		</span>
+	);
+}
+
+/**
+ * The full chain, spelled out. This is the "why" surface.
+ *
+ * A gate the running family does not apply is dimmed and shown with a dash. It
+ * is still listed, because hiding it would make the family look simpler than it
+ * is — but it must not read as a condition the user failed.
+ */
+export function GateList({
+	gates,
+	required,
+}: {
+	gates: Gate[];
+	required?: GateKey[];
+}) {
+	const applies = required ? new Set(required) : null;
+	return (
+		<ul className="divide-y divide-[var(--border)] border border-[var(--border)]">
+			{gates.map((gate) => {
+				const isRequired = applies ? applies.has(gate.key) : true;
+				return (
+				<li
+					key={gate.key}
+					className="flex gap-3 p-3"
+					style={isRequired ? undefined : { opacity: 0.55 }}
+				>
+					<span
+						className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full font-mono text-[10px]"
+						style={{
+							color: gate.passed ? "var(--up)" : "var(--text-ghost)",
+							background: gate.passed
+								? "color-mix(in srgb, var(--up) 12%, transparent)"
+								: "var(--panel-3)",
+						}}
+						aria-hidden
+					>
+						{gate.passed ? "✓" : isRequired ? "✕" : "–"}
+					</span>
+					<div className="min-w-0">
+						<p className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--text-faint)]">
+							{GATE_LABEL[gate.key] ?? gate.label}
+						</p>
+						<p className="mt-0.5 text-[13px] leading-relaxed text-[var(--text-dim)]">
+							{gate.text}
+						</p>
+					</div>
+				</li>
+				);
+			})}
+		</ul>
+	);
+}
+
+/* ── the buy list ──────────────────────────────────────────────────────────── */
+
+export function CandidateRow({ candidate }: { candidate: Candidate }) {
+	const [open, setOpen] = useState(false);
+	const g = candidate.geometry;
+	return (
+		<li className="border-b border-[var(--border)] last:border-b-0">
+			<div className="flex flex-wrap items-baseline gap-x-5 gap-y-2 px-4 py-4 sm:px-5">
+				<a
+					href={`/name/${candidate.ticker}`}
+					className="font-display text-[22px] leading-none tracking-[-0.01em] text-[var(--text)] hover:underline hover:underline-offset-4"
+				>
+					{candidate.ticker}
+				</a>
+				<span className="tabular font-mono text-[15px] text-[var(--text-dim)]">
+					{idr(candidate.close)}
+				</span>
+				{candidate.change_pct != null && (
+					<span
+						className="font-mono text-[12px]"
+						style={{ color: candidate.change_pct >= 0 ? "var(--up)" : "var(--down)" }}
+					>
+						{candidate.change_pct >= 0 ? "▲" : "▼"} {pctRaw(Math.abs(candidate.change_pct))}
+					</span>
+				)}
+				<span className="ml-auto flex flex-wrap items-center gap-1.5">
+					{candidate.gates.map((gate) => (
+						<GateChip key={gate.key} gate={gate} />
+					))}
+				</span>
+			</div>
+
+			{/* The exit plan, always visible: this is what the user trades against. */}
+			<div className="grid grid-cols-2 gap-px border-y border-[var(--border)] bg-[var(--border)] sm:grid-cols-4">
+				<Level
+					label="Target"
+					value={idr(g.target_price)}
+					note={`+${g.target_pct}% · ~${g.holding_weeks} weeks`}
+					color="var(--up)"
+				/>
+				<Level label="Stop" value={idr(g.stop_price)} note={`−${g.stop_pct}%`} color="var(--down)" />
+				<Level
+					label="On Rp1m"
+					value={`+${idr(g.target_gain_idr_1m)}`}
+					note={`risk ${idr(g.max_loss_idr_1m)}`}
+					color="var(--text)"
+				/>
+				<Level
+					label="Reward : risk"
+					value={`1 : ${g.reward_risk.toFixed(2)}`}
+					note={`${g.gross_risk_pct}% incl. costs`}
+					color="var(--text)"
+				/>
+			</div>
+
+			<div className="px-4 py-2.5 sm:px-5">
+				<button
+					type="button"
+					onClick={() => setOpen((v) => !v)}
+					className="font-mono text-[11px] uppercase tracking-[0.12em] text-[var(--text-faint)] hover:text-[var(--text)]"
+					aria-expanded={open}
+				>
+					{open ? "− hide the reasoning" : "+ why this one, and how to hold it"}
+				</button>
+				{open && (
+					<div className="mt-4 grid gap-5 lg:grid-cols-2">
+						<GateList gates={candidate.gates} />
+						<HowToHold candidate={candidate} />
+					</div>
+				)}
+			</div>
+		</li>
+	);
+}
+
+function Level({
+	label,
+	value,
+	note,
+	color,
+}: {
+	label: string;
+	value: string;
+	note: string;
+	color: string;
+}) {
+	return (
+		<div className="bg-[var(--panel)] px-4 py-3">
+			<div className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--text-faint)]">
+				{label}
+			</div>
+			<div className="tabular mt-1 font-mono text-[16px] font-semibold leading-none" style={{ color }}>
+				{value}
+			</div>
+			<div className="mt-1 font-mono text-[10px] text-[var(--text-ghost)]">{note}</div>
+		</div>
+	);
+}
+
+/** Plain-language instructions. The user asked to be guided, not to infer. */
+export function HowToHold({ candidate }: { candidate: Candidate }) {
+	const g = candidate.geometry;
+	const steps = [
+		{
+			n: "1",
+			t: `Buy at tomorrow's open`,
+			d: `Any fill up to about ${idr(g.entry_ref * 1.01)} is fine. Above that you are chasing the breakout and the measured edge no longer applies.`,
+		},
+		{
+			n: "2",
+			t: `Sell at ${idr(g.target_price)}`,
+			d: `That is +${g.target_pct}% from the last close. This method wins by letting winners run: the stop is far away on purpose, so do not tighten it.`,
+		},
+		{
+			n: "3",
+			t: `Stop out at ${idr(g.stop_price)}`,
+			d: `${g.stop_pct}% below the entry. ${g.gross_risk_pct}% of that loss is the round-trip cost, which is already inside the measured average.`,
+		},
+		{
+			n: "4",
+			t: `Sell after ${g.holding_weeks} weeks if nothing happened`,
+			d: `The holding cap is ${g.hold_bars} sessions. Time is an exit: a trade that has not moved by then is not the setup this method measured.`,
+		},
+	];
+	return (
+		<ol className="space-y-3">
+			{steps.map((s) => (
+				<li key={s.n} className="flex gap-3">
+					<span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center border border-[var(--border-strong)] font-mono text-[11px] text-[var(--text-dim)]">
+						{s.n}
+					</span>
+					<div>
+						<p className="text-[13px] font-semibold text-[var(--text)]">{s.t}</p>
+						<p className="mt-0.5 text-[12px] leading-relaxed text-[var(--text-faint)]">{s.d}</p>
+					</div>
+				</li>
+			))}
+		</ol>
+	);
+}
+
+/* ── the watchlist ─────────────────────────────────────────────────────────── */
+
+export function WatchRow({ item }: { item: WatchItem }) {
+	return (
+		<li className="flex flex-wrap items-baseline gap-x-4 gap-y-1 border-b border-[var(--border)] px-4 py-3 last:border-b-0 sm:px-5">
+			<a
+				href={`/name/${item.ticker}`}
+				className="font-display text-[18px] leading-none text-[var(--text)] hover:underline hover:underline-offset-4"
+			>
+				{item.ticker}
+			</a>
+			<span className="tabular font-mono text-[13px] text-[var(--text-dim)]">{idr(item.close)}</span>
+			<span className="font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--text-ghost)]">
+				blocked by {GATE_LABEL[item.blocked_by] ?? item.blocked_by}
+			</span>
+			<span className="ml-auto min-w-0 flex-1 text-right text-[12px] text-[var(--text-faint)] sm:flex-none">
+				{item.distance_text}
+			</span>
+		</li>
+	);
+}

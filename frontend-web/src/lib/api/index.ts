@@ -5,9 +5,5 @@
 
 export * from "./transport";
 export * from "./format";
+export * from "./plan";
 export * from "./types-history";
-export * from "./types-backtest";
-export * from "./types-alerts";
-export * from "./types-flow";
-export * from "./types-portfolio";
-export * from "./types-profiler";

@@ -13,13 +13,17 @@
  */
 
 import { useState } from "react";
+import { planApi } from "@/lib/api/plan";
 import type {
 	Candidate,
 	Citation,
 	Evidence,
 	Gate,
 	GateKey,
+	Geometry,
 	Plan,
+	Reason,
+	SizeTicket,
 	Verdict,
 	VerdictCheck,
 	WatchItem,
@@ -355,6 +359,288 @@ export function EvidenceBadge({
 
 /* ── gates ─────────────────────────────────────────────────────────────────── */
 
+/**
+ * The range a gate is read against, so its bar means something.
+ *
+ * A percentage-over-the-high and a momentum percentile are not the same quantity;
+ * each gets its own scale, and a gate with no meaningful scale (a binary
+ * condition) gets no bar rather than a misleading one.
+ */
+function gateScale(gate: Gate): { max: number } | null {
+	switch (gate.key) {
+		case "relative_strength":
+			return { max: 100 };
+		case "breadth":
+			return { max: 1 };
+		case "breakout":
+			return { max: Math.max(5, (gate.threshold ?? 0) * 2) };
+		case "quiet_vol":
+			return { max: Math.max(gate.value ?? 0, gate.threshold ?? 0) * 2 };
+		default:
+			return null;
+	}
+}
+
+/** A gate's number in its own unit, since the units are not comparable. */
+export function gateValueText(gate: Gate, value: number | null): string {
+	if (value == null || !Number.isFinite(value)) return "—";
+	if (gate.unit.startsWith("share")) return `${(value * 100).toFixed(1)}%`;
+	if (gate.unit.startsWith("percentile")) return value.toFixed(0);
+	if (gate.unit.startsWith("%")) return `${value.toFixed(2)}%`;
+	return value.toFixed(2);
+}
+
+/**
+ * A gate's measured value against the threshold it has to clear.
+ *
+ * The bar is a reading aid, not a probability: it places the value and the
+ * threshold on the same axis so "how close is it" is visible rather than
+ * arithmetic the reader has to do. The tick marks the threshold.
+ */
+export function GateValueBar({ gate }: { gate: Gate }) {
+	const scale = gateScale(gate);
+	if (!scale || gate.value == null || gate.threshold == null) return null;
+	const value = Math.max(0, Math.min(gate.value, scale.max));
+	const threshold = Math.max(0, Math.min(gate.threshold, scale.max));
+	const fill = scale.max > 0 ? (value / scale.max) * 100 : 0;
+	const mark = scale.max > 0 ? (threshold / scale.max) * 100 : 0;
+	return (
+		<div className="mt-1.5">
+			<div className="relative h-[6px] w-full overflow-hidden rounded-[1px] bg-[var(--panel-3)]">
+				<div
+					className="absolute inset-y-0 left-0"
+					style={{
+						width: `${fill}%`,
+						background: gate.passed ? "var(--up)" : "var(--gold)",
+						opacity: gate.passed ? 0.9 : 0.55,
+					}}
+				/>
+				<div
+					className="absolute inset-y-[-2px] w-px bg-[var(--text-dim)]"
+					style={{ left: `${mark}%` }}
+					aria-hidden
+				/>
+			</div>
+			<p className="mt-1 font-mono text-[10px] text-[var(--text-ghost)]">
+				{gateValueText(gate, gate.value)} vs {gateValueText(gate, gate.threshold)} needed
+				{gate.history?.held_sessions
+					? ` · held ${gate.history.held_sessions} session${
+							gate.history.held_sessions === 1 ? "" : "s"
+						}`
+					: ""}
+			</p>
+		</div>
+	);
+}
+
+/**
+ * The run-up to a signal, one column per session.
+ *
+ * Height is how many of the method's conditions held that session, so the shape
+ * of "how this name got here" is visible at a glance: a column that climbs into
+ * the signal is the sequence, a column that was already full is a name that has
+ * been ready for a while.
+ */
+export function HistoryStrip({ reason }: { reason: Reason | null }) {
+	if (!reason?.history?.length) return null;
+	return (
+		<div className="mt-3">
+			<div className="flex items-end gap-[3px]" role="img" aria-label="Sessions to the signal, by conditions held">
+				{reason.history.map((point) => {
+					const total = point.gates_total || 1;
+					const fraction = point.gates_passed / total;
+					const signal = point.session === reason.signal_session;
+					return (
+						<div
+							key={point.session}
+							className="flex-1"
+							title={`${point.session} · ${point.gates_passed}/${point.gates_total} conditions · breadth ${((point.breadth ?? 0) * 100).toFixed(0)}%`}
+						>
+							<div
+								style={{
+									height: `${8 + fraction * 22}px`,
+									background:
+										fraction >= 1
+											? "var(--up)"
+											: `color-mix(in srgb, var(--gold) ${20 + fraction * 60}%, transparent)`,
+									outline: signal ? "1px solid var(--text)" : undefined,
+								}}
+							/>
+						</div>
+					);
+				})}
+			</div>
+			<p className="mt-1 font-mono text-[10px] leading-relaxed text-[var(--text-ghost)]">
+				{reason.window} sessions to {reason.signal_session} · height is how many conditions held
+				{reason.breakout_date
+					? ` · broke out ${reason.breakout_date}${
+							reason.sessions_since_breakout
+								? ` (${reason.sessions_since_breakout} session${
+										reason.sessions_since_breakout === 1 ? "" : "s"
+									} ago)`
+								: " (this session)"
+						}`
+					: " · no breakout in the window"}
+			</p>
+		</div>
+	);
+}
+
+/**
+ * The order, in the form it would be typed into a broker.
+ *
+ * Everything here is either measured by the study or computed from the IDX
+ * rulebook — size from turnover, levels on the tick grid, friction from the
+ * spread at this price, and the auto-rejection band the target has to fit in. The
+ * re-size control calls the same backend arithmetic the plan used, so the number
+ * cannot drift from the one on the card above.
+ */
+export function OrderTicket({
+	ticker,
+	geometry,
+	turnoverIdr,
+	placeBy = "08:57",
+	placeNote,
+}: {
+	ticker: string;
+	geometry: Geometry;
+	turnoverIdr?: number | null;
+	placeBy?: string;
+	placeNote?: string;
+}) {
+	const [budget, setBudget] = useState<string>("");
+	const [sized, setSized] = useState<SizeTicket | null>(null);
+	const [busy, setBusy] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+	const g = sized?.geometry ?? geometry;
+
+	async function resize() {
+		const parsed = Number(budget.replace(/[^0-9]/g, ""));
+		if (!parsed || parsed <= 0) return;
+		setBusy(true);
+		setError(null);
+		try {
+			const ticket = await planApi.size({
+				price: geometry.entry_ref,
+				median_turnover_60: turnoverIdr ?? null,
+				risk_budget_idr: parsed,
+			});
+			setSized(ticket);
+		} catch (e) {
+			setError(e instanceof Error ? e.message : "could not size that");
+		} finally {
+			setBusy(false);
+		}
+	}
+
+	const rows: [string, string][] = [
+		["Entry", `${idr(g.entry_ref)} reference · fills at the open`],
+		["Target", `${idr(g.target_price)}  (+${g.target_pct.toFixed(2)}%)`],
+		["Stop", `${idr(g.stop_price)}  (−${g.stop_pct.toFixed(2)}%)`],
+		[
+			"Size",
+			g.position_idr != null
+				? `${idr(g.position_idr)} · ${idr(g.lots)} lots · ${
+						g.participation_pct != null ? `${g.participation_pct.toFixed(2)}% of ADV` : "ADV unknown"
+					}`
+				: "not sizeable at 2% of ADV",
+		],
+		[
+			"Max loss",
+			g.max_loss_idr != null
+				? `−${idr(g.max_loss_idr)}${
+						g.risk_pct_of_position != null
+							? ` (${g.risk_pct_of_position.toFixed(1)}% of the position)`
+							: ""
+					}`
+				: "—",
+		],
+	];
+	const friction = g.friction ?? {};
+	const ar = sized?.ar;
+
+	return (
+		<div className="border border-[var(--border)] bg-[var(--panel-2)] p-4">
+			<div className="flex flex-wrap items-baseline justify-between gap-2">
+				<p className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-faint)]">
+					{ticker} · order ticket
+				</p>
+				<span className="font-mono text-[10px] text-[var(--text-ghost)]">
+					place by {placeBy} WIB
+				</span>
+			</div>
+			<dl className="mt-3 space-y-1">
+				{rows.map(([label, value]) => (
+					<div key={label} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5">
+						<dt className="font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--text-faint)]">
+							{label}
+						</dt>
+						<dd className="tabular font-mono text-[12px] text-[var(--text)]">{value}</dd>
+					</div>
+				))}
+			</dl>
+			<p className="mt-3 border-t border-[var(--border)] pt-2.5 text-[11px] leading-relaxed text-[var(--text-faint)]">
+				Cost at this price: {friction.fees_pct?.toFixed(2) ?? "—"}% fees +{" "}
+				{friction.spread_pct?.toFixed(2) ?? "—"}% spread ={" "}
+				<span className="text-[var(--text-dim)]">{friction.total_pct?.toFixed(2) ?? "—"}%</span> a
+				round trip, against the study&rsquo;s {friction.study_model_pct?.toFixed(2) ?? "0.50"}% model
+				built into every measured figure.
+			</p>
+			{(ar ?? null) && sized ? (
+				<p className="mt-2 text-[11px] leading-relaxed text-[var(--text-faint)]">
+					Today&rsquo;s band around {idr(sized?.ar.reference)}: {idr(sized?.ar.up_price)} up /{" "}
+					{idr(sized?.ar.down_price)} down ({sized?.ar.band}). {sized?.ar.note}
+				</p>
+			) : null}
+			{geometry.notes?.length ? (
+				<ul className="mt-2 space-y-1">
+					{geometry.notes.map((note) => (
+						<li key={note} className="text-[11px] leading-relaxed text-[var(--text-faint)]">
+							{note}
+						</li>
+					))}
+				</ul>
+			) : null}
+			{placeNote ? (
+				<p className="mt-2 text-[11px] leading-relaxed text-[var(--text-ghost)]">{placeNote}</p>
+			) : null}
+			<div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[var(--border)] pt-3">
+				<label className="font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--text-faint)]">
+					Risk per name (IDR)
+					<input
+						value={budget}
+						onChange={(e) => setBudget(e.target.value)}
+						inputMode="numeric"
+						placeholder={g.risk_budget_idr ? String(g.risk_budget_idr) : "10000000"}
+						className="ml-2 w-[130px] border border-[var(--border)] bg-[var(--bg)] px-2 py-1 font-mono text-[12px] text-[var(--text)]"
+					/>
+				</label>
+				<button
+					type="button"
+					onClick={() => void resize()}
+					disabled={busy || !budget}
+					className="border border-[var(--border-strong)] px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--text-dim)] hover:text-[var(--text)] disabled:opacity-40"
+				>
+					{busy ? "sizing…" : "re-size"}
+				</button>
+				{sized ? (
+					<button
+						type="button"
+						onClick={() => {
+							setSized(null);
+							setBudget("");
+						}}
+						className="font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--text-ghost)] hover:text-[var(--text)]"
+					>
+						reset
+					</button>
+				) : null}
+				{error ? <span className="text-[11px] text-[var(--down)]">{error}</span> : null}
+			</div>
+		</div>
+	);
+}
+
 /** One condition, with its own value. Checkable at a glance. */
 export function GateChip({ gate }: { gate: Gate }) {
 	const color = gate.passed ? "var(--up)" : "var(--text-ghost)";
@@ -418,6 +704,7 @@ export function GateList({
 						<p className="mt-0.5 text-[13px] leading-relaxed text-[var(--text-dim)]">
 							{gate.text}
 						</p>
+						{isRequired ? <GateValueBar gate={gate} /> : null}
 					</div>
 				</li>
 				);
@@ -507,6 +794,12 @@ export function CandidateRow({ candidate }: { candidate: Candidate }) {
 					<div className="mt-4 grid gap-5 lg:grid-cols-2">
 						<GateList gates={candidate.gates} />
 						<div className="space-y-4">
+							<OrderTicket
+								ticker={candidate.ticker}
+								geometry={candidate.geometry}
+								turnoverIdr={candidate.turnover_idr}
+							/>
+							<ReasonBlock reason={candidate.reason} />
 							<HowToHold candidate={candidate} />
 							{candidate.geometry.notes?.length ? (
 								<ul className="space-y-1.5 border-t border-[var(--border)] pt-3">
@@ -782,6 +1075,44 @@ export function CorrectedEvidenceCard({ evidence }: { evidence: Evidence }) {
 				</p>
 			)}
 			<ProvenanceList citations={provenance} />
+		</div>
+	);
+}
+
+
+/**
+ * Why now, on the name card.
+ *
+ * Three parts, in the order the question is asked: when the breakout happened,
+ * what the last two weeks of conditions looked like, and which condition is still
+ * missing when the name is only close.
+ */
+export function ReasonBlock({ reason }: { reason: Reason | null }) {
+	if (!reason) return null;
+	return (
+		<div className="border border-[var(--border)] bg-[var(--panel-2)] p-4">
+			<p className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-faint)]">
+				Why now
+			</p>
+			<p className="mt-2 text-[12px] leading-relaxed text-[var(--text-dim)]">
+				{reason.breakout_date ? (
+					<>
+						Closed above its 40-session high on{" "}
+						<span className="text-[var(--text)]">{reason.breakout_date}</span>
+						{reason.sessions_since_breakout
+							? `, ${reason.sessions_since_breakout} session${
+									reason.sessions_since_breakout === 1 ? "" : "s"
+								} ago`
+							: ", this session"}
+						.
+					</>
+				) : (
+					<>It has not closed above its 40-session high in the last {reason.window} sessions.</>
+				)}{" "}
+				The entry is {reason.entry_session}, at the open: {reason.entry_basis}
+			</p>
+			<HistoryStrip reason={reason} />
+			<p className="mt-2 text-[11px] leading-relaxed text-[var(--text-ghost)]">{reason.known_from}</p>
 		</div>
 	);
 }

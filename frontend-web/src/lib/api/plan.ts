@@ -23,6 +23,68 @@ export interface Gate {
 	threshold: number | null;
 	unit: string;
 	text: string;
+	/** How long the condition has held, when the reason builder supplied it. */
+	history: GateHistory | null;
+}
+
+/**
+ * How long a condition has held, and since when.
+ *
+ * "RS is 94 and it needs 90" says whether a name qualifies. It does not say why
+ * tonight, which is the question someone about to send an order asks.
+ */
+export interface GateHistory {
+	held_sessions: number;
+	first_true_session: string | null;
+	series: boolean[];
+}
+
+/** One session of the run-up to a signal. */
+export interface ReasonPoint {
+	session: string;
+	close: number | null;
+	gates_passed: number;
+	gates_total: number;
+	breakout_pct: number | null;
+	vol20: number | null;
+	rs_rating: number | null;
+	breadth: number | null;
+	band: RegimeBand;
+}
+
+/**
+ * Why this name, on this session, rather than any of the other 900.
+ *
+ * The gate list says a name qualifies. This says when the conditions turned true,
+ * how long they have held, and what the entry actually is.
+ */
+export interface Reason {
+	signal_session: string;
+	entry_session: string;
+	entry_basis: string;
+	known_from: string;
+	breakout_date: string | null;
+	sessions_since_breakout: number | null;
+	window: number;
+	seconds: number;
+	history: ReasonPoint[];
+	levels: {
+		donchian_level: number | null;
+		entry_ref: number;
+		target_price: number;
+		stop_price: number;
+		tick_idr: number | null;
+		holding_weeks: number;
+	};
+	ar: {
+		reference: number;
+		up_price: number;
+		down_price: number;
+		up_pct: number;
+		down_pct: number;
+		band: string;
+		note: string;
+	};
 }
 
 export interface Geometry {
@@ -85,6 +147,8 @@ export interface Candidate {
 	vol20_median: number;
 	turnover_idr: number | null;
 	score: number;
+	/** The run-up: when each condition turned true, and what the entry is. */
+	reason: Reason | null;
 }
 
 export interface WatchItem {
@@ -484,7 +548,15 @@ export interface RankedRow {
 	/** Distance to passing, in that gate's own units. Null when waiting. */
 	distance_pct: number | null;
 	rs_rating: number;
-	gates: { key: GateKey; label: string; passed: boolean; text: string }[];
+	gates: {
+		key: GateKey;
+		label: string;
+		passed: boolean;
+		value: number | null;
+		threshold: number | null;
+		unit: string;
+		text: string;
+	}[];
 }
 
 export interface MethodRule {
@@ -676,6 +748,10 @@ export interface PlanDetail {
 	evidence: Evidence;
 	/** The 40-session high the breakout had to clear, for the chart. */
 	breakout_level: number | null;
+	/** The run-up: the same question as "why not", answered for this name. */
+	reason: Reason | null;
+	/** Median 60-session turnover, so the ticket can re-size without the plan. */
+	turnover_idr: number | null;
 }
 
 /** A plan changes when the session closes, so cache it for minutes, not seconds. */

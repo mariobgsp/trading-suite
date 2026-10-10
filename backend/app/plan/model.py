@@ -59,6 +59,30 @@ class Citation:
 
 
 @dataclass(frozen=True)
+class GateHistory:
+    """How long a condition has held, and since when.
+
+    "RS is 94 and it needs 90" answers whether a name qualifies. It does not
+    answer why tonight, which is the question a person about to send an order
+    actually asks. A condition that has held for one session and one that has held
+    for nine are the same green tick without this.
+    """
+
+    held_sessions: int
+    first_true_session: date | None
+    series: tuple[bool, ...] = ()
+
+    def as_dict(self) -> dict[str, object]:
+        return dict(
+            held_sessions=self.held_sessions,
+            first_true_session=(
+                self.first_true_session.isoformat() if self.first_true_session else None
+            ),
+            series=list(self.series),
+        )
+
+
+@dataclass(frozen=True)
 class Gate:
     """One condition of the method, evaluated for one name at one session.
 
@@ -74,6 +98,21 @@ class Gate:
     threshold: float | None
     unit: str
     text: str
+    # Filled in by the reason builder, which replays the chain over recent
+    # sessions. None on a gate nobody asked the history of.
+    history: GateHistory | None = None
+
+    def as_dict(self) -> dict[str, object]:
+        return dict(
+            key=self.key,
+            label=self.label,
+            passed=self.passed,
+            value=self.value,
+            threshold=self.threshold,
+            unit=self.unit,
+            text=self.text,
+            history=self.history.as_dict() if self.history else None,
+        )
 
 
 @dataclass(frozen=True)
@@ -138,6 +177,71 @@ class Geometry:
 
 
 @dataclass(frozen=True)
+class ReasonPoint:
+    """One session of the run-up to a signal."""
+
+    session: date
+    close: float | None
+    gates_passed: int
+    gates_total: int
+    breakout_pct: float | None
+    vol20: float | None
+    rs_rating: float | None
+    breadth: float | None
+    band: str
+
+    def as_dict(self) -> dict[str, object]:
+        return dict(
+            session=self.session.isoformat(),
+            close=self.close,
+            gates_passed=self.gates_passed,
+            gates_total=self.gates_total,
+            breakout_pct=self.breakout_pct,
+            vol20=self.vol20,
+            rs_rating=self.rs_rating,
+            breadth=self.breadth,
+            band=self.band,
+        )
+
+
+@dataclass(frozen=True)
+class Reason:
+    """Why this name, on this session, rather than any of the other 900.
+
+    The gate list says a name qualifies. This says when the conditions turned
+    true, how long they have held, and what the entry actually is — which is the
+    part a person reads before sending an order rather than after.
+    """
+
+    signal_session: date
+    entry_session: date
+    entry_basis: str
+    known_from: str
+    breakout_date: date | None
+    sessions_since_breakout: int | None
+    window: int
+    seconds: float
+    history: tuple[ReasonPoint, ...] = ()
+    levels: dict[str, object] = field(default_factory=dict)
+    ar: dict[str, object] = field(default_factory=dict)
+
+    def as_dict(self) -> dict[str, object]:
+        return dict(
+            signal_session=self.signal_session.isoformat(),
+            entry_session=self.entry_session.isoformat(),
+            entry_basis=self.entry_basis,
+            known_from=self.known_from,
+            breakout_date=self.breakout_date.isoformat() if self.breakout_date else None,
+            sessions_since_breakout=self.sessions_since_breakout,
+            window=self.window,
+            seconds=round(self.seconds, 3),
+            history=[point.as_dict() for point in self.history],
+            levels=self.levels,
+            ar=self.ar,
+        )
+
+
+@dataclass(frozen=True)
 class Candidate:
     """A name that cleared every gate. This is what the user is meant to buy."""
 
@@ -155,6 +259,8 @@ class Candidate:
     vol20_median: float
     turnover_idr: float | None
     score: float
+    # The run-up: when each condition turned true, and what the entry is.
+    reason: Reason | None = None
 
     def gate(self, key: GateKey) -> Gate | None:
         return next((g for g in self.gates if g.key == key), None)
@@ -166,7 +272,7 @@ class Candidate:
             close=self.close,
             change_pct=self.change_pct,
             as_of=self.as_of.isoformat(),
-            gates=[g.__dict__ for g in self.gates],
+            gates=[g.as_dict() for g in self.gates],
             geometry=self.geometry.as_dict(),
             rs_rating=round(self.rs_rating, 1),
             breadth=round(self.breadth, 4),
@@ -175,6 +281,7 @@ class Candidate:
             vol20_median=round(self.vol20_median, 2),
             turnover_idr=self.turnover_idr,
             score=round(self.score, 2),
+            reason=self.reason.as_dict() if self.reason else None,
         )
 
 

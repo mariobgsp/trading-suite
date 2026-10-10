@@ -962,6 +962,11 @@ def corrected_evidence() -> Evidence:
         win_rate_lo=cited("tier1_wilson_lo"),
         win_rate_hi=cited("tier1_wilson_hi"),
         provenance=C.all_citations(),
+        # The published trade count pools four donchian windows; this screen runs
+        # one of them, and both numbers travel together so the UI cannot quote the
+        # pool as its own sample.
+        n_specs=_family_spec_count(STUDY_PICK_FAMILY),
+        single_spec_trades=int(C.value("single_spec_trades") or 0) or None,
     )
 
 # ── the holdout (docs/22) ─────────────────────────────────────────────────────

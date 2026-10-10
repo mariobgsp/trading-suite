@@ -10,7 +10,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "@tanstack/react-router";
 import { api, type HistoryResponse } from "@/lib/api";
 import { planApi, type GateKey, type PlanDetail } from "@/lib/api/plan";
-import { GateList, HowToHold, idr, pct, pctRaw } from "@/components/plan";
+import { GateList, OrderTicket, ReasonBlock, idr, pct, pctRaw } from "@/components/plan";
 import MarketChart, { type PriceLine } from "@/components/MarketChart";
 import { Page } from "./Tonight";
 
@@ -132,32 +132,28 @@ export default function Name() {
 							</p>
 						</div>
 						<div className="mt-6">
-							<HowToHold
-								candidate={
-									{
-										ticker: code,
-										name: null,
-										close: detail.close ?? 0,
-										change_pct: null,
-										as_of: detail.as_of,
-										gates: detail.gates,
-										geometry: detail.geometry,
-										rs_rating: detail.rs_rating,
-										breadth: detail.breadth,
-										breakout_pct: 0,
-										vol20: 0,
-										vol20_median: 0,
-										turnover_idr: null,
-										score: 0,
-									} as never
-								}
+							<OrderTicket
+								ticker={code}
+								geometry={detail.geometry}
+								turnoverIdr={detail.turnover_idr}
 							/>
 						</div>
 					</section>
 				)}
 			</div>
 
-			<PriceHistory code={code} breakoutLevel={detail.breakout_level} geometry={detail.geometry} />
+			{detail.reason ? (
+				<div className="mt-6">
+					<ReasonBlock reason={detail.reason} />
+				</div>
+			) : null}
+
+			<PriceHistory
+				code={code}
+				breakoutLevel={detail.breakout_level}
+				geometry={detail.geometry}
+				reason={detail.reason}
+			/>
 
 			<section className="mt-10 border border-[var(--border)] bg-[var(--panel-2)] p-5">
 				<h2 className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-faint)]">
@@ -186,10 +182,12 @@ function PriceHistory({
 	code,
 	breakoutLevel,
 	geometry,
+	reason,
 }: {
 	code: string;
 	breakoutLevel: number | null;
 	geometry: PlanDetail["geometry"];
+	reason: PlanDetail["reason"];
 }) {
 	const [data, setData] = useState<HistoryResponse | null>(null);
 	const [failed, setFailed] = useState(false);
@@ -206,6 +204,12 @@ function PriceHistory({
 			alive = false;
 		};
 	}, [code]);
+
+	// One marker: the session the close first cleared the 40-session high. The
+	// entry itself is the *next* session, which has no bar yet to point at.
+	const annotations = reason?.breakout_date
+		? [{ date: reason.breakout_date, label: "broke out", kind: "breakout" as const }]
+		: undefined;
 
 	const lines: PriceLine[] = [];
 	if (breakoutLevel != null) {
@@ -237,6 +241,7 @@ function PriceHistory({
 						indicators={data.indicators}
 						height={380}
 						priceLines={lines}
+						annotations={annotations}
 						options={{ showVolume: true, overlayIndicators: ["sma50"] }}
 					/>
 				) : (

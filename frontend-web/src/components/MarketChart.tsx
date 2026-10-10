@@ -4,11 +4,15 @@ import { useEffect, useRef } from "react";
 import {
 	CandlestickSeries,
 	createChart,
+	createSeriesMarkers,
 	HistogramSeries,
 	LineSeries,
 	ColorType,
 	type IChartApi,
 	type ISeriesApi,
+	type ISeriesMarkersPluginApi,
+	type SeriesMarkerBar,
+	type Time,
 	type UTCTimestamp,
 } from "lightweight-charts";
 import type { HistoryRecord, IndicatorColumns } from "@/lib/api";
@@ -34,12 +38,26 @@ export interface PriceLine {
 	style?: "solid" | "dashed";
 }
 
+/**
+ * A marker on one session.
+ *
+ * Price lines answer "what level"; they cannot answer "why this session". This
+ * points at a date instead — the breakout, or the session the plan is for.
+ */
+export interface ChartAnnotation {
+	/** ISO date of the bar to mark. */
+	date: string;
+	label: string;
+	kind: "breakout" | "entry" | "gate" | "regime";
+}
+
 export default function MarketChart({
 	history,
 	indicators,
 	height = 420,
 	options,
 	priceLines,
+	annotations,
 	stockbitLpm,
 	stockbitIntensity,
 }: {
@@ -48,6 +66,7 @@ export default function MarketChart({
 	height?: number;
 	options?: ChartOptions;
 	priceLines?: PriceLine[];
+	annotations?: ChartAnnotation[];
 	stockbitLpm?: (number | null)[];
 	stockbitIntensity?: number[];
 }) {
@@ -166,6 +185,38 @@ export default function MarketChart({
 			priceLineRefs.current = [];
 		};
 	}, [priceLines, theme]);
+
+	// Session markers. The marker primitive owns its data, so unlike price
+	// lines it can be re-set in place: no handles to track, nothing to leak.
+	const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
+
+	useEffect(() => {
+		const candles = seriesRef.current;
+		if (!candles) return;
+		const markers: SeriesMarkerBar<Time>[] = (annotations ?? [])
+			.filter((a) => Number.isFinite(new Date(a.date).getTime()))
+			.map((a): SeriesMarkerBar<Time> => ({
+				time: (new Date(a.date).getTime() / 1000) as UTCTimestamp,
+				position: a.kind === "entry" ? "aboveBar" : "belowBar",
+				color:
+					a.kind === "breakout"
+						? theme.up
+						: a.kind === "entry"
+							? theme.gold
+							: theme.blue,
+				shape: a.kind === "entry" ? "arrowDown" : "arrowUp",
+				text: a.label,
+			}))
+			.sort((x, y) => (x.time as number) - (y.time as number));
+		if (!markersRef.current) {
+			markersRef.current = createSeriesMarkers(candles, markers);
+		} else {
+			markersRef.current.setMarkers(markers);
+		}
+		return () => {
+			markersRef.current?.setMarkers([]);
+		};
+	}, [annotations, theme]);
 
 	// Volume histogram (on the price scale, hidden by default per design)
 	useEffect(() => {

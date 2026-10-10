@@ -18,6 +18,9 @@ exactly, including the details that a rewrite usually gets wrong:
 
 from __future__ import annotations
 
+import threading
+import time
+from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Iterable
 
@@ -27,7 +30,17 @@ import pandas as pd
 from . import idx
 from . import method as M
 from .bars import Frames
-from .model import Candidate, Gate, GateKey, Geometry, Regime, WatchItem
+from .model import (
+    Candidate,
+    Gate,
+    GateHistory,
+    GateKey,
+    Geometry,
+    Reason,
+    ReasonPoint,
+    Regime,
+    WatchItem,
+)
 
 # A name with no volatility at all is a halted or degenerate series, and it
 # passes the "quiet" gate for free (0 <= 0). Drop it rather than recommend it.
@@ -54,6 +67,11 @@ MAX_PARTICIPATION = 0.02
 # A "breakout" of more than this over the 40-day high is a gap or a corporate
 # action, not a breakout, and the study's geometry would never have filled it.
 MAX_BREAKOUT_PCT = 15.0
+# How many sessions of gate history the reason payload carries. Bounded because
+# the history calls the screen's own breadth and relative-strength passes once
+# per session: a dozen sessions costs about five seconds, and the value above the
+# line is the same code path rather than a second implementation of it.
+REASON_WINDOW = 12
 # How close to the high a name must be to count as "about to fire".
 WATCH_GAP_PCT = 3.0
 MAX_WATCH = 12
@@ -205,6 +223,284 @@ def _relative_strength(bars: dict[str, pd.DataFrame], as_of: pd.Timestamp) -> di
         return {}
     series = pd.Series(values, dtype=float)
     return (series.rank(pct=True) * 100.0).to_dict()
+
+
+@dataclass(frozen=True)
+class PanelHistory:
+    """Breadth and relative-strength percentile for each of the recent sessions."""
+
+    dates: tuple[pd.Timestamp, ...]
+    breadth: dict[pd.Timestamp, float]
+    rs: dict[pd.Timestamp, dict[str, float]]
+    seconds: float
+
+
+_history_lock = threading.Lock()
+_history_cache: dict[tuple[str, int, str], PanelHistory] = {}
+
+
+def clear_history_cache() -> None:
+    """Drop the cached panels, on the same schedule as the plan itself."""
+    with _history_lock:
+        _history_cache.clear()
+
+
+def panel_history(
+    source: str,
+    bars: dict[str, pd.DataFrame],
+    calendar: Iterable[pd.Timestamp],
+    session: pd.Timestamp,
+    window: int = REASON_WINDOW,
+) -> PanelHistory:
+    """The last `window` sessions of the two cross-sectional panels.
+
+    Deliberately calls `_breadth` and `_relative_strength` — the same functions
+    the screen uses — once per session rather than reimplementing them
+    vectorised. A faster second implementation is how a history line ends up
+    disagreeing with the value printed above it, and these two numbers decide the
+    whole plan.
+    """
+    key = (source, window, session.isoformat())
+    with _history_lock:
+        hit = _history_cache.get(key)
+    if hit is not None:
+        return hit
+
+    started = time.perf_counter()
+    dates = tuple(d for d in calendar if d <= session)[-window:]
+    breadth = {d: _breadth(bars, d)[0] for d in dates}
+    rs = {d: _relative_strength(bars, d) for d in dates}
+    panel = PanelHistory(
+        dates=dates,
+        breadth=breadth,
+        rs=rs,
+        seconds=time.perf_counter() - started,
+    )
+    with _history_lock:
+        _history_cache[key] = panel
+    return panel
+
+
+def _trailing_run(series: list[bool]) -> tuple[int, int | None]:
+    """(length, index) of the run of True that ends the series."""
+    if not series or not series[-1]:
+        return 0, None
+    length = 0
+    for value in reversed(series):
+        if not value:
+            break
+        length += 1
+    return length, len(series) - length
+
+
+def _reason(
+    code: str,
+    frame: pd.DataFrame,
+    session: pd.Timestamp,
+    panel: PanelHistory,
+    benchmark: pd.DataFrame | None,
+    spec: M.FamilySpec,
+    geometry: Geometry,
+    next_session: date,
+) -> tuple[Reason, dict[str, GateHistory]]:
+    """Replay the chain over the recent sessions for one name.
+
+    The chain is replayed by calling `_evaluate` — the function the screen itself
+    uses — once per session, so the history cannot describe conditions the screen
+    does not apply. The last point in the series is by construction the gate set
+    the plan is showing; `test_plan_why_now.py` pins that.
+    """
+    started = time.perf_counter()
+    points: list[ReasonPoint] = []
+    runs: dict[str, list[bool]] = {}
+
+    for when in panel.dates:
+        bench = _benchmark_state(benchmark, when)
+        breadth = panel.breadth.get(when, 0.0)
+        record = _evaluate(
+            code, frame, when, panel.rs.get(when, {}), breadth, bench, spec
+        )
+        gates = record["gates"] if record else {}
+        for gate_key in ("breakout", "breadth", "relative_strength", "quiet_vol"):
+            runs.setdefault(gate_key, []).append(
+                bool(gates[gate_key].passed) if gate_key in gates else False
+            )
+        points.append(
+            ReasonPoint(
+                session=when.date(),
+                close=float(record["close"]) if record else None,
+                gates_passed=sum(1 for g in gates.values() if g.passed),
+                gates_total=len(gates) if gates else 6,
+                breakout_pct=(
+                    round(float(record["breakout_pct"]), 2) if record else None
+                ),
+                vol20=round(float(record["vol20"]), 2) if record else None,
+                rs_rating=(
+                    round(float(record["rs_rating"]), 1)
+                    if record and float(record["rs_rating"])
+                    else None
+                ),
+                breadth=round(breadth, 4),
+                band=regime_of(breadth),
+            )
+        )
+
+    held = {key: _trailing_run(series) for key, series in runs.items()}
+    # Built from the replay itself, so a gate's "held for four sessions" and the
+    # value printed beside it come from one evaluation rather than two.
+    histories = {
+        key: GateHistory(
+            held_sessions=length,
+            first_true_session=(panel.dates[start].date() if start is not None else None),
+            series=tuple(runs.get(key, [])),
+        )
+        for key, (length, start) in held.items()
+    }
+    breakout_held, breakout_start = held.get("breakout", (0, None))
+    breakout_date = (
+        panel.dates[breakout_start].date() if breakout_start is not None else None
+    )
+
+    reason = Reason(
+        signal_session=session.date(),
+        entry_session=next_session,
+        entry_basis=geometry.entry_basis,
+        known_from=(
+            "Every condition above is read from the close of the signal session; "
+            "the study fills at the next session's open."
+        ),
+        breakout_date=breakout_date,
+        sessions_since_breakout=(breakout_held - 1) if breakout_held else None,
+        window=len(points),
+        seconds=time.perf_counter() - started,
+        history=tuple(points),
+        levels={
+            "donchian_level": (
+                round(float(_donchian_level(frame, session)), 2)
+                if _donchian_level(frame, session) is not None
+                else None
+            ),
+            "entry_ref": geometry.entry_ref,
+            "target_price": geometry.target_price,
+            "stop_price": geometry.stop_price,
+            "tick_idr": geometry.tick_idr,
+            "holding_weeks": geometry.holding_weeks,
+        },
+        ar=idx.ar_limits(geometry.entry_ref).as_dict(),
+    )
+    return reason, histories
+
+
+def _donchian_level(frame: pd.DataFrame, session: pd.Timestamp) -> float | None:
+    """The 40-session high the breakout had to clear, as of the session."""
+    window = frame[frame["date"] <= session]
+    if len(window) < M.DONCHIAN_N + 1:
+        return None
+    level = window["high"].rolling(M.DONCHIAN_N).max().shift(1).iloc[-1]
+    return float(level) if np.isfinite(level) and level > 0 else None
+
+
+def reason_for(
+    frames: Frames,
+    session: pd.Timestamp,
+    code: str,
+    spec: M.FamilySpec,
+    exit_method: str,
+) -> Reason | None:
+    """The run-up for one name, whether or not it is in tonight's plan."""
+    frame = frames.bars.get(code)
+    if frame is None:
+        return None
+    panel = panel_history(
+        frames.source, frames.bars, frames.sessions(), session
+    )
+    bench = _benchmark_state(frames.benchmark, session)
+    breadth = panel.breadth.get(session, 0.0)
+    record = _evaluate(code, frame, session, panel.rs.get(session, {}), breadth, bench, spec)
+    if record is None:
+        return None
+    geometry = _geometry(
+        float(record["close"]),
+        exit_method,
+        turnover_idr=record.get("turnover_idr"),  # type: ignore[arg-type]
+    )
+    reason, _histories = _reason(
+        code,
+        frame,
+        session,
+        panel,
+        frames.benchmark,
+        spec,
+        geometry,
+        next_session(session.date(), frames.sessions()),
+    )
+    return reason
+
+
+def _history_for_candidates(
+    frames: Frames,
+    session: pd.Timestamp,
+    spec: M.FamilySpec,
+    exit_method: str,
+    candidates: list[Candidate],
+) -> tuple[list[Candidate], PanelHistory | None]:
+    """Attach the run-up to each candidate. Only candidates: a screen with none
+    does not pay for a history nobody will read."""
+    if not candidates:
+        return candidates, None
+    panel = panel_history(frames.source, frames.bars, frames.sessions(), session)
+    next_day = next_session(session.date(), frames.sessions())
+    enriched: list[Candidate] = []
+    for candidate in candidates:
+        frame = frames.bars.get(candidate.ticker)
+        if frame is None:
+            enriched.append(candidate)
+            continue
+        reason, histories = _reason(
+            candidate.ticker,
+            frame,
+            session,
+            panel,
+            frames.benchmark,
+            spec,
+            candidate.geometry,
+            next_day,
+        )
+        # The gates the plan shows gain their run length, so the UI can say
+        # "held for four sessions" beside the value rather than only the value.
+        gates = tuple(
+            Gate(
+                key=g.key,
+                label=g.label,
+                passed=g.passed,
+                value=g.value,
+                threshold=g.threshold,
+                unit=g.unit,
+                text=g.text,
+                history=histories.get(g.key),
+            )
+            for g in candidate.gates
+        )
+        enriched.append(
+            Candidate(
+                ticker=candidate.ticker,
+                name=candidate.name,
+                close=candidate.close,
+                change_pct=candidate.change_pct,
+                as_of=candidate.as_of,
+                gates=gates,
+                geometry=candidate.geometry,
+                rs_rating=candidate.rs_rating,
+                breadth=candidate.breadth,
+                breakout_pct=candidate.breakout_pct,
+                vol20=candidate.vol20,
+                vol20_median=candidate.vol20_median,
+                turnover_idr=candidate.turnover_idr,
+                score=candidate.score,
+                reason=reason,
+            )
+        )
+    return enriched, panel
 
 
 def _breadth(bars: dict[str, pd.DataFrame], as_of: pd.Timestamp) -> tuple[float, float]:
@@ -669,6 +965,12 @@ def screen(
             )
 
     candidates.sort(key=lambda c: -c.score)
+    candidates, panel = _history_for_candidates(
+        frames, as_of, spec, exit_method, candidates
+    )
+    if panel is not None:
+        for record in scored:
+            record["panel_seconds"] = panel.seconds
     return (
         regime,
         candidates,
@@ -750,6 +1052,12 @@ def ladder(
                             "key": g.key,
                             "label": GATE_LABEL.get(g.key, g.key),
                             "passed": g.passed,
+                            # The measured value and its threshold travel with the
+                            # ranked row too: "3 of 4" tells a reader nothing about
+                            # how close the fourth was.
+                            "value": g.value,
+                            "threshold": g.threshold,
+                            "unit": g.unit,
                             "text": g.text,
                         }
                         for g in gates.values()

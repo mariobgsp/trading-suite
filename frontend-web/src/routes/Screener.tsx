@@ -251,6 +251,11 @@ function Row({
 								<div className="min-w-0">
 									<p className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--text-faint)]">
 										{g.label}
+										{g.value != null && g.threshold != null ? (
+											<span className="ml-2 normal-case tracking-normal text-[var(--text-ghost)]">
+												{g.value.toFixed(2)} vs {g.threshold.toFixed(2)} needed
+											</span>
+										) : null}
 									</p>
 									<p className="mt-0.5 text-[12px] leading-relaxed text-[var(--text-dim)]">
 										{g.text}

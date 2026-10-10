@@ -65,6 +65,7 @@ def invalidate() -> None:
         _frames_cache.clear()
         _cache.clear()
     M.clear_cache()
+    S.clear_history_cache()
 
 
 def _horizon(as_of: date) -> str:
@@ -166,6 +167,14 @@ def plan(as_of: date | None = None, exit_method: str | None = None) -> Plan:
             phantom_bars_dropped=frames.phantom_dropped,
             phantom_dates=list(frames.phantom_dates),
             exchange_sessions=len(calendar),
+            reason_seconds=next(
+                (
+                    c.reason.seconds
+                    for c in candidates
+                    if c.reason is not None
+                ),
+                None,
+            ),
         ),
         # Attached to every plan, not only the Method page. A user deciding what
         # to buy tomorrow is owed the searched maximum *and* what survived
@@ -223,6 +232,21 @@ def detail(ticker: str) -> dict[str, object]:
     watch = next((w for w in current.watchlist if w.ticker == code), None)
     in_plan = close is not None and all(g.passed for g in gates)
 
+    # The run-up, for the Name page: "why not" and "why now" are the same
+    # question asked about two different names.
+    reason = None
+    if session is not None:
+        try:
+            reason = S.reason_for(
+                frames,
+                session,
+                code,
+                M.family_spec(current.evidence.family),
+                current.evidence.exit_method or M.DEFAULT_EXIT,
+            )
+        except Exception as exc:  # noqa: BLE001 - a missing history must not 500
+            log.warning("plan: no reason for %s: %s", code, exc)
+
     return {
         "ticker": code,
         "in_plan": in_plan,
@@ -231,9 +255,14 @@ def detail(ticker: str) -> dict[str, object]:
         "rs_rating": rs,
         "breadth": breadth,
         "breakout_level": breakout_level,
+        "turnover_idr": (
+            float(record["turnover_idr"])  # type: ignore[arg-type]
+            if record is not None and record.get("turnover_idr") is not None
+            else None
+        ),
         "blocked_by": watch.blocked_by if watch else None,
         "distance_text": watch.distance_text if watch else "Not close to firing yet.",
-        "gates": [g.__dict__ for g in gates],
+        "gates": [g.as_dict() for g in gates],
         "geometry": (
             S._geometry(
                 close,
@@ -244,6 +273,7 @@ def detail(ticker: str) -> dict[str, object]:
             else None
         ),
         "evidence": current.evidence.as_dict(),
+        "reason": reason.as_dict() if reason else None,
     }
 
 

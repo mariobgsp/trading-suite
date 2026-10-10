@@ -12,7 +12,50 @@ from datetime import date
 from typing import Literal
 
 Side = Literal["long"]
-GateKey = Literal["breakout", "relative_strength", "breadth", "quiet_vol", "tradable"]
+# Every condition the screen can emit. `screen.py` produces all six and the
+# frontend unions the same six. "tradable" used to sit here and was simply
+# wrong: tradability is a filter applied before scoring, never a gate shown to
+# the user, so it is not a GateKey.
+GateKey = Literal[
+    "breakout",
+    "relative_strength",
+    "breadth",
+    "quiet_vol",
+    "weekly_trend",
+    "index_above_200",
+]
+
+
+@dataclass(frozen=True)
+class Citation:
+    """A number the study published in prose, with the line that carries it.
+
+    Some of the figures this app leans on hardest — the corrected tier-1 result
+    above all — exist only as text in the study's own documents, because the
+    correction was a pass over the engine rather than a new artifact round. A
+    citation travels with the file, the line, the words on that line and the
+    command that regenerates it, so the UI can show where a number came from and
+    `test_plan_citations.py` can fail the build when the study stops saying it.
+    """
+
+    label: str
+    value: float | None
+    unit: str
+    doc: str
+    line: int
+    quote: str
+    regenerate: str = ""
+
+    def as_dict(self) -> dict[str, object]:
+        return dict(
+            label=self.label,
+            value=self.value,
+            unit=self.unit,
+            doc=self.doc,
+            line=self.line,
+            quote=self.quote,
+            regenerate=self.regenerate,
+        )
 
 
 @dataclass(frozen=True)
@@ -262,11 +305,18 @@ class Evidence:
     `results/top10_methods.csv` so the number on screen is the number the study
     measured.
 
-    `role` matters as much as the numbers. Every row of that CSV is a cell the
-    study *searched over* — docs/22 then took the best of them to unseen folds
-    and found none of them holds both bars. So a row here is evidence of what the
-    search found, not of what to expect, and `role` says which one the UI is
-    looking at.
+    `role` matters as much as the numbers, and it has three values:
+
+      * `"searched_census"` — a row of the study's results files. Every one is a
+        cell the study *searched over*; docs/22 then took the best of them to
+        unseen folds and found none holds both bars. Evidence of what the search
+        found, not of what to expect.
+      * `"walk_forward_corrected"` — what the study publishes after its own
+        correctness pass (clean universe, tiered costs). Cited, not read.
+      * `"replay"` — a one-window mark-to-market projection, not a walk-forward.
+
+    The app shows them apart because presenting one as another is the exact
+    error the study's own documents were written to correct.
     """
 
     family: str
@@ -289,6 +339,15 @@ class Evidence:
     book_max_drawdown_pct: float | None = None
     win_rate_lo: float | None = None
     win_rate_hi: float | None = None
+    # Provenance for figures that are cited from the study's prose rather than
+    # read from one of its results files. Empty for rows read from a CSV.
+    provenance: tuple[Citation, ...] = ()
+    # How many parameter variants the row pools. `top10_methods.csv` rounds four
+    # donchian windows (20/40/50/60) into one row, so a trade count on that row
+    # is not the number of trades *this* screen takes: it runs window 40 alone.
+    n_specs: int | None = None
+    n_cells: int | None = None
+    single_spec_trades: int | None = None
 
     @property
     def clears_bar(self) -> bool:
@@ -328,6 +387,10 @@ class Evidence:
             book_max_drawdown_pct=self.book_max_drawdown_pct,
             win_rate_lo=self.win_rate_lo,
             win_rate_hi=self.win_rate_hi,
+            provenance=[c.as_dict() for c in self.provenance],
+            n_specs=self.n_specs,
+            n_cells=self.n_cells,
+            single_spec_trades=self.single_spec_trades,
         )
 
 
@@ -368,6 +431,11 @@ class Plan:
     # which, because only one of those two survives a public holiday - and no
     # calendar contains the future.
     next_session_basis: str = "next_weekday_unverified"
+    # The same chain, measured after the study's correctness pass. Kept beside
+    # `evidence` rather than instead of it: one is what the search found, the
+    # other is what the study now publishes, and a screen showing only the first
+    # is quoting a number its own author has withdrawn.
+    corrected: Evidence | None = None
 
     def as_dict(self) -> dict[str, object]:
         return dict(
@@ -391,4 +459,5 @@ class Plan:
             coverage=self.coverage,
             holdout=self.holdout.as_dict() if self.holdout else None,
             frequency=self.frequency.as_dict() if self.frequency else None,
+            corrected=self.corrected.as_dict() if self.corrected else None,
         )

@@ -8,7 +8,14 @@
 
 import { useEffect, useState } from "react";
 import { planApi, type BookRow, type MethodCard } from "@/lib/api/plan";
-import { EvidenceBadge, Section, idr, pct, pctRaw } from "@/components/plan";
+import {
+	CorrectedEvidenceCard,
+	EvidenceBadge,
+	Section,
+	idr,
+	pct,
+	pctRaw,
+} from "@/components/plan";
 import { Page } from "./Tonight";
 
 export default function Method() {
@@ -419,8 +426,17 @@ export default function Method() {
 			</Section>
 
 			<Section
+				id="corrected"
+				title="What the study tells you to trade"
+				subtitle="The corrected result: clean universe, price-frozen names excluded, tiered costs. It is smaller than the searched maximum below, and it is the number the study publishes."
+			>
+				{card.corrected ? <CorrectedEvidenceCard evidence={card.corrected} /> : null}
+			</Section>
+
+			<Section
 				id="result"
-				title="What it measured"
+				title="What the search ranked, before the correction"
+				subtitle="Every row below is a cell the study searched over. It is evidence of what the search found, not of what to expect — which is why the corrected result sits above it."
 			>
 				<div className="grid gap-5 lg:grid-cols-[1fr_320px]">
 					<div className="border border-[var(--border)] bg-[var(--panel)] p-5">
@@ -453,7 +469,10 @@ export default function Method() {
 							</div>
 						</div>
 					</div>
-					<EvidenceBadge evidence={e} />
+					<EvidenceBadge
+						evidence={e}
+						roundTripPct={card.costs.round_trip_pct}
+					/>
 				</div>
 			</Section>
 

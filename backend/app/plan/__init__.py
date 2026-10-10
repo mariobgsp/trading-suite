@@ -8,7 +8,7 @@ The interface is three functions:
 
 Everything a caller must know is here. The rule chain, the cost model, the
 universe filters, the cross-sectional panels and the evidence lookup sit behind
-the seam in `method.py`, `bars.py`, `screen.py` and `evidence.py`.
+the seam in `method.py`, `bars.py`, `screen.py`, `citations.py` and `model.py`.
 
 Plans are memoised per (source, as-of, exit): a nightly screen is a full
 universe pass, and the front end asks for it more than once.
@@ -22,6 +22,7 @@ from datetime import date
 
 import pandas as pd
 
+from . import citations as C
 from . import method as M
 from . import screen as S
 from .bars import BarsSource, Frames, default_source
@@ -189,6 +190,11 @@ def plan(as_of: date | None = None, exit_method: str | None = None) -> Plan:
         # becomes a promise it never was.
         holdout=M.holdout(),
         frequency=M.regime_frequency(),
+        # The same chain's corrected numbers, beside the searched row rather than
+        # instead of it. One is what the search found; the other is what the study
+        # publishes after its own correctness pass, and telling them apart is the
+        # whole reason this app carries both.
+        corrected=M.corrected_evidence(),
     )
     with _lock:
         _cache[key] = result
@@ -279,6 +285,16 @@ def method_card() -> dict[str, object]:
             for r in M.RULES
         ],
         "evidence": evidence.as_dict(),
+        # Three tiers, never blended. `citations` carries the file, line and
+        # sentence behind every figure that is cited rather than read.
+        "corrected": M.corrected_evidence().as_dict(),
+        "citations": [c.as_dict() for c in C.all_citations()],
+        "evidence_tiers": {
+            "searched": evidence.as_dict(),
+            "corrected": M.corrected_evidence().as_dict(),
+            "replay": M.five_year_replay(),
+        },
+        "corrected_block": C.corrected_tier1(),
         "ladder": [e.as_dict() for e in ladder[:12]],
         "families": [
             {

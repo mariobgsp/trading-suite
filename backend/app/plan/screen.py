@@ -586,29 +586,9 @@ def ladder(
     return [row for _, row in rows[:limit]]
 
 
-def _gap(gate: Gate, record: dict[str, object], spec: M.FamilySpec) -> float:
-    """How far a failed condition is from passing, as a positive fraction.
-
-    0.0 would mean it has already passed. The units are deliberately not
-    comparable across gates — this orders names, it does not score them.
-    """
-    if gate.key == "breakout":
-        # percentage of the 40-session high still to recover
-        return max(-float(record["breakout_pct"]), 0.0)  # type: ignore[arg-type]
-    if gate.key == "relative_strength":
-        if gate.value is None:
-            return 100.0
-        return max(gate.threshold - gate.value, 0.0) if gate.threshold else 100.0
-    if gate.key == "quiet_vol":
-        if gate.value is None or not gate.threshold:
-            return 100.0
-        return max((gate.value / gate.threshold - 1.0) * 100.0, 0.0)
-    # A binary gate (index level, weekly trend) is either in or out, so it is
-    # treated as maximally far rather than inventing a distance for it.
-    return 1e6
-
-
 # The gates a single name can close on its own. The rest are market-wide.
+# (A second `_gap` used to sit above this line and was shadowed by the one below
+# it: same intent, two definitions, only the second ever called.)
 _NAME_LEVEL: frozenset[GateKey] = frozenset({"breakout", "relative_strength", "quiet_vol"})
 
 
@@ -638,14 +618,10 @@ def _gap(gate: Gate, record: dict[str, object], spec: M.FamilySpec) -> float:
     return 100.0
 
 
-GATE_LABEL: dict[str, str] = {
-    "breakout": "40-session breakout",
-    "relative_strength": "Relative strength",
-    "breadth": "Market breadth",
-    "quiet_vol": "Quiet volatility",
-    "weekly_trend": "Weekly trend",
-    "index_above_200": "IHSG above 200-day",
-}
+# One vocabulary, taken from the rule chain itself. This used to be a second
+# hand-written list, which is how one condition acquired three names across the
+# app — one in screen.py, one in method.RULES, one in the frontend.
+GATE_LABEL: dict[str, str] = {key: rule.label for key, rule in M.RULE_BY_KEY.items()}
 
 
 def _watchlist(

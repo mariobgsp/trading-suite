@@ -81,6 +81,7 @@ export default function Tonight() {
 				sessionLabel={plan.session_label}
 				horizon={plan.horizon}
 				evidence={evidence}
+				costs={plan.costs}
 				coverage={coverage}
 				indexClose={regime.index_close}
 				universeSize={regime.universe_size}
@@ -213,7 +214,7 @@ export default function Tonight() {
 							{evidence.caveat}
 						</p>
 					</div>
-					<EvidenceBadge evidence={evidence} />
+					<EvidenceBadge evidence={evidence} roundTripPct={plan.costs.round_trip} />
 				</div>
 			</Section>
 		</Page>

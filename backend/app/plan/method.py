@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
+from . import citations as C
 from .model import Evidence, Holdout, RegimeFrequency
 
 # Where the study lives. Overridable so a checkout elsewhere still works.
@@ -180,7 +181,10 @@ FAMILY_SPECS: dict[str, FamilySpec] = {
 }
 
 DEFAULT_FAMILY = "full_breadth_quiet_wup_rs90_donchian"
-DEFAULT_EXIT = "lt_14_45_95"
+# The exit the study ships (docs/21 §0a, docs/24 §7). Not the first row its
+# search ranked — that was 14/40/95 — but the geometry its corrected numbers
+# belong to, and the one the acceptance checklist names.
+DEFAULT_EXIT = "lt_13_35_95"
 
 # The configuration the study actually ships (docs/21 §1, scripts/screen.py
 # 58-90). These are the numbers the app runs tonight, and the numbers
@@ -194,22 +198,26 @@ SHIP_BREADTH = BREADTH_TRENDING
 SHIP_RS = 90.0
 SHIP_QUIET = "quiet4"
 
-# The study names its own pick in docs/18-strategy-and-results.md:
-#   "signal quality (the method to trade): breadth_quiet4_rs90_donchian x
-#    lt_14_40_95 - 523 out-of-sample trades, 81.07% win rate, +5.57% per
-#    closed trade, traded in 5 of the 6 test windows"
+# The chain the app runs, and the reason it is two decisions rather than one.
 #
-# It wins on what a nightly screen needs: the most folds of any qualifying row
-# (5 of 6), and no index gate, so it is not shut for whole quarters the way an
-# index-gated family is. Its worst fold is 59.6%, a shade under the study's own
-# 60% fragility line, which the UI says out loud rather than rounding away.
+#   family  breadth_quiet4_rs90_donchian — no index gate, so it is not shut for
+#           whole quarters the way an index-gated family is; it traded in five of
+#           the study's six windows, the most of any qualifying row.
+#   exit    lt_13_35_95 — the geometry the study ships (docs/21 §0a, docs/24 §7).
+#
+# docs/18 named 14/40/95 as the family's published pick and quoted 523 trades at
+# 81.07% / +5.51% for it. Those are the *searched* numbers, and docs/21 later
+# corrected every headline down after an audit found 7.0% of the study's trades
+# came from names that do not trade: the corrected tier-1 result is 76 trades at
+# 76.32% / +1.85% with a 9.4% max drawdown. The app runs the corrected chain.
+#
+# The two live in different files, which is worth knowing when reading the code:
+# results/top10_methods.csv holds only the rows that cleared both bars, and
+# 13/35/95 for this family clears the win bar but not the +5% bar, so it is only
+# in results/method_table.csv — the 2,952-row census. `evidence_for` searches
+# both; `corrected_evidence` cites the published corrected figures.
 STUDY_PICK_FAMILY = "breadth_quiet4_rs90_donchian"
-# The study's published pick (docs/18), and the only exits it measured for this
-# family: results/top10_methods.csv carries lt_14_40_95 and lt_14_45_95 and
-# nothing else. docs/21 later shipped lt_13_35_95 for the *screen*, but that row
-# was never measured for this entry family, so running it would mean quoting
-# rules the app cannot cite. The gate below is measured; this is too.
-STUDY_PICK_EXIT = "lt_14_40_95"
+STUDY_PICK_EXIT = "lt_13_35_95"
 
 
 def family_spec(family: str | None) -> FamilySpec:
@@ -221,13 +229,16 @@ def family_spec(family: str | None) -> FamilySpec:
 # Exit ladder options, as (target %, stop %, hold bars). Measured, not invented:
 # every one of these is a row of results/top10_methods.csv.
 EXIT_LADDER = {
+    # The shipped screen's geometry, and the one the corrected figures describe:
+    # a nearer target and a tighter stop than the searched pick, which is what
+    # halves the drawdown.
+    "lt_13_35_95": (13.0, 35.0, 95),
     "lt_14_40_95": (14.0, 40.0, 95),  # the study's published pick
     "lt_14_45_95": (14.0, 45.0, 95),
     "lt_14_35_95": (14.0, 35.0, 95),
     "lt_14_40_55": (14.0, 40.0, 55),
     "lt_14_35_55": (14.0, 35.0, 55),
     "lt_13_35_55": (13.0, 35.0, 55),
-    "lt_13_35_95": (13.0, 35.0, 95),
     "lt_16_35_55": (16.0, 35.0, 55),
     "wide_16_35_60": (16.0, 35.0, 60),
 }
@@ -259,7 +270,10 @@ RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "breadth",
-        f"Market breadth over {int(BREADTH_THRESHOLD * 100)}%",
+        # No threshold baked into the label: the family gate and the regime
+        # band are different numbers (0.50 was first searched, 0.60 ships), and
+        # the Gate the screen builds carries the spec-aware one.
+        "Market breadth",
         "src/loop_search.py:157 build_breadth",
         f"At least {int(BREADTH_THRESHOLD * 100)}% of the universe is above its own 200-day "
         "average, so the move is broad rather than two or three stocks.",
@@ -331,12 +345,36 @@ def clear_cache() -> None:
     quoting the previous round's answer to a question it has already re-asked.
     """
     _table.cache_clear()
+    _family_spec_count.cache_clear()
     holdout.cache_clear()
     regime_frequency.cache_clear()
     five_year_replay.cache_clear()
 
 
-def _evidence(row: dict[str, str], cells: int | None) -> Evidence:
+def _evidence(
+    row: dict[str, str],
+    cells: int | None,
+    source: Path = TOP10_CSV,
+    role: str = C.ROLE_SEARCHED,
+) -> Evidence:
+    """One measured row, from whichever results file carries it.
+
+    `top10_methods.csv` holds the rows that cleared both bars and carries the
+    per-fold detail, the spec count and the cell count. `method_table.csv` holds
+    every family x exit the study measured: the trade count, the win rate and the
+    average, but no per-fold string. The shipped chain is a method_table row — it
+    is measured, it misses the +5% bar, and it never reached the ranked list — so
+    the app says which file a number came from instead of implying they are one.
+    """
+    row_cells = int(_f(row, "cells") or 0) or None
+    from_ranked = Path(source) == TOP10_CSV
+    caveat = CAVEAT
+    if not from_ranked:
+        caveat = (
+            f"{CAVEAT} Read from the census file ({Path(source).name}), not from the "
+            "ranked file: this row is measured, but it did not clear both bars, so it "
+            "was never in a ranked list and its trade count is not a promise."
+        )
     return Evidence(
         family=row.get("family", ""),
         exit_method=row.get("exit_method", ""),
@@ -347,14 +385,24 @@ def _evidence(row: dict[str, str], cells: int | None) -> Evidence:
         fold_best_win_rate=_f(row, "fold_best_wr"),
         folds_traded=int(_f(row, "folds_traded") or 0) or None,
         fold_detail=row.get("fold_detail", ""),
-        total_cells_measured=cells,
-        source=str(TOP10_CSV),
+        total_cells_measured=cells if cells is not None else row_cells,
+        source=str(source),
         measured=True,
-        caveat=CAVEAT,
+        caveat=caveat,
+        role=role,
+        n_specs=int(_f(row, "n_specs") or 0) or None,
+        n_cells=row_cells,
+        single_spec_trades=(
+            int(C.value("single_spec_trades") or 0) or None
+            if row.get("family") == STUDY_PICK_FAMILY
+            else None
+        ),
     )
 
 
-def _unmeasured(family: str, exit_method: str, reason: str) -> Evidence:
+def _unmeasured(
+    family: str, exit_method: str, reason: str, role: str = C.ROLE_SEARCHED
+) -> Evidence:
     return Evidence(
         family=family,
         exit_method=exit_method,
@@ -369,6 +417,7 @@ def _unmeasured(family: str, exit_method: str, reason: str) -> Evidence:
         source=str(TOP10_CSV),
         measured=False,
         caveat=f"{reason}. The rule still applies; the number is simply not available.",
+        role=role,
     )
 
 
@@ -401,30 +450,27 @@ def ladder() -> tuple[Evidence, ...]:
 
 
 def default_evidence() -> Evidence:
-    """The row the plan runs.
+    """The searched row the plan runs: the census row for the shipped chain.
 
-    Prefers the study's own published pick (docs/18), because the study made
-    that choice with the whole census in front of it and the app has no reason
-    to second-guess it. If that row is missing from the results — an older
-    checkout, a partial run — it falls back to the widest qualifying row that
-    the app can actually run, because a screen needs names to show rather than
-    just a headline rate with nothing behind it.
+    The chain is the study's shipped screen (docs/21 §0a): breadth 0.60, RS 90,
+    quiet volatility, a 40-session breakout and a +13%/-35%/95 exit. Its measured
+    row lives in the census file, because it clears the win bar but not the +5%
+    bar. If even that row is missing — an older checkout, a partial run — the app
+    falls back to the widest qualifying row it can run, because a screen needs
+    names to show rather than a headline rate with nothing behind it.
     """
+    # The one lookup that matters: the exact chain this screen applies, from the
+    # ranked file when it cleared both bars and from the census when it did not.
+    # The shipped 13/35/95 is the second case — a real, measured 528-trade row
+    # that misses the +5% bar, and so was never in a ranked list.
+    exact = evidence_for(STUDY_PICK_FAMILY, STUDY_PICK_EXIT)
+    if exact.measured:
+        return exact
+
     measured = ladder()
     runnable = [e for e in measured if e.exit_method in EXIT_LADDER]
     if not runnable:
-        return _unmeasured(STUDY_PICK_FAMILY, STUDY_PICK_EXIT, "no measured row available yet")
-
-    named = next(
-        (
-            e
-            for e in runnable
-            if e.family == STUDY_PICK_FAMILY and e.exit_method == STUDY_PICK_EXIT
-        ),
-        None,
-    )
-    if named is not None:
-        return named
+        return exact
 
     widest = max(runnable, key=lambda e: e.oos_trades or 0)
     return _unmeasured(
@@ -822,14 +868,99 @@ def _find(rows: list[dict[str, str]], case: str, **want: str) -> dict[str, objec
     return None
 
 
+def _method_table_rows() -> tuple[dict[str, str], ...]:
+    """Every family x exit the study measured, from its census file."""
+    return tuple(_rows(METHOD_TABLE_CSV))
+
+
+@lru_cache(maxsize=8)
+def _family_spec_count(family: str) -> int | None:
+    """How many parameter variants the study's rows for this family pool.
+
+    `top10_methods.csv` carries an `n_specs` column and the census file does not,
+    so a census row borrows the spec count of its own family from the ranked
+    file. That is the honest reading: a published trade count for the family is a
+    sum over those variants, not over the one window this screen runs.
+    """
+    rows, status = _table()
+    if status != "ok":
+        return None
+    counts = [
+        int(_f(r, "n_specs") or 0)
+        for r in rows
+        if r.get("family") == family and (_f(r, "n_specs") or 0) > 0
+    ]
+    return max(counts) if counts else None
+
+
 def evidence_for(family: str, exit_method: str) -> Evidence:
-    """The measured row for a specific (family, exit), or an honest blank."""
+    """The measured row for a specific (family, exit), or an honest blank.
+
+    Searched in the ranked file first, then in the census. Both are the study's
+    own outputs; the difference is that only the ranked file's rows cleared both
+    bars. A blank is returned rather than a nearby row, because a row for a
+    different chain is not evidence for this one.
+    """
     rows, status = _table()
     if status == "ok":
         for r in rows:
             if r.get("family") == family and r.get("exit_method") == exit_method:
                 return _evidence(r, _cell_count())
+
+    for r in _method_table_rows():
+        if r.get("family") == family and r.get("exit_method") == exit_method:
+            row = dict(r)
+            specs = _family_spec_count(family)
+            if specs:
+                row["n_specs"] = str(specs)
+            return _evidence(row, _cell_count(), source=METHOD_TABLE_CSV)
+
     return _unmeasured(family, exit_method, f"no measured row for {family} x {exit_method}")
+
+
+def corrected_evidence() -> Evidence:
+    """What the study publishes for this chain after its own correctness pass.
+
+    Not read from a results file, because no results file carries it: the
+    correction was a pass over the engine (price-frozen names excluded, tiered
+    costs) and its outcome was published in prose in docs/21 §0a and docs/20 §12.
+    Every figure travels with the file, line and sentence it came from, and
+    `test_plan_citations.py` fails the build if the study stops saying it.
+    """
+    def cited(label: str) -> float | None:
+        return C.value(label)
+
+    return Evidence(
+        family=STUDY_PICK_FAMILY,
+        exit_method=STUDY_PICK_EXIT,
+        oos_trades=cited("tier1_corrected_trades"),
+        win_rate=cited("tier1_corrected_win_rate"),
+        avg_ret_pct=cited("tier1_corrected_avg_ret_pct"),
+        fold_worst_win_rate=None,
+        fold_best_win_rate=None,
+        # docs/21 §11: tier 1 traded in f2, f3 and f4, and never in f0, f1 or f5.
+        folds_traded=3,
+        fold_detail="f2/f3/f4 only - folds f0, f1 and f5 never reach the 0.60 gate",
+        total_cells_measured=_cell_count(),
+        source="docs/21-screener-spec.md §0a (corrected) + docs/20 §12",
+        measured=True,
+        caveat=(
+            "The corrected result: clean universe, price-frozen names excluded, tiered "
+            "costs. It is smaller than the searched maximum and it is the number the "
+            "study tells you to trade. Two stress tests travel with it, both in the "
+            "provenance: dropping the best 20% of tickers leaves +0.04%, and on the "
+            "unseen folds f3-f5 the same family reads +0.09%. A high hit rate on a "
+            "thin, concentrated sample rather than a compounding edge."
+        ),
+        role=C.ROLE_WALK_FORWARD,
+        profit_factor=cited("tier1_corrected_profit_factor"),
+        max_drawdown_pct=cited("tier1_corrected_max_drawdown_pct"),
+        book_return_pct=cited("tier1_corrected_book_total_pct"),
+        book_max_drawdown_pct=cited("tier1_corrected_book_max_drawdown_pct"),
+        win_rate_lo=cited("tier1_wilson_lo"),
+        win_rate_hi=cited("tier1_wilson_hi"),
+        provenance=C.all_citations(),
+    )
 
 # ── the holdout (docs/22) ─────────────────────────────────────────────────────
 # Why this is a separate reader rather than another row of `ladder()`: every row

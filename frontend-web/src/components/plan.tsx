@@ -15,6 +15,7 @@
 import { useState } from "react";
 import type {
 	Candidate,
+	Citation,
 	Evidence,
 	Gate,
 	GateKey,
@@ -39,13 +40,19 @@ export const pctRaw = (v: number | null | undefined, dp = 1): string =>
 	v == null || Number.isNaN(v) ? "—" : `${v.toFixed(dp)}%`;
 
 /** Human gate names. The key is the seam's; the label is ours. */
+/**
+ * Fallback names for a gate key, for the one place the API sends only a key (the
+ * watchlist's `blocked_by`). Wherever a Gate object is at hand its own `label` is
+ * preferred: the backend's rule chain is the single vocabulary, and these strings
+ * mirror it rather than inventing a second one.
+ */
 export const GATE_LABEL: Record<string, string> = {
-	breakout: "Breakout",
-	relative_strength: "Momentum rank",
+	breakout: "40-session breakout",
+	relative_strength: "Relative strength top 10%",
 	breadth: "Market breadth",
-	quiet_vol: "Quiet before",
-	weekly_trend: "Weekly trend",
-	index_above_200: "Index above 200d",
+	quiet_vol: "Quiet before the break",
+	weekly_trend: "Weekly trend up",
+	index_above_200: "IHSG above its 200-day average",
 };
 
 /* ── sections ──────────────────────────────────────────────────────────────── */
@@ -96,6 +103,7 @@ export function Verdict({
 	sessionLabel,
 	horizon,
 	evidence,
+	costs,
 	coverage,
 	indexClose,
 	universeSize,
@@ -107,6 +115,8 @@ export function Verdict({
 	sessionLabel: string;
 	horizon: string;
 	evidence: Evidence;
+	/** The running chain's cost model, so no component restates the number. */
+	costs?: Plan["costs"];
 	coverage: Plan["coverage"];
 	indexClose: number | null;
 	universeSize: number;
@@ -170,7 +180,7 @@ export function Verdict({
 						) : null}
 					</p>
 				</div>
-				<EvidenceBadge evidence={evidence} />
+				<EvidenceBadge evidence={evidence} roundTripPct={costs?.round_trip} />
 			</div>
 		</section>
 	);
@@ -183,12 +193,25 @@ export function Verdict({
  * a citation, not a claim. The caveat travels with it because the caveat is
  * part of the number.
  */
-export function EvidenceBadge({ evidence }: { evidence: Evidence }) {
+export function EvidenceBadge({
+	evidence,
+	roundTripPct,
+}: {
+	evidence: Evidence;
+	/** The round-trip cost the running chain is measured with, from plan.costs. */
+	roundTripPct?: number;
+}) {
 	const ok = evidence.clears_bar;
 	return (
 		<div className="w-full shrink-0 border border-[var(--border)] bg-[var(--panel-2)] p-4 lg:w-[300px]">
 			<p className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-faint)]">
-				{evidence.role === "searched" ? "Best of the configurations searched" : "Measured on this method"}
+				{evidence.role === "searched_census"
+					? "Best of the configurations searched"
+					: evidence.role === "walk_forward_corrected"
+						? "The corrected result"
+						: evidence.role === "replay"
+							? "One-window replay, not a walk-forward"
+							: "Measured on this method"}
 			</p>
 			<div className="mt-3 grid grid-cols-3 gap-3">
 				<div>
@@ -222,7 +245,12 @@ export function EvidenceBadge({ evidence }: { evidence: Evidence }) {
 			<p className="mt-3 border-t border-[var(--border)] pt-2.5 text-[11px] leading-relaxed text-[var(--text-faint)]">
 				{evidence.measured ? (
 					<>
-						Costs of {pctRaw(0.5, 2)} a round trip are inside every trade.{" "}
+						{roundTripPct != null ? (
+							<>Costs of {pctRaw(roundTripPct, 2)} a round trip are inside every trade.{" "}</>
+						) : (
+							<>Fees and slippage are inside every measured trade.{" "}</>
+						)}
+						{" "}
 						<a
 							href="/method#holdout"
 							className="underline decoration-[var(--border-strong)] underline-offset-2 hover:text-[var(--text)]"
@@ -234,7 +262,7 @@ export function EvidenceBadge({ evidence }: { evidence: Evidence }) {
 					"No measured results are available yet — read the rules without a number."
 				)}
 			</p>
-			{evidence.role === "searched" && (
+			{evidence.role === "searched_census" && (
 				<p className="mt-2 text-[11px] leading-relaxed text-[var(--text-ghost)]">
 					A searched figure, not a forecast. This row is one of the configurations the
 					study ranked; the holdout is the expectation.
@@ -260,7 +288,7 @@ export function GateChip({ gate }: { gate: Gate }) {
 			title={gate.text}
 		>
 			<span aria-hidden>{gate.passed ? "✓" : "✕"}</span>
-			{GATE_LABEL[gate.key] ?? gate.key}
+			{gate.label || GATE_LABEL[gate.key] || gate.key}
 		</span>
 	);
 }
@@ -304,7 +332,7 @@ export function GateList({
 					</span>
 					<div className="min-w-0">
 						<p className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--text-faint)]">
-							{GATE_LABEL[gate.key] ?? gate.label}
+							{gate.label || GATE_LABEL[gate.key] || gate.key}
 						</p>
 						<p className="mt-0.5 text-[13px] leading-relaxed text-[var(--text-dim)]">
 							{gate.text}
@@ -477,5 +505,175 @@ export function WatchRow({ item }: { item: WatchItem }) {
 				{item.distance_text}
 			</span>
 		</li>
+	);
+}
+
+/* ── evidence tiers ────────────────────────────────────────────────────────── */
+
+function EvidenceStat({
+	label,
+	value,
+	note,
+}: {
+	label: string;
+	value: string;
+	note?: string;
+}) {
+	return (
+		<div>
+			<div className="tabular text-[22px] font-bold leading-none text-[var(--text)]">
+				{value}
+			</div>
+			<div className="mt-1 font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--text-faint)]">
+				{label}
+			</div>
+			{note ? (
+				<div className="mt-1 font-mono text-[10px] text-[var(--text-ghost)]">{note}</div>
+			) : null}
+		</div>
+	);
+}
+
+/** A tier, named. Used wherever a number is shown so no two tiers look alike. */
+export function TierTag({ role }: { role: string }) {
+	const label =
+		role === "walk_forward_corrected"
+			? "corrected walk-forward"
+			: role === "replay"
+				? "one-window replay"
+				: "searched — best of many";
+	const color = role === "walk_forward_corrected" ? "var(--up)" : "var(--gold)";
+	return (
+		<span
+			className="inline-block border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.1em]"
+			style={{
+				color,
+				borderColor: "color-mix(in srgb, currentColor 30%, transparent)",
+			}}
+		>
+			{label}
+		</span>
+	);
+}
+
+/**
+ * Where a number came from, in the study's own words.
+ *
+ * The corrected result has no results file behind it, so the citation is part of
+ * the evidence rather than a footnote: the file, the line, the sentence, and the
+ * command that regenerates it.
+ */
+export function ProvenanceList({ citations }: { citations: Citation[] }) {
+	if (!citations?.length) return null;
+	return (
+		<ol className="mt-3 space-y-1.5 border-t border-[var(--border)] pt-3">
+			{citations.map((c) => (
+				<li key={c.label} className="text-[11px] leading-relaxed text-[var(--text-faint)]">
+					<span className="font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--text-ghost)]">
+						{c.doc}:{c.line}
+					</span>{" "}
+					<span className="text-[var(--text-dim)]">&ldquo;{c.quote}&rdquo;</span>
+				</li>
+			))}
+		</ol>
+	);
+}
+
+/**
+ * The corrected result: the number the study tells you to trade.
+ *
+ * Deliberately separate from `EvidenceBadge`, which shows the searched row. Two
+ * cards, two tiers, each labelled — the app's claim is that it never presents a
+ * searched maximum as an expectation, and a single blended card cannot keep it.
+ */
+export function CorrectedEvidenceCard({ evidence }: { evidence: Evidence }) {
+	const provenance = evidence.provenance ?? [];
+	const cited = (label: string) =>
+		provenance.find((c) => c.label === label)?.value ?? null;
+	const survivorship = cited("tier1_survivorship_avg_ret_pct");
+	const holdout = cited("tier1_holdout_avg_ret_pct");
+	return (
+		<div className="border border-[var(--border)] bg-[var(--panel)] p-5">
+			<div className="flex flex-wrap items-baseline justify-between gap-3">
+				<TierTag role={evidence.role} />
+				<span className="font-mono text-[10px] text-[var(--text-ghost)]">
+					{evidence.source}
+				</span>
+			</div>
+			<div className="mt-4 grid gap-4 sm:grid-cols-4">
+				<EvidenceStat
+					label="Win rate"
+					value={pct(evidence.win_rate, 1)}
+					note={
+						evidence.win_rate_lo != null && evidence.win_rate_hi != null
+							? `Wilson ${pct(evidence.win_rate_lo, 0)}–${pct(evidence.win_rate_hi, 0)}`
+							: undefined
+					}
+				/>
+				<EvidenceStat
+					label="Avg per trade"
+					value={evidence.avg_ret_pct != null ? `+${evidence.avg_ret_pct.toFixed(2)}%` : "—"}
+					note={
+						evidence.profit_factor != null
+							? `profit factor ${evidence.profit_factor.toFixed(2)}`
+							: undefined
+					}
+				/>
+				<EvidenceStat
+					label="Out-of-sample trades"
+					value={idr(evidence.oos_trades)}
+					note={
+						evidence.n_specs != null
+							? `pooled over ${evidence.n_specs} donchian variants`
+							: undefined
+					}
+				/>
+				<EvidenceStat
+					label="Max drawdown"
+					value={
+						evidence.max_drawdown_pct != null
+							? `−${evidence.max_drawdown_pct.toFixed(1)}%`
+							: "—"
+					}
+					note={
+						evidence.book_return_pct != null
+							? `10M book +${evidence.book_return_pct.toFixed(1)}%`
+							: undefined
+					}
+				/>
+			</div>
+			<p className="mt-4 max-w-[86ch] text-[12px] leading-relaxed text-[var(--text-faint)]">
+				{evidence.caveat}
+			</p>
+			{evidence.single_spec_trades != null && (
+				<p className="mt-3 max-w-[86ch] text-[12px] leading-relaxed text-[var(--text-dim)]">
+					<span className="text-[var(--text)]">
+						{idr(evidence.single_spec_trades)} of those trades belong to the window this
+						screen runs.
+					</span>{" "}
+					The rest are the study's other donchian variants pooled into the same published row.
+					Quoting the pool as this screen's own sample would overstate it roughly fourfold.
+				</p>
+			)}
+			{(survivorship != null || holdout != null) && (
+				<p className="mt-3 max-w-[86ch] border-t border-[var(--border)] pt-3 text-[12px] leading-relaxed text-[var(--text-dim)]">
+					{survivorship != null && (
+						<>
+							Dropping the best 20% of tickers leaves{" "}
+							<span className="text-[var(--text)]">+{survivorship.toFixed(2)}%</span> per
+							trade.{" "}
+						</>
+					)}
+					{holdout != null && (
+						<>
+							On folds no search saw, the same family reads{" "}
+							<span className="text-[var(--text)]">+{holdout.toFixed(2)}%</span>.{" "}
+						</>
+					)}
+					Both say the same thing: a high hit rate on a thin, concentrated sample.
+				</p>
+			)}
+			<ProvenanceList citations={provenance} />
+		</div>
 	);
 }

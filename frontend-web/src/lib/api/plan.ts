@@ -109,11 +109,13 @@ export interface Evidence {
 	clears_bar: boolean;
 	caveat: string;
 	/**
-	 * "searched" on every row the study ranked. It is a maximum over a search,
-	 * not an expectation — docs/22 carried the best of them to unseen folds and
-	 * found none held. The UI must label this rather than quote it bare.
+	 * Which tier this row belongs to. `searched_census` is a maximum over a
+	 * search, not an expectation — docs/22 carried the best of them to unseen
+	 * folds and found none held. `walk_forward_corrected` is what the study
+	 * publishes after its own correctness pass. `replay` is a one-window
+	 * projection. The UI labels the tier rather than quoting the number bare.
 	 */
-	role: string;
+	role: EvidenceTier;
 	profit_factor: number | null;
 	max_drawdown_pct: number | null;
 	book_return_pct: number | null;
@@ -121,6 +123,40 @@ export interface Evidence {
 	/** Wilson interval on the win rate, when the study computed one. */
 	win_rate_lo: number | null;
 	win_rate_hi: number | null;
+	/**
+	 * Where a cited figure came from. Empty for rows read from a results CSV;
+	 * populated for the corrected row, whose figures exist only as prose in the
+	 * study. See backend/app/plan/citations.py.
+	 */
+	provenance: Citation[];
+	/**
+	 * How many parameter variants the row pools. The study's published counts
+	 * sum four donchian windows (20/40/50/60) while this screen runs window 40,
+	 * so `single_spec_trades` is the sample that describes what you would trade.
+	 */
+	n_specs: number | null;
+	n_cells: number | null;
+	single_spec_trades: number | null;
+}
+
+/** The three tiers an evidence row can come from. Never blended in the UI. */
+export type EvidenceTier = "searched_census" | "walk_forward_corrected" | "replay";
+
+/**
+ * One number the study published in prose, with the line that carries it.
+ *
+ * The corrected result has no results file behind it — the correction was a pass
+ * over the study's engine — so the app cites it the way a paper would, and a
+ * backend test fails the build if the study stops saying it.
+ */
+export interface Citation {
+	label: string;
+	value: number | null;
+	unit: string;
+	doc: string;
+	line: number;
+	quote: string;
+	regenerate: string;
 }
 
 /**
@@ -221,6 +257,8 @@ export interface Plan {
 	candidates: Candidate[];
 	watchlist: WatchItem[];
 	evidence: Evidence;
+	/** The same chain, measured after the study's correctness pass. Cited. */
+	corrected: Evidence | null;
 	ladder: Evidence[];
 	costs: {
 		fee_buy: number;
@@ -415,6 +453,17 @@ export interface MethodCard {
 	rules: MethodRule[];
 	families: FamilySummary[];
 	evidence: Evidence;
+	/** The corrected tier-1 row, and the provenance behind every cited figure.
+	 *  Nullable because a card cached before this change does not carry it. */
+	corrected: Evidence | null;
+	citations: Citation[];
+	evidence_tiers: {
+		searched: Evidence;
+		corrected: Evidence;
+		replay: FiveYearReplay | Record<string, never>;
+	};
+	/** The corrected figures keyed by label, for the Method page's tier table. */
+	corrected_block: Record<string, Citation>;
 	ladder: Evidence[];
 	bar: { win_rate: number; avg_trade_pct: number; min_trades: number };
 	deployment: Deployment;

@@ -590,3 +590,44 @@ def test_the_plan_reports_which_calendar_it_used():
     # the UI needs rather than a rounding error.
     assert isinstance(coverage["phantom_bars_dropped"], int)
     assert coverage["phantom_bars_dropped"] >= 0
+
+
+def test_the_shipped_chain_is_the_corrected_spec():
+    """The chain on screen is the chain docs/21 §0a and docs/24 §7 ship.
+
+    This is the assertion that keeps the app from drifting back to the searched
+    pick by accident: 13/35/95 at breadth 0.60, RS 90, quiet volatility, and a
+    40-session donchian window.
+    """
+    assert M.STUDY_PICK_EXIT == "lt_13_35_95"
+    assert M.DEFAULT_EXIT == "lt_13_35_95"
+    assert M.exit_for(M.STUDY_PICK_EXIT) == (13.0, 35.0, 95.0)
+    assert M.STUDY_PICK_FAMILY == "breadth_quiet4_rs90_donchian"
+
+    spec = M.family_spec(M.STUDY_PICK_FAMILY)
+    assert spec.breadth == 0.60, "the regime gate is 0.60, not the 0.50 first searched"
+    assert spec.rs_min == 90.0
+    assert spec.quiet == "q40"
+    assert spec.need_bench is False and spec.need_weekly is False
+    assert M.DONCHIAN_N == 40
+
+    # The corrected row is the one the UI leads with, and it is cited, not read.
+    corrected = M.corrected_evidence()
+    assert corrected.role == "walk_forward_corrected"
+    assert corrected.measured is True
+    assert corrected.provenance, "a cited row must carry its provenance"
+
+
+def test_the_shipped_chain_has_a_census_row_and_says_so():
+    """13/35/95 misses the +5% bar, so its row is in the census, not the top 10."""
+    row = M.evidence_for(M.STUDY_PICK_FAMILY, M.STUDY_PICK_EXIT)
+    assert row.measured is True
+    assert row.source.endswith("method_table.csv")
+    assert row.role == "searched_census"
+    assert row.oos_trades == 528.0
+    assert row.win_rate is not None and abs(row.win_rate - 0.7955) < 5e-4
+    assert row.avg_ret_pct is not None and abs(row.avg_ret_pct - 4.16) < 0.01
+    # Four donchian variants pooled into the family's published count; the app
+    # runs one of them, and the single-spec figure is cited.
+    assert row.n_specs == 4
+    assert row.single_spec_trades == 108

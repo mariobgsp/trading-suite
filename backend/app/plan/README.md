@@ -234,3 +234,107 @@ the gate clears on **20.98%** of measured sessions — about one session in five
 - The robust preference is a survivor panel, so every return here is an upper
   bound. On the shipped cell, rebuilding on surviving names takes +2.09% per
   trade to −0.59%.
+
+---
+
+## Since this was written: the corrected chain, the verdict, and a refresh
+
+The seam above is unchanged — three functions, `plan()`, `detail()`,
+`method_card()` — but the module behind it now carries five more things, and the
+chain it runs is the study's *corrected* one. Read this section before reading any
+number on screen.
+
+### The chain is the corrected spec: `lt_13_35_95`
+
+The app used to run `14/40/95` and quote 81.07% / +5.51% with a 20.25% book
+drawdown. The study's own corrected screener spec ships **13/35/95** at **76.32% /
++1.85%** with a **9.4%** drawdown, after an audit found 7.0% of its trades came
+from names that do not trade (docs/21 §0a, docs/20 §12, docs/24 §7). The app runs
+the corrected chain. `test_plan_conformance.py` asserts the constants against that
+spec, and `method.corrected_evidence()` is the row the UI leads with.
+
+### Three evidence tiers, never blended
+
+`Evidence.role` is one of:
+
+| tier | what it is | where it comes from |
+| --- | --- | --- |
+| `searched_census` | a row of the study's results files — a maximum over a search | `results/top10_methods.csv`, or `results/method_table.csv` when a row never cleared both bars |
+| `walk_forward_corrected` | the corrected walk-forward result | cited from the study's prose — see below |
+| `replay` | a one-window, mark-to-market projection | `results/five_year_replay_flat.csv` |
+
+`citations.py` holds the figures that exist **only as prose** — the correction was
+a pass over the engine, not a new artifact round — each with the file, line,
+sentence and regeneration command behind it. `test_plan_citations.py` re-reads the
+study and fails the build when a cited line stops saying what it said, so a cited
+number is checked on every run rather than trusted once.
+
+Two consequences the UI must keep:
+
+- **A published trade count is a pool.** `top10_methods.csv` carries `n_specs=4`
+  for this family: the 523-trade row sums four donchian windows. The app runs
+  window 40 alone, whose ledger is 108 trades in folds 2–5 (`docs/14`). Both
+  numbers travel: `single_spec_trades` next to `oos_trades`.
+- **The shipped chain's own census row misses the +5% bar** (528 trades, 79.55%,
+  +4.16%), which is why it is in the census file and not in the ranked one.
+  `evidence_for()` searches the ranked file first and the census second, and says
+  which it used in `Evidence.source` and `caveat`.
+
+### Sizing is the study's rule, and the levels are orderable
+
+`RISK_BUDGET_IDR` used to be read as a position size, which with a 35% stop risks
+35% of the budget rather than the budget — about four times what the constant
+describes. `screen._geometry()` now applies docs/21 §8:
+
+```
+position = clamp(2% x median 60-session turnover, 2,000,000, 10,000,000 IDR)
+reject when participation > 2% of ADV  (the floor binds under 100M IDR a day)
+```
+
+and takes the smaller of that and what the risk budget affords. Levels are rounded
+onto the IDX tick grid, and `idx.py` carries the dated tick, auto-rejection and fee
+tables plus the session clock, so no component hard-codes a tick size.
+`POST /api/plan/size` exposes the same arithmetic to the order ticket.
+
+The study's flat 0.50% round trip has **no spread term**. The ticket prices the real
+one separately (fees + two ticks at that price: 1.40% at Rp1,000, 2.40% at Rp100)
+and labels it as this app's overlay rather than the study's measurement.
+
+### One verdict per session, and it fails closed
+
+`verdict.py` returns `ENTER`, `WAIT`, `NO_TRADE` or `DATA_UNSAFE`, in that order of
+precedence, from the regime band, the candidates and six integrity checks (exchange
+calendar, bars current, universe size, coverage, phantom bars, evidence readable).
+A failed check withholds every ticket rather than sitting beside one as a warning:
+a screen that says "buy" on a broken bar source is worse than one that says nothing.
+`Plan.headline` now comes from the verdict, so one session has one author.
+
+`NO_TRADE` carries the measured case for standing down, including the book
+comparison: same screen, same period, ten slots — **+31.9%** at a 7.9% drawdown
+with the flat band skipped versus **−65.6%** at a 67.0% drawdown with it traded
+(`results/max_return_ceiling.csv`).
+
+### Why-now, and a refresh that cannot screen a partial candle
+
+- `screen.reason_for()` replays the gate chain over the last twelve sessions **by
+  calling `_evaluate`**, the function the live screen uses, so the history cannot
+  describe conditions the screen does not apply. `test_plan_why_now.py` pins the
+  last point of every series to the live gate. Each gate gains `held_sessions` and
+  `first_true_session`; the payload carries the breakout date and the run-up.
+- `refresh.py` plus `bars.MergedBars` implement the header's refresh button: the
+  study's verified CSVs stay the base, the live tail is appended **in memory**, and
+  two rules keep it honest. A bar dated today is refused until **16:02 WIB** (an
+  unfinished candle is a partial price), and every failed name is counted, because
+  breadth is a share of the universe and a quiet third missing is a different market
+  reading. Nothing is written back to the study.
+
+### What is still not measured
+
+No intraday signal (docs/23 designed, measured and declined it: 30 configurations,
+all negative, ~0.36% capturable against a 0.40–0.90% round trip, and no real
+intraday bars for these names). No 1–3 session rule exists anywhere in the exit
+library. No shorting, no leverage, and no tick/auto-rejection constraint inside the
+study's own numbers — those are the app's overlay, labelled as such. The five-year
+replay books −68.2% for tier 1 and −80.5% pooled; the survivorship haircut leaves
++0.04% and the unseen folds +0.09%. `./trading-suite verify` runs the checks that
+keep the rest of this document true.

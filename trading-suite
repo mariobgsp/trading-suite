@@ -9,7 +9,8 @@ set -euo pipefail
 #   ./trading-suite.sh start      # production start (vite preview + uvicorn)
 #   ./trading-suite.sh stop       # kill dev servers started by run
 #   ./trading-suite.sh logs       # tail background logs
-#   ./trading-suite.sh clean      # remove .next + prune cache
+#   ./trading-suite.sh verify     # backend tests + frontend typecheck
+#   ./trading-suite.sh clean      # remove build + prune cache
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 BACKEND="$ROOT/backend"
@@ -112,12 +113,30 @@ cmd_clean() {
   fi
 }
 
+# The two checks that decide whether the claims on screen are still true: the
+# backend suite (which diffs the rule chain against the study's own code, and
+# every cited figure against the study's own documents) and the typecheck.
+cmd_verify() {
+  ensure_backend_venv
+  # The venv is built from requirements.txt, which does not include pytest: say so
+  # rather than failing with a bare "No module named pytest".
+  if ! "$BACKEND/.venv/bin/python" -c 'import pytest' >/dev/null 2>&1; then
+    die "pytest is missing from backend/.venv — run: $BACKEND/.venv/bin/pip install pytest"
+  fi
+  info "backend tests (rule chain, cited figures, sizing, verdict, refresh)…"
+  (cd "$BACKEND" && .venv/bin/python -m pytest tests -q)
+  info "frontend typecheck…"
+  (cd "$FRONTEND" && npx --no-install tsc --noEmit)
+  info "both clean"
+}
+
 case "${1:-run}" in
   run|dev)      cmd_run ;;
   stop)         cmd_stop ;;
   logs)         cmd_logs ;;
   build)        cmd_build ;;
   start)        cmd_start ;;
+  verify)       cmd_verify ;;
   clean)        cmd_clean ;;
-  *) echo "Usage: $0 {run|dev|build|start|stop|logs|clean}"; exit 1 ;;
+  *) echo "Usage: $0 {run|dev|build|start|stop|logs|verify|clean}"; exit 1 ;;
 esac

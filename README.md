@@ -1,220 +1,218 @@
-# Trading Suite — IDX Lean Desk (5 Routes)
+# Trading Suite — the nightly IDX plan
 
-> Self-hosted Indonesian stock platform, **simplified**. 22 tools → **5 routes** + backend-only suspended filter. No bloat, no Redis, just SQLite WAL + SWR caching and a one-command runner.
+> One question, answered once a session: **which Indonesian stocks should I buy at
+> the next open, and why?** Four screens, a FastAPI backend, and a rule chain
+> re-transcribed from a walk-forward study — with the study's own artifacts as the
+> evidence, and "no trade" as a first-class answer.
 
 ```
-┌─────────────┐    /api/* + SSE     ┌──────────────┐     ┌─────────────────────┐
-│ Next.js 16  │ ──────────────────▶ │ FastAPI :8000│────▶│ IDX / yfinance /    │
-│ :3000 (5)   │◀────────────────── │ cache.serve()│     │ TradingView / SB    │
-└─────────────┘  stale-while-reval  └──────┬───────┘     └─────────────────────┘
-                                           │ WAL
-                                    ┌──────▼───────┐
-                                    │ cache.db     │
-                                    │ kv_cache     │
-                                    └──────────────┘
+┌──────────────────────┐   /api/plan*   ┌────────────────────┐   ┌──────────────────────┐
+│ Vite + React SPA     │ ─────────────▶ │ FastAPI  :8000     │──▶│ study results (CSV)  │
+│ :5173  (4 screens)   │ ◀───────────── │ app/plan/*         │   │ + daily bars + live  │
+└──────────────────────┘   SWR cache    └─────────┬──────────┘   │   tail (yfinance)    │
+                                                 │ SQLite WAL   └──────────────────────┘
+                                          ┌──────▼───────┐
+                                          │ cache.db     │
+                                          └──────────────┘
 ```
 
-**Quick start — one command:**
+## Quick start
 
 ```sh
 chmod +x ./trading-suite
-./trading-suite run     # backend :8000 + frontend :3000 (dev, hot-reload)
-# open http://localhost:3000  → 5 cards: Overview / Markets (+foreign bars) / Screener / Profiler (merged) / Calculators
-./trading-suite stop    # kill both
-./trading-suite logs    # tail -f /tmp/trading-suite/*.log
+./trading-suite run      # backend :8000 + frontend :5173
+# open http://127.0.0.1:5173
+./trading-suite verify    # backend tests + frontend typecheck
+./trading-suite stop      # kill both
+./trading-suite logs      # tail -f /tmp/trading-suite/*.log
 ```
 
-Or raw:
+The backend needs the study checkout (see [Data](#data)) before `plan` can answer
+anything; the first request reads ~887 ticker files and takes a few seconds.
+
+<details>
+<summary>Raw commands, if you prefer not to use the runner</summary>
 
 ```sh
-backend/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload --app-dir backend &
-npm run dev   # :3000, NEXT_PUBLIC_API_URL=http://localhost:8000
+# backend
+backend/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload --app-dir backend
+
+# frontend
+cd frontend-web && npm install && npm run dev -- --port 5173
 ```
 
----
+The browser fetches the API at `VITE_API_URL`, default `http://localhost:8000`. If
+your browser resolves `localhost` to IPv6 and the backend is IPv4, start the
+frontend with `VITE_API_URL=http://127.0.0.1:8000` and open `http://127.0.0.1:5173`.
+</details>
 
-## Architecture — 1 Main + 2 Supporting Diagrams
+## The four screens
 
-> All PlantUML sources are in `docs/architecture/*.puml` with `skinparam backgroundColor white` (clear, printable). Rendered SVGs live alongside (`*.svg`). Re-render: `curl -X POST https://kroki.io/plantuml/svg --data-binary @docs/architecture/01-system-context.puml -o docs/architecture/01-system-context.svg`.
+| Route | The question it answers |
+| --- | --- |
+| `/` **Tonight** | Should I buy anything, and if so what exactly? The verdict, the order ticket for each name, the watchlist, and the measured case for standing down |
+| `/screener` | Every name, ranked by how near it is to being buyable. No buy signals, on purpose |
+| `/method` | The rule chain, the result, the horizons that were measured and refused, the costs, and every citation |
+| `/name/$ticker` | One name: each condition with its value and how long it has held, the run-up to the signal, the levels, the ticket, the chart |
 
-### Main Diagram — System Context (Lean Desk)
+## The answer it gives
 
-Shows the lean boundary: 5 UI routes, FastAPI, file-based SQLite, and four upstreams. Suspended/tagged is **backend-only** (no UI).
+**Regime, in three bands** (breadth = share of the tradable universe above its own
+200-session average):
 
-![System Context](docs/architecture/01-system-context.svg)
+| Band | Action |
+| --- | --- |
+| ≥ 0.60 | trade |
+| 0.25 – 0.60 | **flat, by design** |
+| < 0.25 | watchlist only |
 
-*Source: `docs/architecture/01-system-context.puml`* — 5 routes only (`/overview`, `/markets` with foreign bars, `/screener`, `/profiler` merged validator, `/calculators`). Backend `cache.serve()` fans out to IDX (one `GetStockSummary` daily call, Remarks trailing `X` = suspended), yfinance, TradingView, and optional Stockbit.
+The flat band is the finding, not a gap: the study measured it drifting about zero
+over five sessions while a round trip costs 0.50%. It is ~72% of sessions.
 
-```plantuml
-@startuml
-skinparam backgroundColor white
-actor "Trader" as User
-rectangle "Trading Suite" as Suite {
-  rectangle "Next.js 16 Desk (5 routes)" as Web
-  rectangle "FastAPI Backend (:8000)" as API
-  database "SQLite cache.db (WAL)" as DB
-}
-cloud "IDX Official API" as IDX
-cloud "yfinance" as YF
-User --> Web : browser :3000
-Web --> API : REST + SSE
-API --> DB : SWR cache.serve()
-API --> IDX : curl_cffi Chrome
-API --> YF : per-ticker
-@enduml
+**Entry**: a 40-session breakout, relative strength in the top 10% of the universe,
+and 20-session volatility in its own lowest 40%. **Exit**: +13% target, −35% stop,
+95-session cap. **Size**: 2% of median 60-session turnover, clamped to 2M–10M IDR,
+rejected above 2% participation.
+
+**One verdict per session**, in strict precedence:
+
+| State | Meaning |
+| --- | --- |
+| `ENTER` | At least one name cleared every condition *and* can be sized |
+| `WAIT` | The tape is right; nothing has cleared the chain yet |
+| `NO_TRADE` | The band this method does not trade, or nothing fillable |
+| `DATA_UNSAFE` | The bars or the evidence cannot be trusted — **every ticket is withheld** |
+
+`DATA_UNSAFE` beats every signal. A screen that says "buy" on a broken bar source is
+worse than one that says nothing, so the integrity checks (exchange calendar, bars
+current, universe size, coverage, phantom bars, evidence readable) fail closed
+rather than sitting beside a ticket as a warning.
+
+## What it refuses to claim
+
+The app shows three evidence tiers and never blends them:
+
+| Tier | What it is |
+| --- | --- |
+| `searched_census` | a row of the study's results — a maximum over a search, not an expectation |
+| `walk_forward_corrected` | what the study publishes after its own correctness pass (the headline) |
+| `replay` | a one-window, mark-to-market projection |
+
+- The headline is the **corrected** result: **76.32% win / +1.85% a trade, 9.4% max
+  drawdown**, on 76 trades in three folds. The searched maximum (81.07% / +5.51%)
+  is shown as what it is — a maximum — and the app says which it is quoting.
+- Published trade counts are pools: the family's 523 trades sum four donchian
+  windows, and this screen runs one of them (108 trades). Both numbers travel.
+- The haircuts travel with the headline: dropping the best fifth of tickers leaves
+  **+0.04%**, and unseen folds read **+0.09%**.
+- The five-year replay books **−68.2%** for tier 1 and **−80.5%** pooled. Leverage
+  is not modelled anywhere, and the one row that does model it puts 3× at −98.29%.
+- **Day trading is refused with arithmetic, not opinion**: an intraday sleeve was
+  designed, run over 30 configurations and declined — all negative, ~0.36%
+  capturable against a 0.40–0.90% round trip, and no real intraday bars exist for
+  the thin names this screen trades. No 1–3 session rule exists in the study at all.
+
+The figures that exist only as prose in the study are cited in
+[`backend/app/plan/citations.py`](backend/app/plan/citations.py) with file, line,
+sentence and regeneration command, and
+[`tests/test_plan_citations.py`](backend/tests/test_plan_citations.py) fails the
+build when a cited line changes. The rule chain itself is diffed against the
+study's own `strategies.signals()` by
+[`tests/test_plan_conformance.py`](backend/tests/test_plan_conformance.py).
+
+## Data
+
+**The study is a hard dependency.** By default the app reads
+`~/Projects/trading-backtest-docs`; override with `TRADING_DOCS_DIR`:
+
+```sh
+TRADING_DOCS_DIR=/path/to/study ./trading-suite run
 ```
 
-### Supporting Diagram A — Container & Caching (Frontend + Backend SWR)
+- Bars: the study's `data/raw/*.csv` through its manifest (with its per-file
+  sha256 provenance and the phantom-bar repair re-applied on every load).
+- Results: `results/*.csv` — the census, the ladder, the holdout, the replay.
+- The API also keeps its own cache at `backend/data/cache.db` (SQLite WAL) for
+  yfinance/IDX/Intel feeds. Delete the file to reset.
 
-How one logical cache seam serves both layers cheaply.
+**Refresh** (the button in the header) pulls the latest daily bars and re-runs the
+analysis. Two rules keep it honest: a bar dated **today is refused until 16:02 WIB**
+(an unfinished candle is a partial price), and every failed name is counted, because
+breadth is a share of the universe. The live tail is merged **in memory** — nothing
+is ever written back into the study. The first press fetches the whole universe and
+takes minutes; later ones are incremental.
 
-![Containers](docs/architecture/02-containers.svg)
+## API
 
-*Source: `docs/architecture/02-containers.puml` + `docs/architecture/06-caching.puml`* — Frontend `src/lib/cache.ts:TTL_TABLE` mirrors backend `app/cache.py:TTL_POLICY` (longest-prefix). Frontend: `mem → sessionStorage → network` (stale-while-revalidate + dedupe, 400k guard). Backend: `cache.serve(key, fetcher)` → `get_fresh` → stale return + `_spawn_refresh` daemon → miss blocks. Only survivors have TTLs (indices 45s,quotes 60s,history 120s,foreign 3600s,stockbit 43200s,validator 60s,screener 30s). Prefetch trimmed to `BBCA quote + 1y history` only. SQLite at `backend/data/cache.db` (WAL, per-thread conn, prune 5k/30d).
+| Endpoint | Notes |
+| --- | --- |
+| `GET /api/plan` | the session's verdict, candidates, watchlist, ranked universe, evidence, IDX tables. `?as_of=` replays an earlier session, `?exit_method=` switches among measured exits |
+| `GET /api/plan/method` | rule definitions, the corrected row, the ladder, the horizon list, citations, robustness |
+| `GET /api/plan/{ticker}` | one name: gates with run lengths, the why-now run-up, levels, a sized geometry |
+| `POST /api/plan/size` | size one order and price its friction, without a universe pass |
+| `POST /api/plan/refresh` | start a refresh job (poll `GET /api/plan/refresh/{id}`, stop with `POST …/cancel`) |
+| `GET /api/health`, `/docs` | health and Swagger |
 
-Supporting details: `docs/architecture/02-containers.puml` (container view) and `docs/architecture/03-backend-components.puml` (routers → services → cache seam) and `docs/architecture/06-caching.puml` expand this.
+The older groups (`/api/market/*`, `/api/intel/*`, `/api/screener/*`,
+`/api/validator/*`, `/api/regime/*`, `/api/portfolio/*`, `/api/backtest/*`,
+`/api/summary/*`, `/api/alerts/*`, `/api/sentiment/*`, `/api/analysis/*`) are still
+mounted in `backend/app/main.py` for the legacy surfaces; the four plan screens do
+not use them.
 
-### Supporting Diagram B — Screener SSE with Suspended Backend-Only Filter
-
-The only place suspended/tagged appears — filtered *before* the ThreadPool, never in UI.
-
-![Screener Sequence](docs/architecture/05-sequence-screener.svg)
-
-*Source: `docs/architecture/05-sequence-screener.puml`* — `run_universe_scan()` loads `suspended_stocks()` (Remarks trailing `X`, `intel:suspension` cached 1h), builds `suspended_set`, filters `tickers = [t for t in tickers if t not in suspended_set]` pre-scan, then `ThreadPoolExecutor(8)` streams `SSE ticker` events. Tagged == suspended (single signal). Testable via `excluded` param.
-
-Markets twin: `docs/architecture/04-sequence-markets.puml` — candle history SWR + LPM/Intensity toggle fix (teardown before early-return, `removeSeries` + `scaleMargins` reset) + foreign flow bars collapsible (disabled = `interval null`, no fetch; enabled = lazy `GET /api/intel/foreign/universe`, one IDX call).
-
----
-
-## What Changed (Lean)
-
-| Before (22 apps) | After (5 routes) | Where |
-| --- | --- | --- |
-| 22 APPS across 4 groups | 5 APPS: Overview, Markets, Screener, Profiler, Calculators | `src/lib/apps.ts`, `src/components/Sidebar.tsx` |
-| Markets: LPM stuck on | Fixed: `MarketChart.tsx` tears down on toggle-off | `src/components/MarketChart.tsx` |
-| Foreign flow separate page | Collapsible panel inside Markets, Enable/Disable, no poll when disabled | `src/components/ForeignBarsPanel.tsx`, `src/app/markets/page.tsx` |
-| Validator standalone | Merged into Profiler (`ValidatorDetail` + `StockbitBrokerPanel`) | `src/app/profiler/page.tsx` |
-| Suspended has UI | Backend-only: `GET /api/intel/suspended` stays, `src/app/suspended` deleted, screener excludes | `backend/app/screener.py`, `backend/app/idx.py`, `next.config.ts` redirects |
-| 15 sunset pages | Hard redirects in `next.config.ts` (e.g. `/foreignflow→/markets`, `/brokerintel→/profiler`) | `next.config.ts` |
-| Prefetch 5 tickers × 4 periods | Prefetch BBCA only | `src/components/Shell.tsx` |
-| TTL for 20 feeds | TTL for 10 survivors only | `src/lib/cache.ts` |
-
----
-
-## Monorepo Layout
+## Layout
 
 | Path | What it is |
 | --- | --- |
-| `src/app/{overview,markets,screener,profiler,calculators}` | **Lean Next.js 16 routes** (only survivors) |
-| `src/lib/apps.ts` | Single source for nav (5 APPS) |
-| `src/lib/cache.ts` | Frontend SWR cache (mem + sessionStorage) |
-| `src/components/{MarketChart,ForeignBarsPanel,Shell,Sidebar}` | Chart + new foreign bars panel |
-| `backend/app/routers/` | FastAPI routers: `market, intel, screener, validator, analysis, regime` |
-| `backend/app/{market,idx,screener,validator,stockbit,cache,db}.py` | Services + cache seam |
-| `backend/config/tickers.py` | 900+ IDX universe |
-| `backend/data/cache.db*` | SQLite WAL cache (gitignored) |
-| `docs/architecture/` | PlantUML sources (`*.puml`, white bg) + rendered `*.svg` |
-| `trading-suite` / `trading-suite.sh` | One-command runner (`run/dev/build/start/stop/logs/clean`) |
-| `legacy/`, `pilot/` | Archived repos (not in lean nav) |
+| `frontend-web/src/routes/{Tonight,Screener,Method,Name}.tsx` | the four screens |
+| `frontend-web/src/components/{plan,MarketChart,RefreshButton,ThemeToggle}.tsx` | shared vocabulary, charts, refresh |
+| `frontend-web/src/lib/{api/plan.ts,refresh.ts,cache.ts,theme.ts}` | types + SWR client + the re-read signal |
+| `backend/app/plan/` | the module: `screen`, `method`, `model`, `verdict`, `refresh`, `idx`, `citations`, `bars` |
+| `backend/app/routers/plan.py` | the HTTP seam for the plan |
+| `backend/tests/test_plan_*.py` | conformance, citations, sizing, verdict, why-now, refresh |
+| `docs/architecture/*.puml` | diagrams of the **earlier** 5-route desk — not redrawn for this app |
+| `legacy/` | archived repos, not part of this app |
+| `trading-suite` / `trading-suite.sh` | the runner (identical twins) |
 
-## Prerequisites
+`backend/app/plan/README.md` documents the module itself: the seam, the evidence
+tiers, the size rule, the verdict machine and what it still cannot claim.
 
-- Python 3.11+ (`backend/.venv`), Node 22+, Docker optional.
-
-## Setup
-
-### Backend
-
-```sh
-cd backend
-python -m venv .venv
-.venv/bin/pip install -r requirements.txt
-cp ../.env.example .env   # optional; runs empty
-.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload --app-dir .
-# or
-../trading-suite run
-```
-
-Health: <http://127.0.0.1:8000/api/health> · Swagger: <http://127.0.0.1:8000/docs>
-
-### Frontend (Lean)
-
-```sh
-npm install
-npm run dev   # :3000
-# prod
-npm run build && npm run start
-```
-
-Env: `NEXT_PUBLIC_API_URL=http://localhost:8000` (default).
-
-## Environment Variables (all optional)
+## Environment variables
 
 | Variable | Purpose |
 | --- | --- |
-| `STOCKBIT_JWT_TOKEN` / `STOCKBIT_USERNAME/PASSWORD` | Stockbit broker feed (else degraded msg) |
-| `YFINANCE_CACHE_TTL` etc. | Override TTLs |
-| `CORS_ORIGINS` | Allowed origins |
-| `OPENCODE_GO_API_KEY` | AI summaries (fallback deterministic) |
+| `TRADING_DOCS_DIR` | where the study lives (default `~/Projects/trading-backtest-docs`) |
+| `CORS_ORIGINS` | allowed browser origins (defaults include `:3000`, `:5173` and `:4173`) |
+| `YFINANCE_CACHE_TTL`, `YFINANCE_HISTORY_CACHE_TTL`, `FOREX_CACHE_TTL` | feed cache lifetimes |
+| `STOCKBIT_JWT_TOKEN` / `STOCKBIT_USERNAME` / `STOCKBIT_PASSWORD` | Stockbit broker feed (optional) |
+| `GEMINI_API_KEY`, `OPENCODE_GO_API_KEY` | AI summaries in the legacy surfaces (optional) |
 
-## Data Sources & Caching
+`.env.example` still lists `NEXT_PUBLIC_API_URL` from the Next.js era; the Vite
+frontend reads `VITE_API_URL` instead with the same default.
 
-- **IDX**: `GetStockSummary` (one call → ~963 rows, foreign flow + Remarks `X` for suspended). `curl_cffi` Chrome + stale-while-revalidate.
-- **yfinance**: `.JK` quotes/history via `fetch_history` (SWR, 12h history TTL).
-- **TradingView**: sector rotation (5-min cache).
-- **SQLite WAL** (`backend/data/cache.db`): per-feed TTLs above, `_spawn_refresh` dedupe, `prune 5k/30d`.
-
-## API Endpoints (Lean Subset)
-
-| Group | Endpoint | Notes |
-| --- | --- | --- |
-| Market | `GET /api/market/indices`, `/quote/{t}`, `/quotes`, `/history/{t}`, `/beta/{t}` | history returns `{history, indicators, momentum}` |
-| Intel | `GET /api/intel/foreign/universe`, `GET /api/intel/foreign/{t}`, `GET /api/intel/suspended` | suspended stays backend/debug only |
-| Intel/Stockbit | `GET /api/intel/stockbit/broker/{t}` | JWT optional |
-| Screener | `GET /api/screener/scan/stream` (SSE), `GET /api/screener/analyze/{t}` | suspended filtered pre-ThreadPool |
-| Validator | `GET /api/validator/{t}` | merged into profiler |
-| Analysis/Regime | `GET /api/analysis/entry/{t}`, `GET /api/regime/snapshot` | profiler + overview |
-
-## Pages (Lean)
-
-| Route | Shows |
-| --- | --- |
-| `/` | Launcher (5 cards) |
-| `/overview` | Indices strip, watchlist (60000ms poll relaxed), regime |
-| `/markets` | Candles + SMA/EMA/Volume + LPM/Intensity (fixed toggles) + **Foreign Flow bars** (Enable/Disable) |
-| `/screener` | SSE streamed scan (suspended backend-only) |
-| `/profiler?ticker=BBCA` | Quote + chart + beta + regime + bandarmology + intent radar + broker panel + entry plan |
-| `/calculators` | Client-only math |
-
-Sunset routes redirect (e.g. `/foreignflow→/markets`, `/brokerintel→/profiler`, `/suspended→/screener`, `/validator→/profiler`, `/regime→/overview`).
-
-## Runner (`trading-suite`)
+## Testing
 
 ```sh
-./trading-suite run    # dev both
-./trading-suite build  # next build + wiring + pytest
-./trading-suite start  # prod
-./trading-suite stop
-./trading-suite logs
-./trading-suite clean
+./trading-suite verify        # backend suite, then the frontend typecheck
 ```
 
-Also as `trading-suite.sh` (same).
+- **Backend**: 176 passed, 6 skipped, 2 failed. The two failures are
+  `tests/test_lpm.py` (Stockbit LPM math) and they fail identically on the commit
+  before the plan work — they are not caused by it.
+- The plan tests need the study checkout; the conformance test imports the study's
+  own signal code.
+- `pytest` is **not** in `backend/requirements.txt`. If the venv lacks it:
+  `uv pip install --python backend/.venv/bin/python pytest`.
+- **Frontend**: `cd frontend-web && npm run typecheck` (or `npm run build`).
 
-## Testing & Checks
+## Known gaps
 
-```sh
-npm run build                         # Next 16.3 turbopack
-node scripts/check-feature-wiring.mjs # 5 APPS + lean markers
-cd backend && .venv/bin/python -m pytest -q   # 39 passed
-cd backend && .venv/bin/pyright .
-```
-
-## Operations
-
-- Plans/specs never commit: `.gitignore` ignores `PLAN.md`, `plans/`, `docs/PLAN.md`, `specs/PLAN-*.md`, etc.
-- Cache: file-based, safe on persistent host. Delete `backend/data/cache.db*` to reset.
-- Deploy: `docker compose up -d --build` (backend :8000, frontend :3000).
+- **Docker is stale.** `docker-compose.yml` and the root `Dockerfile` still build
+  the removed Next.js frontend (they need a root `package.json` that no longer
+  exists) and a `pilot` service whose directory is gone. Use the runner or the raw
+  commands above; the compose file needs rewriting for `frontend-web`.
+- Leftovers from that era sit at the repo root: `next-env.d.ts`,
+  `tsconfig.tsbuildinfo`, `public/*.svg`, `scripts/check-feature-wiring.mjs`.
+- `docs/architecture/*.puml` describe the earlier 5-route desk, not this app.
 
 ## License
 

@@ -400,14 +400,39 @@ def _donchian_level(frame: pd.DataFrame, session: pd.Timestamp) -> float | None:
     return float(level) if np.isfinite(level) and level > 0 else None
 
 
+def attach_histories(
+    gates: tuple[Gate, ...], histories: dict[str, GateHistory] | None
+) -> tuple[Gate, ...]:
+    """The same gates with their run lengths attached, when there are any."""
+    if not histories:
+        return gates
+    return tuple(
+        Gate(
+            key=g.key,
+            label=g.label,
+            passed=g.passed,
+            value=g.value,
+            threshold=g.threshold,
+            unit=g.unit,
+            text=g.text,
+            history=histories.get(g.key),
+        )
+        for g in gates
+    )
+
+
 def reason_for(
     frames: Frames,
     session: pd.Timestamp,
     code: str,
     spec: M.FamilySpec,
     exit_method: str,
-) -> Reason | None:
-    """The run-up for one name, whether or not it is in tonight's plan."""
+) -> tuple[Reason, dict[str, GateHistory]] | None:
+    """The run-up for one name, whether or not it is in tonight's plan.
+
+    Returns the histories too, so a caller holding a gate set can attach the run
+    lengths to the same gates the plan shows.
+    """
     frame = frames.bars.get(code)
     if frame is None:
         return None
@@ -424,7 +449,7 @@ def reason_for(
         exit_method,
         turnover_idr=record.get("turnover_idr"),  # type: ignore[arg-type]
     )
-    reason, _histories = _reason(
+    return _reason(
         code,
         frame,
         session,
@@ -434,7 +459,6 @@ def reason_for(
         geometry,
         next_session(session.date(), frames.sessions()),
     )
-    return reason
 
 
 def _history_for_candidates(
@@ -468,19 +492,7 @@ def _history_for_candidates(
         )
         # The gates the plan shows gain their run length, so the UI can say
         # "held for four sessions" beside the value rather than only the value.
-        gates = tuple(
-            Gate(
-                key=g.key,
-                label=g.label,
-                passed=g.passed,
-                value=g.value,
-                threshold=g.threshold,
-                unit=g.unit,
-                text=g.text,
-                history=histories.get(g.key),
-            )
-            for g in candidate.gates
-        )
+        gates = attach_histories(candidate.gates, histories)
         enriched.append(
             Candidate(
                 ticker=candidate.ticker,

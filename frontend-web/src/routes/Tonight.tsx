@@ -9,9 +9,11 @@
 
 import { useEffect, useState } from "react";
 import { planApi, type Plan } from "@/lib/api/plan";
+import { usePlanRefreshSignal } from "@/lib/refresh";
 import {
 	CandidateRow,
 	EvidenceBadge,
+	LimitsPanel,
 	Section,
 	VerdictHero,
 	WatchRow,
@@ -20,10 +22,13 @@ import {
 } from "@/components/plan";
 
 function usePlan() {
+	// Bumped by the header's refresh button once new bars have been screened.
+	const nonce = usePlanRefreshSignal();
 	const [plan, setPlan] = useState<Plan | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	useEffect(() => {
 		let alive = true;
+		setError(null);
 		planApi
 			.plan()
 			.then((p) => alive && setPlan(p))
@@ -31,7 +36,7 @@ function usePlan() {
 		return () => {
 			alive = false;
 		};
-	}, []);
+	}, [nonce]);
 	return { plan, error };
 }
 
@@ -205,6 +210,8 @@ export default function Tonight() {
 					<EvidenceBadge evidence={evidence} roundTripPct={plan.costs.round_trip} />
 				</div>
 			</Section>
+
+			<LimitsPanel plan={plan} />
 		</Page>
 	);
 }

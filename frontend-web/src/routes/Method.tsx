@@ -8,9 +8,11 @@
 
 import { useEffect, useState } from "react";
 import { planApi, type BookRow, type MethodCard } from "@/lib/api/plan";
+import { usePlanRefreshSignal } from "@/lib/refresh";
 import {
 	CorrectedEvidenceCard,
 	EvidenceBadge,
+	ProvenanceList,
 	Section,
 	idr,
 	pct,
@@ -19,6 +21,7 @@ import {
 import { Page } from "./Tonight";
 
 export default function Method() {
+	const nonce = usePlanRefreshSignal();
 	const [card, setCard] = useState<MethodCard | null>(null);
 	useEffect(() => {
 		let alive = true;
@@ -26,7 +29,7 @@ export default function Method() {
 		return () => {
 			alive = false;
 		};
-	}, []);
+	}, [nonce]);
 
 	/* The page renders after the fetch resolves, so the browser has already
 	 * tried (and failed) to honour a `#ladder` deep link by the time there is
@@ -426,11 +429,142 @@ export default function Method() {
 			</Section>
 
 			<Section
+				id="horizons"
+				title="Horizons: what was measured, and what was refused"
+				subtitle="The study answers the day-trade question with a measurement rather than a shrug. Everything shorter than a swing was either tested and declined, or never tested at all — and both are stated here."
+			>
+				<ul className="space-y-px border border-[var(--border)] bg-[var(--border)]">
+					{card.horizons?.map((horizon) => {
+						const evidence = horizon.evidence;
+						return (
+							<li key={horizon.key} className="bg-[var(--panel)] p-5">
+								<div className="flex flex-wrap items-baseline justify-between gap-3">
+									<span className="font-display text-[17px] tracking-[-0.01em] text-[var(--text)]">
+										{horizon.label}
+									</span>
+									<span
+										className="border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.1em]"
+										style={{
+											color: horizon.tradeable ? "var(--up)" : "var(--gold)",
+											borderColor: "color-mix(in srgb, currentColor 30%, transparent)",
+										}}
+									>
+										{horizon.verdict}
+									</span>
+								</div>
+								<p className="mt-2 max-w-[86ch] text-[13px] leading-relaxed text-[var(--text-dim)]">
+									{horizon.detail}
+								</p>
+								{evidence?.measured ? (
+									<div className="mt-3 grid gap-3 sm:grid-cols-3">
+										<Stat
+											label="Win rate"
+											value={pct(evidence.win_rate, 1)}
+										/>
+										<Stat
+											label="Avg per trade"
+											value={
+												evidence.avg_ret_pct != null
+													? `+${evidence.avg_ret_pct.toFixed(2)}%`
+													: "—"
+											}
+										/>
+										<Stat
+											label="Out-of-sample trades"
+											value={idr(evidence.oos_trades)}
+										/>
+									</div>
+								) : null}
+								{horizon.provenance?.length ? (
+									<ProvenanceList citations={horizon.provenance} />
+								) : null}
+							</li>
+						);
+					})}
+				</ul>
+			</Section>
+
+			<Section
 				id="corrected"
 				title="What the study tells you to trade"
 				subtitle="The corrected result: clean universe, price-frozen names excluded, tiered costs. It is smaller than the searched maximum below, and it is the number the study publishes."
 			>
 				{card.corrected ? <CorrectedEvidenceCard evidence={card.corrected} /> : null}
+			</Section>
+
+			<Section
+				id="costs"
+				title="What a round trip really costs"
+				subtitle="Two cost models, kept apart on purpose. The study's flat 0.50% is inside every backtested figure; the IDX overlay below is what a retail account pays on top of the levels this screen quotes."
+			>
+				<div className="grid gap-5 lg:grid-cols-2">
+					<div className="border border-[var(--border)] bg-[var(--panel)] p-5">
+						<p className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-faint)]">
+							The study&rsquo;s model
+						</p>
+						<p className="tabular mt-3 font-mono text-[26px] font-bold leading-none text-[var(--text)]">
+							{pctRaw(card.costs.round_trip_pct, 2)}
+						</p>
+						<p className="mt-2 max-w-[60ch] text-[12px] leading-relaxed text-[var(--text-dim)]">
+							{card.costs.note} {card.costs.idx_note}
+						</p>
+					</div>
+					<div className="border border-[var(--border)] bg-[var(--panel)] p-5">
+						<p className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-faint)]">
+							The IDX overlay
+						</p>
+						<div className="mt-3 flex flex-wrap gap-x-6 gap-y-2">
+							<Stat
+								label="Broker fees"
+								value={pctRaw(
+									(card.idx.broker_fee_buy + card.idx.broker_fee_sell) * 100,
+									2,
+								)}
+							/>
+							<Stat
+								label="Exchange side"
+								value={pctRaw(
+									(card.idx.exchange_fee_buy + card.idx.exchange_fee_sell) * 100,
+									2,
+								)}
+							/>
+							<Stat label="Round lot" value={`${idr(card.idx.lot_size)} shares`} />
+							<Stat
+								label="Stamp duty"
+								value={`${idr(card.idx.stamp_duty_idr)} above ${idr(
+									card.idx.stamp_duty_above_idr,
+								)}`}
+							/>
+						</div>
+						<p className="mt-3 max-w-[60ch] text-[12px] leading-relaxed text-[var(--text-dim)]">
+							Fees are only half of it: a two-tick spread is 2.40% of a Rp100 name and
+							0.90% of a Rp10,000 one, which is why the screen keeps a Rp50 price floor
+							even though the rulebook now allows Rp1. {card.idx.economic_floor_note}
+						</p>
+					</div>
+				</div>
+				<div className="mt-5 border border-[var(--border)] bg-[var(--panel)] p-5">
+					<p className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-faint)]">
+						Tick size by price band (rulebook, 28 Sep 2026)
+					</p>
+					<div className="mt-3 flex flex-wrap gap-2">
+						{card.idx.tick_bands.map((band) => (
+							<span
+								key={band.low}
+								className="border border-[var(--border)] bg-[var(--panel-2)] px-2.5 py-1.5 font-mono text-[11px] tabular-nums text-[var(--text-dim)]"
+							>
+								{idr(band.low)}–{band.high != null ? idr(band.high) : "up"}{" "}
+								<span className="text-[var(--text)]">Rp{idr(band.tick)}</span>
+							</span>
+						))}
+					</div>
+					<p className="mt-3 max-w-[86ch] text-[12px] leading-relaxed text-[var(--text-dim)]">
+						Flat tax on a round trip at two ticks: 100% at Rp1, 2% at Rp50, 1% at Rp100,
+						0.50% at Rp1,000, 0.25% at Rp10,000. The bands are dated because the rulebook
+						moved on 28 September 2026 and the auto-rejection table moves again on 1
+						January 2027.
+					</p>
+				</div>
 			</Section>
 
 			<Section

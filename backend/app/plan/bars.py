@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from datetime import date, datetime, time as dtime, timedelta, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import Protocol
@@ -24,6 +25,28 @@ from typing import Protocol
 import pandas as pd
 
 from .method import DOCS_DIR
+
+# Jakarta is UTC+7 with no daylight saving, so a fixed offset is exact.
+WIB = timezone(timedelta(hours=7))
+# The closing match runs 16:00-16:01:59 and post-trading ends 16:15; a daily bar
+# belongs to a finished session only after that. 16:02 is the first honest moment.
+SESSION_FINAL_AFTER = dtime(16, 2)
+
+
+def session_is_final(bar_date: date, now: datetime | None = None) -> bool:
+    """Whether a bar for `bar_date` belongs to a finished session.
+
+    A daily bar for today is a live, unfinished candle until matching is over.
+    Screening it would mean screening a partial price - the classic way a screen
+    fires at 10am and is gone by the close - so every path that ingests live bars
+    asks this first.
+    """
+    moment = (now or datetime.now(WIB)).astimezone(WIB)
+    if bar_date < moment.date():
+        return True
+    if bar_date > moment.date():
+        return False
+    return moment.time() >= SESSION_FINAL_AFTER
 
 BENCHMARK = "^JKSE"
 OHLCV = ["date", "open", "high", "low", "close", "volume"]
@@ -97,6 +120,11 @@ class Frames:
     # data it has decided not to trust.
     phantom_dropped: int = 0
     phantom_dates: tuple[str, ...] = ()
+    # Live bars appended after the study's own last session, and live bars refused
+    # because their session had not finished. Both are reported: a merge that
+    # silently dropped rows would move breadth without saying so.
+    live_appended: int = 0
+    partial_bars_rejected: int = 0
 
     @property
     def codes(self) -> list[str]:
@@ -294,6 +322,112 @@ class LiveBars:
         except Exception:  # noqa: BLE001
             pass
         return Frames(bars=out, benchmark=bench, source="live:yfinance")
+
+
+class MergedBars:
+    """The study's verified bars with a live tail appended, in memory.
+
+    The study's CSVs stay the base: they carry the manifest's per-file sha256 and
+    the phantom-bar repair. Only sessions *after* the study's last one come from
+    the live cache, and a bar dated today is used only once today's session is
+    over. Nothing is written back to the study - a refresh is not an edit to the
+    research.
+
+    The merge is testable without a network: pass a stub for either side.
+    """
+
+    def __init__(
+        self, study: BarsSource, live: BarsSource, now: datetime | None = None
+    ) -> None:
+        self.study = study
+        self.live = live
+        self.now = now
+
+    def _keep_final(self, frame: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+        """Drop rows whose session has not finished, counting them."""
+        if frame.empty:
+            return frame, 0
+        stamps = pd.to_datetime(frame["date"])
+        mask = stamps.map(lambda d: session_is_final(d.date(), self.now))
+        refused = int((~mask).sum())
+        return frame[mask.to_numpy()], refused
+
+    def load(self, codes: list[str] | None = None) -> Frames:
+        base = self.study.load(codes)
+        wanted = sorted(codes) if codes else sorted(base.bars)
+        live = self.live.load(wanted) if wanted else Frames()
+
+        merged: dict[str, pd.DataFrame] = {}
+        appended = 0
+        refused_total = 0
+        phantom_dropped = base.phantom_dropped
+        phantom: set[pd.Timestamp] = {
+            pd.Timestamp(d) for d in base.phantom_dates
+        }
+
+        for code in wanted:
+            frame = base.bars.get(code)
+            if frame is None:
+                continue
+            live_frame = live.bars.get(code)
+            if live_frame is None or live_frame.empty:
+                merged[code] = frame
+                continue
+            tail = live_frame[live_frame["date"] > frame["date"].iloc[-1]]
+            if tail.empty:
+                merged[code] = frame
+                continue
+            tail, refused = self._keep_final(tail)
+            refused_total += refused
+            if tail.empty:
+                merged[code] = frame
+                continue
+            merged[code] = (
+                pd.concat([frame, tail], ignore_index=True)
+                .drop_duplicates("date")
+                .sort_values("date")
+                .reset_index(drop=True)
+            )
+            appended += len(tail)
+
+        # The calendar, extended the same way. It decides which sessions the
+        # exchange held, so a stale one would refuse the new bars.
+        bench = base.benchmark
+        if live.benchmark is not None and not live.benchmark.empty:
+            if bench is None or bench.empty:
+                bench = live.benchmark
+            else:
+                bench_tail = live.benchmark[
+                    live.benchmark["date"] > bench["date"].iloc[-1]
+                ]
+                if not bench_tail.empty:
+                    bench_tail, _bench_refused = self._keep_final(bench_tail)
+                    if not bench_tail.empty:
+                        bench = (
+                            pd.concat([bench, bench_tail], ignore_index=True)
+                            .drop_duplicates("date")
+                            .sort_values("date")
+                            .reset_index(drop=True)
+                        )
+
+        if appended and bench is not None:
+            cleaned: dict[str, pd.DataFrame] = {}
+            for code, frame in merged.items():
+                frame, dropped, bad = _drop_phantom(frame, bench)
+                phantom_dropped += dropped
+                phantom |= bad
+                cleaned[code] = frame
+            merged = cleaned
+
+        return Frames(
+            bars=merged,
+            benchmark=bench,
+            source=f"study+live:{appended} bars appended",
+            phantom_dropped=phantom_dropped,
+            phantom_dates=tuple(sorted(d.strftime("%Y-%m-%d") for d in phantom)),
+            live_appended=appended,
+            partial_bars_rejected=refused_total,
+        )
 
 
 @lru_cache(maxsize=1)

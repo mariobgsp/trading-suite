@@ -6,7 +6,7 @@ import asyncio
 from datetime import date
 from typing import Any
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app import plan as planner
@@ -74,12 +74,31 @@ async def size(body: SizeRequest) -> dict[str, Any]:
 
 
 @router.post("/refresh")
-async def refresh() -> dict[str, Any]:
-    """Drop cached bars and results, so the next read is fresh.
+async def refresh(wait: bool = Query(False)) -> dict[str, Any]:
+    """Pull the latest daily bars and re-run the analysis on them.
 
-    Used after the study finishes a round: its new rows become the numbers the
-    plan quotes without a restart.
+    Returns a job immediately; poll `GET /api/plan/refresh/{id}` for progress and
+    the finished plan. `wait=true` runs it inline for a caller that would rather
+    block (a script, a cron job).
+
+    Two rules live in that job, and both exist because a refresh is the only way
+    this screen can be wrong in a *new* way: today's bar is refused until the
+    session is over, and every failed name is counted so that a partial pull
+    cannot quietly move breadth.
     """
-    planner.invalidate()
-    current = await asyncio.to_thread(planner.plan)
-    return {"refreshed": True, "as_of": current.as_of.isoformat(), "open": current.open}
+    return await asyncio.to_thread(planner.start_refresh, wait)
+
+
+@router.get("/refresh/{job_id}")
+async def refresh_report(job_id: str) -> dict[str, Any]:
+    """One refresh job: progress while it runs, the plan when it lands."""
+    found = planner.refresh_status(job_id)
+    if found is None:
+        raise HTTPException(status_code=404, detail="no such refresh job")
+    return found
+
+
+@router.post("/refresh/{job_id}/cancel")
+async def refresh_cancel(job_id: str) -> dict[str, Any]:
+    """Ask a running refresh to stop between names."""
+    return {"cancelled": planner.cancel_refresh(job_id)}

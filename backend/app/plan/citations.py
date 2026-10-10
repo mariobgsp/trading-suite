@@ -52,6 +52,7 @@ _CLEAN = "docs/20-illiquid-and-adaptive-screener.md"
 _CEIL = "docs/24-trade-count-ceiling.md"
 _FOLDS = "docs/14-portfolio-test.md"
 _REFUSAL = "docs/22-the-80-and-5-question.md"
+_INTRADAY = "docs/23-intraday-sleeve-decision.md"
 
 def _cite(
     label: str,
@@ -221,6 +222,61 @@ _ALL: tuple[Citation, ...] = (
         _CEIL,
         80,
         "| capitulation (<0.25) | +2.11% | 0.9× — achievable |",
+    ),
+    # ── the day-trade question, answered by measurement ─────────────────────
+    # docs/23 designed an intraday sleeve, measured it over 30 configurations and
+    # declined to build it. These are the numbers behind that decision, so the app
+    # can refuse the request with its own author's arithmetic rather than an
+    # opinion.
+    _cite("intraday_verdict", None, "-", _INTRADAY, 3, "no sleeve is built"),
+    _cite(
+        "intraday_configs",
+        30.0,
+        "-",
+        _INTRADAY,
+        4,
+        "30 configurations could not fix it",
+    ),
+    _cite(
+        "intraday_capture_ratio",
+        0.25,
+        "x",
+        _INTRADAY,
+        20,
+        "**~0.25** (pure data, no assumptions)",
+    ),
+    _cite("intraday_captured_pct", 0.36, "%", _INTRADAY, 21, "**≈ +0.36%**"),
+    _cite(
+        "intraday_cost_lo_pct",
+        0.40,
+        "%",
+        _INTRADAY,
+        22,
+        "**0.40%** at zero slippage",
+    ),
+    _cite(
+        "intraday_cost_hi_pct",
+        0.90,
+        "%",
+        _INTRADAY,
+        22,
+        "**0.90%** at 25bp/side",
+    ),
+    _cite(
+        "intraday_best_net_pct",
+        -0.768,
+        "%",
+        _INTRADAY,
+        40,
+        "Best case is −0.768%/trade",
+    ),
+    _cite(
+        "intraday_gap_pct",
+        20.3,
+        "%",
+        _INTRADAY,
+        23,
+        "| 20.3% of prior-close MFE | overnight gap, uncapturable buying at the open |",
     ),
 )
 

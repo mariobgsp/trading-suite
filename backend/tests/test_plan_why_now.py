@@ -189,8 +189,9 @@ def test_the_entry_basis_names_the_session_it_fills_in():
 def test_reason_for_works_for_a_name_that_is_not_in_the_plan():
     """The Name page asks "why not" far more often than it asks "why"."""
     frames, session, spec = setup()
-    reason = S.reason_for(frames, session, "TEST", spec, M.STUDY_PICK_EXIT)
-    assert reason is not None
+    found = S.reason_for(frames, session, "TEST", spec, M.STUDY_PICK_EXIT)
+    assert found is not None
+    reason, histories = found
     assert reason.history, "a name outside the plan still gets its run-up"
     assert reason.signal_session == session.date()
     assert S.reason_for(frames, session, "NOPE", spec, M.STUDY_PICK_EXIT) is None

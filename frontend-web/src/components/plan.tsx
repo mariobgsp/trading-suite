@@ -1116,3 +1116,155 @@ export function ReasonBlock({ reason }: { reason: Reason | null }) {
 		</div>
 	);
 }
+
+
+/**
+ * What this screen does not protect you from.
+ *
+ * Every number here is measured, and every one of them is a reason to size small:
+ * the spoken chain books a 68% drawdown in the five-year replay, the same family
+ * reads +0.09% on folds no search saw, and dropping the best fifth of tickers
+ * leaves +0.04%. A trade card that shows only the win rate is selling the top of
+ * that range.
+ *
+ * The checklist at the bottom is explicitly *not* measured — it is discipline,
+ * labelled as such rather than dressed up as a result.
+ */
+export function LimitsPanel({ plan }: { plan: Plan }) {
+	const corrected = plan.corrected;
+	const replay = plan.five_year;
+	const tiers = ("tiers" in replay ? replay.tiers : undefined) ?? [];
+	const tier1 = tiers.find((t) => t.tier?.toLowerCase().startsWith("tier 1"));
+	const pooled = tiers.find((t) => t.tier?.toLowerCase().includes("pooled"));
+	const book = plan.verdict?.stand_down_case?.book;
+	const survivorship = corrected?.provenance?.find(
+		(c) => c.label === "tier1_survivorship_avg_ret_pct",
+	);
+	const holdout = corrected?.provenance?.find((c) => c.label === "tier1_holdout_avg_ret_pct");
+
+	return (
+		<Section
+			title="What would hurt you"
+			subtitle="Read this before the first trade, not after the first loss. Everything below is measured on this method, and every row is a reason to size smaller than the headline suggests."
+		>
+			<div className="grid gap-5 lg:grid-cols-2">
+				<div className="border border-[var(--border)] bg-[var(--panel)] p-5">
+					<p className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-faint)]">
+						Drawdown, by window
+					</p>
+					<ul className="mt-3 space-y-2 text-[12px] leading-relaxed text-[var(--text-dim)]">
+						{corrected?.max_drawdown_pct != null ? (
+							<li>
+								Walk-forward folds, corrected universe:{" "}
+								<span className="text-[var(--text)]">
+									−{corrected.max_drawdown_pct.toFixed(1)}%
+								</span>{" "}
+								max drawdown
+								{corrected.book_return_pct != null ? (
+									<>
+										, on a book that returned{" "}
+										<span className="text-[var(--up)]">
+											+{corrected.book_return_pct.toFixed(1)}%
+										</span>
+									</>
+								) : null}
+								.
+							</li>
+						) : null}
+						{tier1 ? (
+							<li>
+								Five-year replay, ten slots:{" "}
+								<span className="text-[var(--down)]">
+									−{tier1.book_max_drawdown_pct?.toFixed(1)}%
+								</span>{" "}
+								max drawdown for{" "}
+								<span className="text-[var(--up)]">{tier1.book_total_pct?.toFixed(1)}%</span>.
+								One window, universe fixed at the final date — survivorship runs through it.
+							</li>
+						) : null}
+						{pooled ? (
+							<li>
+								The same replay with every tier traded:{" "}
+								<span className="text-[var(--down)]">
+									{pooled.book_total_pct?.toFixed(1)}%
+								</span>
+								, from a {pooled.book_max_drawdown_pct?.toFixed(1)}% drawdown. That is what
+								"trade every signal" costs.
+							</li>
+						) : null}
+						{book?.with_sideways?.available ? (
+							<li>
+								The flat band traded rather than skipped:{" "}
+								<span className="text-[var(--down)]">
+									{book.with_sideways.total_pct?.toFixed(1)}%
+								</span>{" "}
+								at a {book.with_sideways.max_drawdown_pct?.toFixed(1)}% drawdown, against{" "}
+								<span className="text-[var(--up)]">
+									+{book.trend_only.total_pct?.toFixed(1)}%
+								</span>{" "}
+								at {book.trend_only.max_drawdown_pct?.toFixed(1)}% with it skipped.
+							</li>
+						) : null}
+					</ul>
+					<p className="mt-3 border-t border-[var(--border)] pt-2.5 text-[11px] leading-relaxed text-[var(--text-faint)]">
+						Leverage is not modelled anywhere in this study, and the one row that does model it
+						puts three times gearing at −98.29%. If a broker offers you leverage on this method,
+						the honest reading is that nobody has measured it.
+					</p>
+				</div>
+				<div className="border border-[var(--border)] bg-[var(--panel)] p-5">
+					<p className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-faint)]">
+						The two haircuts
+					</p>
+					<ul className="mt-3 space-y-2 text-[12px] leading-relaxed text-[var(--text-dim)]">
+						{survivorship?.value != null ? (
+							<li>
+								Drop the best 20% of tickers and the corrected edge is{" "}
+								<span className="text-[var(--text)]">+{survivorship.value.toFixed(2)}%</span> a
+								trade — statistically nothing. The profit lives in a minority of names.
+							</li>
+						) : null}
+						{holdout?.value != null ? (
+							<li>
+								On folds no search ever saw, the same family reads{" "}
+								<span className="text-[var(--text)]">+{holdout.value.toFixed(2)}%</span> a
+								trade.
+							</li>
+						) : null}
+						{plan.holdout ? (
+							<li>
+								The study searched {plan.holdout.search_cells ?? "—"} configurations;{" "}
+								{plan.holdout.search_cells_clearing ?? 0} cleared both of its bars on their
+								own data and {plan.holdout.winners_surviving ?? 0} of the{" "}
+								{plan.holdout.winners_tested ?? 0} best survived unseen folds.
+							</li>
+						) : null}
+						<li>
+							The stop is −{plan.candidates[0]?.geometry.stop_pct.toFixed(0) ?? "35"}% on
+							purpose, and a session that opens beyond it fills at that open — worse than the
+							stop. That is measured, not hypothetical.
+						</li>
+					</ul>
+					<p className="mt-3 border-t border-[var(--border)] pt-2.5 text-[11px] leading-relaxed text-[var(--text-faint)]">
+						None of this is a reason to skip the method. It is the reason to take a position
+						the size of the loss you are willing to book, and to have that number ready before
+						the order.
+					</p>
+				</div>
+			</div>
+			<div className="mt-5 border border-[var(--border)] border-l-[3px] border-l-[var(--gold)] bg-[var(--panel)] p-5">
+				<p className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-faint)]">
+					Before you place it · discipline, not a measurement
+				</p>
+				<ul className="mt-3 grid gap-2 text-[12px] leading-relaxed text-[var(--text-dim)] sm:grid-cols-2">
+					<li>· One position per name; at most ten open at once.</li>
+					<li>· Size from the ticket, not from conviction: 2% of the name&rsquo;s turnover.</li>
+					<li>· Never add to a loser, and never average a position down.</li>
+					<li>· No new entries when the verdict is not ENTER.</li>
+					<li>· Write the exit down before the entry: target, stop, holding cap.</li>
+					<li>· No leverage, and no shorting — neither was measured here.</li>
+				</ul>
+			</div>
+		</Section>
+	);
+}

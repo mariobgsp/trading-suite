@@ -385,6 +385,8 @@ export interface Plan {
 	idx: IdxTables;
 	/** One decision for the session, with the measured case behind it. */
 	verdict: Verdict;
+	/** The five-year replay by regime tier: one window, survivorship intact. */
+	five_year: FiveYearReplay | Record<string, never>;
 }
 
 export type VerdictState = "ENTER" | "WAIT" | "NO_TRADE" | "DATA_UNSAFE";
@@ -710,6 +712,8 @@ export interface MethodCard {
 	};
 	/** The corrected figures keyed by label, for the Method page's tier table. */
 	corrected_block: Record<string, Citation>;
+	/** What was measured at each holding period, and what was refused. */
+	horizons: HorizonRow[];
 	ladder: Evidence[];
 	bar: { win_rate: number; avg_trade_pct: number; min_trades: number };
 	deployment: Deployment;
@@ -730,8 +734,28 @@ export interface MethodCard {
 		max_frozen_fraction: number;
 		why: string;
 	};
-	costs: { round_trip_pct: number; note: string };
+	costs: { round_trip_pct: number; note: string; idx_note?: string };
+	/** The IDX tables, so the costs section does not restate a tick size. */
+	idx: IdxTables;
 	studies_at: string;
+}
+
+/**
+ * One holding period: what it measured, or why it was refused.
+ *
+ * The intraday row is the one the app is asked about most and the one no
+ * measurement supports, so it travels with its arithmetic rather than a warning.
+ */
+export interface HorizonRow {
+	key: string;
+	label: string;
+	sessions: number | string;
+	measured: boolean;
+	tradeable: boolean;
+	verdict: string;
+	detail: string;
+	evidence?: Evidence | null;
+	provenance: Citation[];
 }
 
 export interface PlanDetail {
@@ -754,6 +778,49 @@ export interface PlanDetail {
 	turnover_idr: number | null;
 }
 
+/**
+ * What one refresh did, in numbers.
+ *
+ * `degraded` is the load-bearing field: a pull that lost names moved the universe
+ * the breadth reading is a share of, so it is reported rather than swallowed.
+ */
+export interface RefreshReport {
+	id: string;
+	state: "running" | "done" | "failed" | "cancelled";
+	started_at: string;
+	finished_at: string | null;
+	seconds: number | null;
+	session_before: string | null;
+	session_after: string | null;
+	bars_basis: string;
+	names_total: number;
+	names_checked: number;
+	names_fetched: number;
+	names_unchanged: number;
+	names_failed: number;
+	failed_sample: string[];
+	partial_bars_rejected: number;
+	live_appended: number;
+	phantom_bars_dropped: number;
+	coverage_on_session: number;
+	coverage_required: number;
+	failure_share: number;
+	degraded: boolean;
+	already_running: boolean;
+	plan: {
+		as_of?: string;
+		verdict_state?: VerdictState;
+		open?: boolean;
+		candidates?: number;
+		headline?: string;
+	};
+	error: string | null;
+	/** Kept from the previous contract: `refreshed`, `as_of`, `open`. */
+	refreshed: boolean;
+	as_of: string | null;
+	open: boolean | null;
+}
+
 /** A plan changes when the session closes, so cache it for minutes, not seconds. */
 const PLAN_TTL = 5 * 60_000;
 
@@ -773,9 +840,15 @@ export const planApi = {
 		risk_budget_idr?: number | null;
 		exit_method?: string | null;
 	}) => api.post<SizeTicket>("/api/plan/size", body),
-	/** Re-read the study's results, for when a new round lands. */
-	refresh: () => api.post<{ refreshed: boolean; as_of: string; open: boolean }>(
-		"/api/plan/refresh",
-		{},
-	),
+	/**
+	 * Pull the latest daily bars and re-run the analysis on them.
+	 *
+	 * Returns a job: poll `refreshStatus` while it runs. Today's unfinished candle
+	 * is refused by the backend, so the session it reports is the last completed
+	 * one rather than a partial price.
+	 */
+	refresh: () => api.post<RefreshReport>("/api/plan/refresh", {}),
+	refreshStatus: (id: string) => api.get<RefreshReport>(`/api/plan/refresh/${id}`),
+	cancelRefresh: (id: string) =>
+		api.post<{ cancelled: boolean }>(`/api/plan/refresh/${id}/cancel`, {}),
 };

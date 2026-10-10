@@ -14,12 +14,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { planApi, type Plan, type RankedRow } from "@/lib/api/plan";
+import { usePlanRefreshSignal } from "@/lib/refresh";
 import { Section, idr } from "@/components/plan";
 import { Page } from "./Tonight";
 
 type Sort = "gates" | "rs" | "near" | "ticker";
 
 export default function Screener() {
+	const nonce = usePlanRefreshSignal();
 	const [plan, setPlan] = useState<Plan | null>(null);
 	const [failed, setFailed] = useState<string | null>(null);
 	const [sort, setSort] = useState<Sort>("gates");
@@ -35,7 +37,7 @@ export default function Screener() {
 		return () => {
 			alive = false;
 		};
-	}, []);
+	}, [nonce]);
 
 	const rows = useMemo(() => {
 		if (!plan) return [];

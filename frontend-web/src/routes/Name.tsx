@@ -10,12 +10,14 @@ import { useEffect, useState } from "react";
 import { useParams } from "@tanstack/react-router";
 import { api, type HistoryResponse } from "@/lib/api";
 import { planApi, type GateKey, type PlanDetail } from "@/lib/api/plan";
+import { usePlanRefreshSignal } from "@/lib/refresh";
 import { GateList, OrderTicket, ReasonBlock, idr, pct, pctRaw } from "@/components/plan";
 import MarketChart, { type PriceLine } from "@/components/MarketChart";
 import { Page } from "./Tonight";
 
 export default function Name() {
 	const { ticker } = useParams({ from: "/name/$ticker" });
+	const nonce = usePlanRefreshSignal();
 	const [detail, setDetail] = useState<PlanDetail | null>(null);
 	const [requiredGates, setRequiredGates] = useState<GateKey[] | undefined>();
 	const code = (ticker ?? "").toUpperCase();
@@ -27,7 +29,7 @@ export default function Name() {
 		return () => {
 			alive = false;
 		};
-	}, [code]);
+	}, [code, nonce]);
 
 	/* Which gates the running family applies, so the ones it ignores can be
 	 * dimmed rather than shown as failures. Read off the plan rather than the
@@ -41,7 +43,7 @@ export default function Name() {
 		return () => {
 			alive = false;
 		};
-	}, []);
+	}, [nonce]);
 
 	if (!detail) {
 		return (

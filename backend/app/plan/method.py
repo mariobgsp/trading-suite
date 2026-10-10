@@ -870,6 +870,84 @@ def _find(rows: list[dict[str, str]], case: str, **want: str) -> dict[str, objec
     return None
 
 
+def horizons() -> tuple[dict[str, object], ...]:
+    """The holding periods the study measured, and the one it refused.
+
+    "Day trade" has an answer in this study and it is a measured no: an intraday
+    sleeve was designed, run over 30 configurations and declined, because the
+    median capturable intraday move is smaller than the round trip. Above it sit
+    the only two caps the census actually searches, 55 and 95 sessions. There is
+    no 1-3 session rule anywhere in the exit library - not one that lost money,
+    but none at all - and pretending otherwise would be the invention this whole
+    module exists to avoid.
+    """
+
+    def cited(label: str) -> dict[str, object] | None:
+        found = C.citation(label)
+        return found.as_dict() if found else None
+
+    intraday = {
+        "key": "intraday",
+        "label": "Same day (intraday)",
+        "sessions": "0",
+        "measured": True,
+        "tradeable": False,
+        "verdict": "refused",
+        "detail": (
+            "Designed, measured over 30 configurations, and declined: every one has "
+            "negative expectancy before costs are even covered. The median capturable "
+            "intraday move is about +0.36% against a 0.40-0.90% round trip, and a real "
+            "intraday edge would need bars this data does not have: Yahoo's hourly "
+            "series for thin IDX names is a daily-bar decomposition, and sub-hourly "
+            "history runs 60 days."
+        ),
+        "provenance": [
+            cited(label)
+            for label in (
+                "intraday_verdict",
+                "intraday_configs",
+                "intraday_capture_ratio",
+                "intraday_captured_pct",
+                "intraday_cost_lo_pct",
+                "intraday_cost_hi_pct",
+                "intraday_best_net_pct",
+                "intraday_gap_pct",
+            )
+        ],
+    }
+
+    rows: list[dict[str, object]] = []
+    for exit_name, verdict in (
+        ("lt_13_35_55", "measured, below the studied bar"),
+        ("lt_13_35_95", "shipped"),
+    ):
+        target, stop, hold = exit_for(exit_name)
+        measured = evidence_for(STUDY_PICK_FAMILY, exit_name)
+        rows.append(
+            {
+                "key": exit_name,
+                "label": f"{hold}-session cap (+{target:.0f}% / -{stop:.0f}%)",
+                "sessions": hold,
+                "measured": measured.measured,
+                "tradeable": exit_name == STUDY_PICK_EXIT,
+                "verdict": verdict,
+                "detail": (
+                    f"The same entry chain held for up to {hold} sessions. "
+                    + (
+                        "This is the cap the app runs, and the one the corrected figures "
+                        "belong to."
+                        if exit_name == STUDY_PICK_EXIT
+                        else "Measured, and it does not clear the study's own +5% bar - "
+                        "which is why the shipped cap is the longer one."
+                    )
+                ),
+                "evidence": measured.as_dict() if measured.measured else None,
+                "provenance": [],
+            }
+        )
+    return (intraday, *rows)
+
+
 def _method_table_rows() -> tuple[dict[str, str], ...]:
     """Every family x exit the study measured, from its census file."""
     return tuple(_rows(METHOD_TABLE_CSV))

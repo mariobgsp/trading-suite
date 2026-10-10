@@ -27,7 +27,7 @@ from . import idx as X
 from . import method as M
 from . import screen as S
 from . import verdict as V
-from .bars import BarsSource, Frames, default_source
+from .bars import COVERAGE_FLOOR, BarsSource, Frames, default_source
 from .model import Candidate, Evidence, Gate, Plan, Regime, WatchItem
 
 log = logging.getLogger(__name__)
@@ -167,6 +167,15 @@ def plan(as_of: date | None = None, exit_method: str | None = None) -> Plan:
             phantom_bars_dropped=frames.phantom_dropped,
             phantom_dates=list(frames.phantom_dates),
             exchange_sessions=len(calendar),
+            # What the verdict's integrity checks read: how many names have a bar
+            # on the session, and the floor they have to clear.
+            names_on_session=frames.coverage_on(session),
+            coverage_floor=COVERAGE_FLOOR,
+            # How the bars were assembled, so a screen run on a merged pull says
+            # so rather than looking identical to one run on the study's cache.
+            bars_basis=frames.source,
+            live_appended=frames.live_appended,
+            partial_bars_rejected=frames.partial_bars_rejected,
             reason_seconds=next(
                 (
                     c.reason.seconds
@@ -188,6 +197,7 @@ def plan(as_of: date | None = None, exit_method: str | None = None) -> Plan:
         # whole reason this app carries both.
         corrected=M.corrected_evidence(),
         idx=_idx_block(),
+        five_year=M.five_year_replay(),
     )
     with _lock:
         _cache[key] = result
@@ -237,13 +247,17 @@ def detail(ticker: str) -> dict[str, object]:
     reason = None
     if session is not None:
         try:
-            reason = S.reason_for(
+            found = S.reason_for(
                 frames,
                 session,
                 code,
                 M.family_spec(current.evidence.family),
                 current.evidence.exit_method or M.DEFAULT_EXIT,
             )
+            if found is not None:
+                reason, histories = found
+                # The same gates the plan shows, now with their run lengths.
+                gates = S.attach_histories(gates, histories)
         except Exception as exc:  # noqa: BLE001 - a missing history must not 500
             log.warning("plan: no reason for %s: %s", code, exc)
 
@@ -313,6 +327,8 @@ def method_card() -> dict[str, object]:
             "replay": M.five_year_replay(),
         },
         "corrected_block": C.corrected_tier1(),
+        # What was measured at each holding period, and what was refused.
+        "horizons": list(M.horizons()),
         "ladder": [e.as_dict() for e in ladder[:12]],
         "families": [
             {
@@ -377,6 +393,28 @@ def method_card() -> dict[str, object]:
     }
 
 
+def start_refresh(wait: bool = False) -> dict[str, object]:
+    """Pull the latest bars and re-run the analysis (see `refresh.py`)."""
+    from . import refresh as R
+
+    return R.start(wait=wait).as_dict()
+
+
+def refresh_status(job_id: str) -> dict[str, object] | None:
+    """One refresh job's report, or None when that id is not one of ours."""
+    from . import refresh as R
+
+    found = R.report(job_id)
+    return found.as_dict() if found else None
+
+
+def cancel_refresh(job_id: str) -> bool:
+    """Ask a running refresh to stop between names."""
+    from . import refresh as R
+
+    return R.cancel(job_id)
+
+
 def _idx_block() -> dict[str, object]:
     """The IDX tables the UI renders, so no component hard-codes a tick size."""
     return X.tables()
@@ -434,7 +472,10 @@ __all__ = [
     "ladder",
     "method_card",
     "plan",
+    "cancel_refresh",
     "idx_tables",
+    "refresh_status",
     "set_source",
+    "start_refresh",
     "size_ticket",
 ]

@@ -81,6 +81,31 @@ def test_the_replay_names_its_own_limits():
     assert "2021" in replay["window"] and "one window" in replay["window"]
 
 
+def test_the_horizon_ladder_refuses_intraday_with_its_own_numbers():
+    """The day-trade answer is a measurement, so it is testable."""
+    rows = M.horizons()
+    assert rows[0]["key"] == "intraday", "the refused horizon leads, not hides"
+    intraday = rows[0]
+    assert intraday["tradeable"] is False
+    assert intraday["verdict"] == "refused"
+    labels = {cited["label"] for cited in intraday["provenance"]}
+    assert {
+        "intraday_captured_pct",
+        "intraday_cost_hi_pct",
+        "intraday_best_net_pct",
+        "intraday_configs",
+    } <= labels
+
+    caps = {row["key"]: row for row in rows}
+    assert caps["lt_13_35_95"]["tradeable"] is True
+    assert caps["lt_13_35_95"]["sessions"] == 95
+    assert caps["lt_13_35_55"]["sessions"] == 55
+    assert caps["lt_13_35_55"]["tradeable"] is False, "the shorter cap is not the shipped one"
+    # And the shipped cap carries the measured row, so the page cannot show a
+    # horizon without saying what it did.
+    assert caps["lt_13_35_95"]["evidence"] is not None
+
+
 def test_the_method_card_carries_all_the_tiers_and_their_provenance():
     """The API surface a reader can audit without running a plan."""
     card = method_card()

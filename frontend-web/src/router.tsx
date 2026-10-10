@@ -7,6 +7,7 @@ import {
 	Outlet,
 	redirect,
 } from "@tanstack/react-router";
+import RefreshButton from "@/components/RefreshButton";
 import ThemeToggle from "@/components/ThemeToggle";
 import Tonight from "@/routes/Tonight";
 import Name from "@/routes/Name";
@@ -77,7 +78,10 @@ function RootComponent() {
 							</Link>
 						))}
 					</nav>
-					<ThemeToggle />
+					<div className="flex items-center gap-3">
+						<RefreshButton />
+						<ThemeToggle />
+					</div>
 				</div>
 			</header>
 			<main id="main">

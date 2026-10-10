@@ -572,6 +572,9 @@ class Plan:
     # `verdict.py`, which is pure — so all four states are unit-testable without
     # running a universe pass.
     verdict: dict[str, object] = field(default_factory=dict)
+    # The five-year replay, so the front page can show the deepest drawdown the
+    # study measured for this chain rather than only the friendly window.
+    five_year: dict[str, object] = field(default_factory=dict)
     # The same chain, measured after the study's correctness pass. Kept beside
     # `evidence` rather than instead of it: one is what the search found, the
     # other is what the study now publishes, and a screen showing only the first
@@ -603,4 +606,5 @@ class Plan:
             corrected=self.corrected.as_dict() if self.corrected else None,
             idx=dict(self.idx),
             verdict=dict(self.verdict),
+            five_year=dict(self.five_year),
         )

@@ -118,16 +118,25 @@ cmd_clean() {
 # every cited figure against the study's own documents) and the typecheck.
 cmd_verify() {
   ensure_backend_venv
-  # The venv is built from requirements.txt, which does not include pytest: say so
-  # rather than failing with a bare "No module named pytest".
+  # The venv is built from requirements.txt, which does not include pytest, and
+  # this one has no pip of its own: name the command rather than failing with a
+  # bare "No module named pytest".
   if ! "$BACKEND/.venv/bin/python" -c 'import pytest' >/dev/null 2>&1; then
-    die "pytest is missing from backend/.venv — run: $BACKEND/.venv/bin/pip install pytest"
+    die "pytest is missing from backend/.venv — run: uv pip install --python backend/.venv/bin/python pytest"
   fi
+  # Both checks run even when the first fails: a failing test is exactly when the
+  # typecheck is worth having, and stopping at the first error hides it.
+  local backend_status=0 frontend_status=0
   info "backend tests (rule chain, cited figures, sizing, verdict, refresh)…"
-  (cd "$BACKEND" && .venv/bin/python -m pytest tests -q)
+  (cd "$BACKEND" && .venv/bin/python -m pytest tests -q) || backend_status=$?
   info "frontend typecheck…"
-  (cd "$FRONTEND" && npx --no-install tsc --noEmit)
-  info "both clean"
+  (cd "$FRONTEND" && npx --no-install tsc --noEmit) || frontend_status=$?
+  if [[ "$backend_status" -eq 0 && "$frontend_status" -eq 0 ]]; then
+    info "both clean"
+    return 0
+  fi
+  warn "verify: backend=$([[ "$backend_status" -eq 0 ]] && echo pass || echo "fail (see above)") · frontend=$([[ "$frontend_status" -eq 0 ]] && echo pass || echo "fail (see above)")"
+  return 1
 }
 
 case "${1:-run}" in

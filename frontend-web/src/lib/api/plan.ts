@@ -35,9 +35,39 @@ export interface Geometry {
 	stop_price: number;
 	gross_risk_pct: number;
 	reward_risk: number;
+	/** An illustration on Rp1m. `position_idr` is the real size. */
 	max_loss_idr_1m: number;
 	target_gain_idr_1m: number;
 	holding_weeks: number;
+	/**
+	 * The study's sizing rule: 2% of median 60-session turnover, clamped to
+	 * 2M-10M IDR and rejected above 2% participation. Null when the name cannot
+	 * be sized at that rule — the study would not take the trade either.
+	 */
+	position_idr: number | null;
+	shares: number | null;
+	lots: number | null;
+	participation_pct: number | null;
+	sizing_basis: "study_adv" | "risk_budget" | "none" | "";
+	risk_budget_idr: number | null;
+	/** Real risk: shares x (entry - stop) plus costs on the position. */
+	max_loss_idr: number | null;
+	risk_pct_of_position: number | null;
+	tick_idr: number | null;
+	/** The IDX overlay: broker fees plus the spread at this price. */
+	friction: {
+		price?: number;
+		tick_idr?: number;
+		spread_ticks?: number;
+		spread_pct?: number;
+		fees_pct?: number;
+		total_pct?: number;
+		study_model_pct?: number;
+		over_study_pct?: number;
+		note?: string;
+	};
+	/** Everything the ticket should say about this size, in plain words. */
+	notes: string[];
 }
 
 export interface Candidate {
@@ -287,6 +317,150 @@ export interface Plan {
 	 *  what survived unseen data, in the same glance. */
 	holdout: Holdout | null;
 	frequency: RegimeFrequency | null;
+	/** The IDX tables (tick bands, AR bands, fees, sessions) the ticket needs. */
+	idx: IdxTables;
+	/** One decision for the session, with the measured case behind it. */
+	verdict: Verdict;
+}
+
+export type VerdictState = "ENTER" | "WAIT" | "NO_TRADE" | "DATA_UNSAFE";
+
+/** Why the verdict is not simply "buy". */
+export interface VerdictBlocker {
+	key: string;
+	label: string;
+	severity: "data" | "market" | "size" | "name";
+	text: string;
+	value: number | null;
+	threshold: number | null;
+	unit: string;
+}
+
+/** One data-integrity test. All of them must pass before a ticket is issued. */
+export interface VerdictCheck {
+	key: string;
+	label: string;
+	ok: boolean;
+	detail: string;
+}
+
+/** The measured argument for standing down, as numbers. */
+export interface StandDownCase {
+	band: RegimeBand;
+	breadth: number;
+	threshold: number;
+	long_run_median: number;
+	sessions_measured: number | null;
+	round_trip_pct: number;
+	bands: {
+		trending: number | null;
+		sideways: number | null;
+		capitulation: number | null;
+	};
+	sideways: {
+		win_rate: number | null;
+		avg_ret_pct: number | null;
+		drift_5s_pct: number | null;
+		capture_needed_x: number | null;
+	};
+	capitulation: {
+		win_rate: number | null;
+		avg_ret_pct: number | null;
+		drift_5s_pct: number | null;
+	};
+	trending: { drift_5s_pct: number | null; capture_achieved_x: number | null };
+	book: {
+		trend_only: BandBook;
+		with_sideways: BandBook;
+		slots: number;
+		universe: string;
+		source: string;
+		note: string;
+	};
+	claim: string;
+	provenance: Citation[];
+}
+
+export interface BandBook {
+	available: boolean;
+	label: string;
+	trades?: number | null;
+	win_rate?: number | null;
+	avg_ret_pct?: number | null;
+	total_pct?: number | null;
+	max_drawdown_pct?: number | null;
+}
+
+export interface Verdict {
+	state: VerdictState;
+	action: string;
+	headline: string;
+	detail: string;
+	primary_blocker: VerdictBlocker | null;
+	blockers: VerdictBlocker[];
+	change_needed: string;
+	recheck_on: string;
+	recheck_basis: "exchange_calendar" | "next_weekday_unverified";
+	integrity: VerdictCheck[];
+	sound: boolean;
+	buys: boolean;
+	stand_down_case: StandDownCase;
+	place_by: string;
+	place_note: string;
+}
+
+/**
+ * The IDX structure the ticket must not hard-code.
+ *
+ * The rulebook moved on 28 September 2026 and the AR bands become symmetric on
+ * 1 January 2027, so these arrive dated from the backend rather than compiled in.
+ */
+export interface IdxTables {
+	lot_size: number;
+	min_price_idr: number;
+	economic_floor_note: string;
+	broker_fee_buy: number;
+	broker_fee_sell: number;
+	exchange_fee_buy: number;
+	exchange_fee_sell: number;
+	stamp_duty_idr: number;
+	stamp_duty_above_idr: number;
+	study_round_trip_pct: number;
+	untradeable_from: string;
+	untradeable_to: string;
+	sessions: { label: string; start: string; end: string; note: string }[];
+	tick_bands: { low: number; high: number | null; tick: number }[];
+	ar_bands: {
+		low: number;
+		high: number | null;
+		up_pct: number | null;
+		down_pct: number | null;
+		effective_from: string;
+		note: string;
+	}[];
+}
+
+/** What POST /api/plan/size answers with. */
+export interface SizeTicket {
+	price: number;
+	exit_method: string;
+	geometry: Geometry;
+	ar: {
+		reference: number;
+		up_price: number;
+		down_price: number;
+		up_pct: number;
+		down_pct: number;
+		band: string;
+		note: string;
+	};
+	position: {
+		study_cap_idr: number;
+		study_floor_idr: number;
+		max_participation: number;
+		median_turnover_60: number | null;
+	};
+	tables: IdxTables;
 }
 
 /**
@@ -516,6 +690,13 @@ export const planApi = {
 		api.getCached<PlanDetail>(`/api/plan/${ticker.toUpperCase()}`, {
 			ttl: PLAN_TTL,
 		}),
+	/** Size one order without a universe pass (docs/21 §8). */
+	size: (body: {
+		price: number;
+		median_turnover_60?: number | null;
+		risk_budget_idr?: number | null;
+		exit_method?: string | null;
+	}) => api.post<SizeTicket>("/api/plan/size", body),
 	/** Re-read the study's results, for when a new round lands. */
 	refresh: () => api.post<{ refreshed: boolean; as_of: string; open: boolean }>(
 		"/api/plan/refresh",

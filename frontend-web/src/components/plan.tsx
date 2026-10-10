@@ -385,17 +385,30 @@ export function CandidateRow({ candidate }: { candidate: Candidate }) {
 					note={`+${g.target_pct}% · ~${g.holding_weeks} weeks`}
 					color="var(--up)"
 				/>
-				<Level label="Stop" value={idr(g.stop_price)} note={`−${g.stop_pct}%`} color="var(--down)" />
 				<Level
-					label="On Rp1m"
-					value={`+${idr(g.target_gain_idr_1m)}`}
-					note={`risk ${idr(g.max_loss_idr_1m)}`}
+					label="Stop"
+					value={idr(g.stop_price)}
+					note={`−${g.stop_pct}% · R:R 1 : ${g.reward_risk.toFixed(2)}`}
+					color="var(--down)"
+				/>
+				<Level
+					label="Position"
+					value={g.position_idr != null ? idr(g.position_idr) : "—"}
+					note={
+						g.lots != null && g.participation_pct != null
+							? `${idr(g.lots)} lots · ${g.participation_pct.toFixed(2)}% of ADV`
+							: "not sizeable at 2% of ADV"
+					}
 					color="var(--text)"
 				/>
 				<Level
-					label="Reward : risk"
-					value={`1 : ${g.reward_risk.toFixed(2)}`}
-					note={`${g.gross_risk_pct}% incl. costs`}
+					label="Max loss"
+					value={g.max_loss_idr != null ? `−${idr(g.max_loss_idr)}` : "—"}
+					note={
+						g.risk_pct_of_position != null
+							? `${g.risk_pct_of_position.toFixed(1)}% of the position, costs in`
+							: `${g.gross_risk_pct}% incl. costs`
+					}
 					color="var(--text)"
 				/>
 			</div>
@@ -412,7 +425,21 @@ export function CandidateRow({ candidate }: { candidate: Candidate }) {
 				{open && (
 					<div className="mt-4 grid gap-5 lg:grid-cols-2">
 						<GateList gates={candidate.gates} />
-						<HowToHold candidate={candidate} />
+						<div className="space-y-4">
+							<HowToHold candidate={candidate} />
+							{candidate.geometry.notes?.length ? (
+								<ul className="space-y-1.5 border-t border-[var(--border)] pt-3">
+									{candidate.geometry.notes.map((note) => (
+										<li
+											key={note}
+											className="text-[11px] leading-relaxed text-[var(--text-faint)]"
+										>
+											{note}
+										</li>
+									))}
+								</ul>
+							) : null}
+						</div>
 					</div>
 				)}
 			</div>

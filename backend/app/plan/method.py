@@ -47,6 +47,7 @@ QUARTERLY_ANALYSIS_CSV = QUARTERLY_DIR / "quarterly_analysis.csv"
 HOLDOUT_SEARCH_CSV = RESULTS / "holdout_search_screen.csv"
 HOLDOUT_CELLS_CSV = RESULTS / "holdout_search_cells_screen.csv"
 BREADTH_DAYS_CSV = RESULTS / "results_breadth_days.csv"
+MAX_RETURN_CEILING_CSV = RESULTS / "max_return_ceiling.csv"
 FIVE_YEAR_REPLAY_CSV = RESULTS / "five_year_replay_flat.csv"
 
 # ── the rule chain ───────────────────────────────────────────────────────────
@@ -346,6 +347,7 @@ def clear_cache() -> None:
     """
     _table.cache_clear()
     _family_spec_count.cache_clear()
+    book_with_sideways.cache_clear()
     holdout.cache_clear()
     regime_frequency.cache_clear()
     five_year_replay.cache_clear()
@@ -1109,6 +1111,58 @@ def five_year_replay() -> dict[str, object]:
             "Not comparable to the walk-forward numbers: one window instead of "
             "six, and the universe is fixed at the final date, so delisted names "
             "are missing entirely. Survivorship runs through every tier."
+        ),
+    }
+
+
+@lru_cache(maxsize=1)
+def book_with_sideways() -> dict[str, object]:
+    """What the same book earns when the flat band is traded rather than skipped.
+
+    Read from `results/max_return_ceiling.csv`. This is the sharpest statement of
+    why the app's default answer is "no trade": one universe, one screen, one
+    period, ten slots — the only difference between the two rows is whether the
+    sideways band was left in. Trading it books a loss and a 67% drawdown; leaving
+    it out books a gain and a 7.9% drawdown.
+    """
+    rows = _rows(MAX_RETURN_CEILING_CSV)
+
+    def row_for(combo: str) -> dict[str, str] | None:
+        return next(
+            (
+                r
+                for r in rows
+                if r.get("universe") == "illiquid (screen)"
+                and r.get("combo") == combo
+                and _f(r, "slots") == 10.0
+            ),
+            None,
+        )
+
+    def shape(row: dict[str, str] | None, label: str) -> dict[str, object]:
+        if row is None:
+            return {"available": False, "label": label}
+        return {
+            "available": True,
+            "label": label,
+            "trades": _f(row, "trades"),
+            "win_rate": _f(row, "win"),
+            "avg_ret_pct": _f(row, "avg"),
+            "total_pct": _f(row, "total"),
+            "max_drawdown_pct": _f(row, "max_dd"),
+        }
+
+    return {
+        "trend_only": shape(row_for("tier 1 only (trending)"), "flat band skipped"),
+        "with_sideways": shape(
+            row_for("all tiers (incl. sideways, loses money)"), "flat band traded"
+        ),
+        "slots": 10,
+        "universe": "illiquid screen (250M IDR turnover floor)",
+        "source": str(MAX_RETURN_CEILING_CSV),
+        "note": (
+            "One universe, one screen, one period: the only difference between these "
+            "two rows is whether the sideways band was traded."
         ),
     }
 

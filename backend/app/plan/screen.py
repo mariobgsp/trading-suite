@@ -24,6 +24,7 @@ from typing import Iterable
 import numpy as np
 import pandas as pd
 
+from . import idx
 from . import method as M
 from .bars import Frames
 from .model import Candidate, Gate, GateKey, Geometry, Regime, WatchItem
@@ -41,8 +42,15 @@ MAX_FROZEN_FRACTION = 0.50
 # universe used 1bn; the shipped screen lowered it to 250m for thin names and
 # pairs it with an ADV cap so a position is still fillable.
 MIN_TURNOVER_IDR = 250_000_000.0
+# Economic, not legal. The rulebook has allowed a Rp1 minimum price since
+# 2026-09-28; the screen keeps Rp50 because at Rp100 a single tick is already 1%
+# of the price. See `idx.economic_floor_note()`.
 MIN_PRICE_IDR = 50.0
 TURNOVER_WINDOW = 60
+# ── sizing (docs/21 §8) — what makes a thin name's number real ──────────────
+POSITION_FLOOR_IDR = 2_000_000.0
+POSITION_CAP_IDR = 10_000_000.0
+MAX_PARTICIPATION = 0.02
 # A "breakout" of more than this over the 40-day high is a gap or a corporate
 # action, not a breakout, and the study's geometry would never have filled it.
 MAX_BREAKOUT_PCT = 15.0
@@ -59,6 +67,40 @@ def _sma(s: pd.Series, n: int) -> pd.Series:
 def _volatility(close: pd.Series) -> pd.Series:
     """20-session realised volatility in percent, as the study computes it."""
     return close.pct_change().rolling(M.VOL_WINDOW).std() * 100.0
+
+
+def _median_turnover(window: pd.DataFrame) -> float | None:
+    """Median session value traded over the study's 60-session window, in IDR.
+
+    None rather than a guess when the history is short or the volume column is
+    missing: a position size computed from a missing number is the kind of
+    fiction the participation cap exists to prevent.
+    """
+    if "volume" not in window.columns or len(window) < TURNOVER_WINDOW:
+        return None
+    tail = window.tail(TURNOVER_WINDOW)
+    value = (tail["close"].astype(float) * tail["volume"].astype(float)).median()
+    return float(value) if np.isfinite(value) and value > 0 else None
+
+
+def study_position(turnover_idr: float | None) -> tuple[float | None, float | None, str]:
+    """The study's own sizing rule, and why it refuses a name.
+
+    `clamp(2% x median 60-session turnover, 2M, 10M)` with a 2% participation
+    reject (docs/21 §8). The reject is the load-bearing part: at a 250M IDR
+    turnover floor the 2M floor binds for anything under 100M a day, and those
+    names are refused as untradeable rather than simulated at a size nobody could
+    have filled.
+    """
+    if turnover_idr is None or turnover_idr <= 0:
+        return None, None, "no turnover history"
+    position = min(max(MAX_PARTICIPATION * turnover_idr, POSITION_FLOOR_IDR), POSITION_CAP_IDR)
+    participation = position / turnover_idr
+    if turnover_idr < POSITION_FLOOR_IDR / MAX_PARTICIPATION:
+        return None, None, "under 100M IDR a day: the 2M floor would be over 2% of ADV"
+    if participation > MAX_PARTICIPATION:
+        return None, None, "over 2% of ADV"
+    return position, participation, ""
 
 
 def _weekly_trend(frame: pd.DataFrame) -> pd.Series:
@@ -356,20 +398,97 @@ def _evaluate(
         "rs_rating": float(rating) if np.isfinite(rating) else 0.0,
         "vol20": vol20,
         "vol20_median": vol20_median,
+        "turnover_idr": _median_turnover(window),
         "passed": all(g.passed for g in gates.values()),
     }
 
 
 # ── geometry ─────────────────────────────────────────────────────────────────
-def _geometry(close: float, exit_method: str) -> Geometry:
+def _geometry(
+    close: float,
+    exit_method: str,
+    turnover_idr: float | None = None,
+    risk_budget_idr: float | None = None,
+    spread_ticks: int = 2,
+) -> Geometry:
+    """Entry, target, stop, and a size the market can absorb.
+
+    Three things this got wrong, all of them expensive:
+
+      * it took `RISK_BUDGET_IDR` — documented as the loss the user will book on
+        one name — and used it as the *notional*. With a 35% stop that is a 35%
+        loss on the budget rather than the budget, roughly four times the risk the
+        constant describes.
+      * it ignored turnover entirely, so a name the study refuses to size (under
+        100M IDR a day) was handed the full cap.
+      * it printed levels off the tick grid, which are not prices anyone can
+        enter.
+
+    The study's rule is `clamp(2% x median 60-session turnover, 2M, 10M)` with a
+    2% participation reject (docs/21 §8). This applies it, then takes the smaller
+    of that and what the risk budget affords, and rounds to whole lots.
+    """
     target_pct, stop_pct, hold = M.exit_for(exit_method)
+    cost_pct = M.ROUND_TRIP_COST * 100.0
+    budget = float(risk_budget_idr if risk_budget_idr is not None else M.RISK_BUDGET_IDR)
     entry = close
-    target = entry * (1.0 + target_pct / 100.0)
-    stop = entry * (1.0 - stop_pct / 100.0)
-    per_lot = entry * M.LOT_SIZE
-    lots = int(M.RISK_BUDGET_IDR // per_lot) * M.LOT_SIZE
-    notional = lots * entry
-    gross_risk = stop_pct + M.ROUND_TRIP_COST * 100.0
+    tick = idx.tick_for(entry)
+    # Both levels onto the grid. Rounding down keeps the advertised target inside
+    # the rule that was measured; the ticket states the rounding either way.
+    target = idx.round_to_tick(entry * (1.0 + target_pct / 100.0), "down")
+    stop = idx.round_to_tick(entry * (1.0 - stop_pct / 100.0), "down")
+    friction = idx.friction_round_trip(
+        entry, spread_ticks=spread_ticks, study_model_pct=cost_pct
+    )
+
+    study_size, _study_participation, why = study_position(turnover_idr)
+    cap_shares = int(study_size // (entry * M.LOT_SIZE)) * M.LOT_SIZE if study_size else 0
+    risk_per_share = max(entry - stop, 0.0) + entry * cost_pct / 100.0
+    budget_shares = int(budget / risk_per_share) if risk_per_share > 0 else 0
+    budget_lots = int(budget_shares // M.LOT_SIZE) * M.LOT_SIZE
+
+    # A name the study's rule refuses has no size at all. The risk budget can make
+    # a position smaller; it can never admit one the participation cap rejects —
+    # otherwise "refused as untradeable" would become a 28M position in a name
+    # that trades 50M a day.
+    if study_size is None:
+        shares, basis = 0, "none"
+    elif cap_shares <= budget_lots:
+        shares, basis = cap_shares, "study_adv"
+    elif budget_lots:
+        shares, basis = budget_lots, "risk_budget"
+    else:
+        shares, basis = 0, "none"
+
+    position = shares * entry
+    max_loss = shares * (entry - stop) + position * cost_pct / 100.0
+    participation_pct = (
+        round(position / turnover_idr * 100.0, 3) if (turnover_idr and shares) else None
+    )
+
+    notes: list[str] = []
+    if study_size is None:
+        notes.append(f"The study's sizing rule refuses this name: {why}.")
+    elif basis == "risk_budget":
+        notes.append(
+            "Sized by the risk budget rather than by turnover: the 2% ADV cap "
+            f"would allow {round(study_size):,} IDR."
+        )
+    if shares == 0 and study_size is not None:
+        notes.append("No size fits both the 2% ADV cap and the risk budget.")
+    if friction.over_study_pct > 0.01:
+        notes.append(
+            f"A real round trip costs about {friction.total_pct:.2f}% at this price "
+            f"({friction.fees_pct:.2f}% fees + {friction.spread_pct:.2f}% spread), against "
+            f"the study's {friction.study_model_pct:.2f}% model."
+        )
+    if not idx.target_inside_ar(entry, target):
+        notes.append(
+            "The target sits outside today's auto-rejection band, so it cannot be "
+            "reached in one session."
+        )
+
+    gross_risk = stop_pct + cost_pct
     return Geometry(
         entry_basis="last close; the study fills at the next session's open",
         target_pct=target_pct,
@@ -380,10 +499,55 @@ def _geometry(close: float, exit_method: str) -> Geometry:
         stop_price=round(stop, 2),
         gross_risk_pct=round(gross_risk, 2),
         reward_risk=round(target_pct / stop_pct, 3),
-        max_loss_idr_1m=round(notional * gross_risk / 100.0, -2),
-        target_gain_idr_1m=round(notional * (target_pct - M.ROUND_TRIP_COST * 100.0) / 100.0, -2),
+        max_loss_idr_1m=round(1_000_000.0 * gross_risk / 100.0, -2),
+        target_gain_idr_1m=round(1_000_000.0 * (target_pct - cost_pct) / 100.0, -2),
         holding_weeks=round(hold / 5.0, 1),
+        position_idr=round(position, 2) if shares else None,
+        shares=shares or None,
+        lots=(shares // M.LOT_SIZE) or None,
+        participation_pct=participation_pct,
+        sizing_basis=basis,
+        risk_budget_idr=round(budget, 2),
+        max_loss_idr=round(max_loss, 2) if shares else None,
+        risk_pct_of_position=(
+            round(max_loss / position * 100.0, 2) if (shares and position) else None
+        ),
+        tick_idr=tick,
+        friction=friction.as_dict(),
+        notes=tuple(notes),
     )
+
+
+def size_ticket(
+    price: float,
+    median_turnover_60: float | None = None,
+    risk_budget_idr: float | None = None,
+    exit_method: str | None = None,
+    spread_ticks: int = 2,
+) -> dict[str, object]:
+    """Size one order and price its friction, without a universe pass.
+
+    The ticket has to re-size when the price or the budget changes, and running a
+    900-name screen for arithmetic would be absurd. This is the same code path the
+    plan uses, so the two cannot disagree.
+    """
+    exit_name = exit_method or M.DEFAULT_EXIT
+    geometry = _geometry(
+        price, exit_name, median_turnover_60, risk_budget_idr, spread_ticks
+    )
+    return {
+        "price": price,
+        "exit_method": exit_name,
+        "geometry": geometry.as_dict(),
+        "ar": idx.ar_limits(price).as_dict(),
+        "position": {
+            "study_cap_idr": POSITION_CAP_IDR,
+            "study_floor_idr": POSITION_FLOOR_IDR,
+            "max_participation": MAX_PARTICIPATION,
+            "median_turnover_60": median_turnover_60,
+        },
+        "tables": idx.tables(),
+    }
 
 
 def _score(record: dict[str, object]) -> float:
@@ -481,13 +645,25 @@ def screen(
                     change_pct=float(record["change_pct"] or 0.0),
                     as_of=as_of.date(),
                     gates=tuple(record["gates"].values()),  # type: ignore[union-attr]
-                    geometry=_geometry(float(record["close"]), exit_method),
+                    geometry=_geometry(
+                        float(record["close"]),
+                        exit_method,
+                        turnover_idr=(
+                            float(record["turnover_idr"])  # type: ignore[arg-type]
+                            if record.get("turnover_idr") is not None
+                            else None
+                        ),
+                    ),
                     rs_rating=float(record["rs_rating"]),
                     breadth=breadth,
                     breakout_pct=float(record["breakout_pct"]),
                     vol20=float(record["vol20"]),
                     vol20_median=float(record["vol20_median"]),
-                    turnover_idr=None,
+                    turnover_idr=(
+                        float(record["turnover_idr"])  # type: ignore[arg-type]
+                        if record.get("turnover_idr") is not None
+                        else None
+                    ),
                     score=_score(record),
                 )
             )

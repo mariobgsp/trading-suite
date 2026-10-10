@@ -89,9 +89,25 @@ class Geometry:
     stop_price: float
     gross_risk_pct: float
     reward_risk: float
+    # Kept because the buy list has shown these two for a while; they are an
+    # illustration on Rp1m, never the position. `position_idr` below is the real
+    # size and `max_loss_idr` the real risk.
     max_loss_idr_1m: float
     target_gain_idr_1m: float
     holding_weeks: float
+    # ── sizing, docs/21 §8 ───────────────────────────────────────────────────
+    position_idr: float | None = None
+    shares: int | None = None
+    lots: int | None = None
+    participation_pct: float | None = None
+    sizing_basis: str = ""
+    risk_budget_idr: float | None = None
+    max_loss_idr: float | None = None
+    risk_pct_of_position: float | None = None
+    # ── the IDX overlay ─────────────────────────────────────────────────────
+    tick_idr: float | None = None
+    friction: dict[str, object] = field(default_factory=dict)
+    notes: tuple[str, ...] = ()
 
     def as_dict(self) -> dict[str, object]:
         return dict(
@@ -107,6 +123,17 @@ class Geometry:
             max_loss_idr_1m=self.max_loss_idr_1m,
             target_gain_idr_1m=self.target_gain_idr_1m,
             holding_weeks=self.holding_weeks,
+            position_idr=self.position_idr,
+            shares=self.shares,
+            lots=self.lots,
+            participation_pct=self.participation_pct,
+            sizing_basis=self.sizing_basis,
+            risk_budget_idr=self.risk_budget_idr,
+            max_loss_idr=self.max_loss_idr,
+            risk_pct_of_position=self.risk_pct_of_position,
+            tick_idr=self.tick_idr,
+            friction=dict(self.friction),
+            notes=list(self.notes),
         )
 
 
@@ -431,6 +458,13 @@ class Plan:
     # which, because only one of those two survives a public holiday - and no
     # calendar contains the future.
     next_session_basis: str = "next_weekday_unverified"
+    # The IDX tables the ticket needs (tick bands, AR bands, fees, sessions), so
+    # no component hard-codes a tick size or a commission.
+    idx: dict[str, object] = field(default_factory=dict)
+    # One verdict for the session: ENTER, WAIT, NO_TRADE or DATA_UNSAFE. Built by
+    # `verdict.py`, which is pure — so all four states are unit-testable without
+    # running a universe pass.
+    verdict: dict[str, object] = field(default_factory=dict)
     # The same chain, measured after the study's correctness pass. Kept beside
     # `evidence` rather than instead of it: one is what the search found, the
     # other is what the study now publishes, and a screen showing only the first
@@ -460,4 +494,6 @@ class Plan:
             holdout=self.holdout.as_dict() if self.holdout else None,
             frequency=self.frequency.as_dict() if self.frequency else None,
             corrected=self.corrected.as_dict() if self.corrected else None,
+            idx=dict(self.idx),
+            verdict=dict(self.verdict),
         )

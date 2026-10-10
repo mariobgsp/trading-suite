@@ -7,6 +7,7 @@ from datetime import date
 from typing import Any
 
 from fastapi import APIRouter, Query
+from pydantic import BaseModel, Field
 
 from app import plan as planner
 
@@ -38,6 +39,38 @@ async def method() -> dict[str, Any]:
 async def name(ticker: str) -> dict[str, Any]:
     """One name, with every gate's measured value."""
     return await asyncio.to_thread(planner.detail, ticker)
+
+
+class SizeRequest(BaseModel):
+    """A ticket re-size: what the calculator needs and nothing more."""
+
+    price: float = Field(gt=0, description="the price to size at, in IDR")
+    median_turnover_60: float | None = Field(
+        default=None, description="median 60-session turnover in IDR, if known"
+    )
+    risk_budget_idr: float | None = Field(
+        default=None, gt=0, description="loss the user will book on this name"
+    )
+    exit_method: str | None = Field(
+        default=None, description="a measured exit name; the shipped one by default"
+    )
+
+
+@router.post("/size")
+async def size(body: SizeRequest) -> dict[str, Any]:
+    """Size one order, price its friction, and show the AR limits around it.
+
+    The ticket re-sizes as the price or the budget changes, and a universe pass
+    for arithmetic would be absurd. Same code path as the plan, so the two cannot
+    disagree.
+    """
+    return await asyncio.to_thread(
+        planner.size_ticket,
+        body.price,
+        body.median_turnover_60,
+        body.risk_budget_idr,
+        body.exit_method,
+    )
 
 
 @router.post("/refresh")

@@ -52,7 +52,7 @@ def test_every_citation_records_where_it_came_from():
         assert cited.line > 0, f"{cited.label}: line {cited.line}"
         assert cited.quote.strip(), f"{cited.label} cites a blank quote"
         assert cited.regenerate.strip(), f"{cited.label} names no way to regenerate it"
-        assert cited.unit in {"%", "-", "trades", "sessions"}, f"{cited.label}: {cited.unit}"
+        assert cited.unit in {"%", "-", "trades", "sessions", "x"}, f"{cited.label}: {cited.unit}"
 
 
 def test_the_corrected_row_reads_the_cited_values():

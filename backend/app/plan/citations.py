@@ -160,6 +160,68 @@ _ALL: tuple[Citation, ...] = (
         "no configuration of the rules",
         REGEN_ENGINE,
     ),
+    # ── the case for standing down, band by band ────────────────────────────
+    # These are the numbers that make "no trade" an answer with a reason rather
+    # than an absence of one. Each was measured on the same rules the app runs.
+    _cite("sideways_win_rate", 0.5741, "%", _SPEC, 100, "57.41% win / **−2.11%**"),
+    _cite("sideways_avg_ret_pct", -2.11, "%", _SPEC, 100, "57.41% win / **−2.11%**"),
+    _cite(
+        "capitulation_win_rate",
+        0.5315,
+        "%",
+        _SPEC,
+        101,
+        "53.15% / +0.15% on the clean universe",
+    ),
+    _cite(
+        "capitulation_avg_ret_pct",
+        0.15,
+        "%",
+        _SPEC,
+        101,
+        "53.15% / +0.15% on the clean universe",
+    ),
+    _cite(
+        "capitulation_share",
+        0.072,
+        "%",
+        _SPEC,
+        77,
+        "| CAPITULATION (watchlist) | 51 | 7.2% |",
+    ),
+    _cite(
+        "sideways_drift_5s_pct",
+        0.14,
+        "%",
+        _CEIL,
+        82,
+        "| sideways (0.25–0.60) | +0.14% | **13–40×** — not reachable |",
+    ),
+    _cite(
+        "sideways_capture_hi",
+        40.0,
+        "x",
+        _CEIL,
+        82,
+        "**13–40×** — not reachable",
+    ),
+    _cite(
+        "trending_drift_5s_pct",
+        0.77,
+        "%",
+        _CEIL,
+        81,
+        "| trending (>0.60) | +0.77% | 1.8× — achieved by tier 1 |",
+    ),
+    _cite("trending_capture", 1.8, "x", _CEIL, 81, "1.8× — achieved by tier 1"),
+    _cite(
+        "capitulation_drift_5s_pct",
+        2.11,
+        "%",
+        _CEIL,
+        80,
+        "| capitulation (<0.25) | +2.11% | 0.9× — achievable |",
+    ),
 )
 
 CITATIONS: dict[str, Citation] = {c.label: c for c in _ALL}

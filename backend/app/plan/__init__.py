@@ -23,8 +23,10 @@ from datetime import date
 import pandas as pd
 
 from . import citations as C
+from . import idx as X
 from . import method as M
 from . import screen as S
+from . import verdict as V
 from .bars import BarsSource, Frames, default_source
 from .model import Candidate, Evidence, Gate, Plan, Regime, WatchItem
 
@@ -63,46 +65,6 @@ def invalidate() -> None:
         _frames_cache.clear()
         _cache.clear()
     M.clear_cache()
-
-
-def _headline(open_: bool, n: int, regime: Regime, spec: M.FamilySpec) -> str:
-    """One sentence for the whole page.
-
-    The shut case is split by band because "flat" and "watch" are different
-    instructions. The study is explicit that the sideways band is where the index
-    drifts about zero over five sessions while a round trip costs 0.50% — so
-    flat there is the finding, not an absence of one. Capitulation is where the
-    watchlist earns its keep.
-    """
-    if open_ and n:
-        return f"{n} name{'s' if n != 1 else ''} cleared every condition."
-    if open_:
-        return "Trending tape, but no name cleared every condition today."
-
-    if regime.band == "sideways":
-        return (
-            f"Sideways: breadth {regime.breadth * 100:.0f}%, short of the "
-            f"{M.BREADTH_TRENDING * 100:.0f}% this method trades at. The study "
-            f"measured this band losing to costs, so the instruction is flat - "
-            f"watch the list below instead."
-        )
-    if regime.band == "capitulation":
-        return (
-            f"Capitulation: breadth {regime.breadth * 100:.0f}%, below even the "
-            f"{M.BREADTH_CAPITULATION * 100:.0f}% line. Nothing here is a buy; "
-            f"this is the band where a broken-out name is worth noting for later."
-        )
-    if not regime.breadth_open:
-        return (
-            f"Market gate shut: breadth {regime.breadth * 100:.0f}% is below the "
-            f"{spec.breadth * 100:.0f}% this method requires."
-        )
-    if regime.index_close is not None:
-        return (
-            "Market gate shut: the index is below its own 200-day average, and this "
-            f"method does not buy into that (IHSG {regime.index_close:,.0f})."
-        )
-    return "Market gate shut: the index is below its own 200-day average."
 
 
 def _horizon(as_of: date) -> str:
@@ -146,15 +108,37 @@ def plan(as_of: date | None = None, exit_method: str | None = None) -> Plan:
     as_of_date = session.date()
     calendar = frames.sessions()
     market_open = regime.breadth_open and (regime.index_above_200 or not spec.need_bench)
+
+    required = tuple(r.key for r in M.RULES if _rule_required(r.key, spec))
+    next_session = S.next_session(as_of_date, calendar)
+    next_basis = S.next_session_basis(as_of_date, calendar)
+    # The verdict is built from the same numbers the plan shows, and it is the
+    # single source for the headline: two sentences describing one session is how
+    # a UI ends up disagreeing with itself.
+    verdict = V.build(
+        regime=regime,
+        candidates=candidates,
+        watchlist=watchlist,
+        required_gates=required,
+        evidence=evidence,
+        bars_session=as_of_date,
+        exchange_session=calendar[-1].date() if calendar else None,
+        universe_size=regime.universe_size,
+        names_on_session=frames.coverage_on(session),
+        phantom_dropped=frames.phantom_dropped,
+        next_session=next_session,
+        next_session_basis=next_basis,
+        frequency=M.regime_frequency(),
+    )
     result = Plan(
         as_of=as_of_date,
         session_label=as_of_date.strftime("%a %d %b %Y"),
-        next_session=S.next_session(as_of_date, calendar),
-        next_session_basis=S.next_session_basis(as_of_date, calendar),
+        next_session=next_session,
+        next_session_basis=next_basis,
         horizon=_horizon(as_of_date),
         method_name=evidence.family,
         open=market_open,
-        headline=_headline(market_open, len(candidates), regime, spec),
+        headline=verdict.headline,
         regime=regime,
         candidates=tuple(candidates),
         watchlist=tuple(watchlist),
@@ -170,9 +154,8 @@ def plan(as_of: date | None = None, exit_method: str | None = None) -> Plan:
         ),
         source=frames.source,
         ranked=tuple(ranked),
-        required_gates=tuple(
-            r.key for r in M.RULES if _rule_required(r.key, spec)
-        ),
+        required_gates=required,
+        verdict=verdict.as_dict(),
         coverage=dict(
             codes=len(frames.bars),
             benchmark=str(session.date()),
@@ -195,6 +178,7 @@ def plan(as_of: date | None = None, exit_method: str | None = None) -> Plan:
         # publishes after its own correctness pass, and telling them apart is the
         # whole reason this app carries both.
         corrected=M.corrected_evidence(),
+        idx=_idx_block(),
     )
     with _lock:
         _cache[key] = result
@@ -251,7 +235,11 @@ def detail(ticker: str) -> dict[str, object]:
         "distance_text": watch.distance_text if watch else "Not close to firing yet.",
         "gates": [g.__dict__ for g in gates],
         "geometry": (
-            S._geometry(close, current.evidence.exit_method or M.DEFAULT_EXIT).as_dict()
+            S._geometry(
+                close,
+                current.evidence.exit_method or M.DEFAULT_EXIT,
+                turnover_idr=(record.get("turnover_idr") if record is not None else None),
+            ).as_dict()
             if close
             else None
         ),
@@ -349,9 +337,37 @@ def method_card() -> dict[str, object]:
         "costs": {
             "round_trip_pct": M.ROUND_TRIP_COST * 100,
             "note": "Fees and slippage are inside every measured trade.",
+            "idx_note": (
+                "This is the study's flat model and it carries no spread term. The "
+                "ticket prices the real one separately."
+            ),
         },
+        "idx": _idx_block(),
         "studies_at": M.DOCS_DIR.name,
     }
+
+
+def _idx_block() -> dict[str, object]:
+    """The IDX tables the UI renders, so no component hard-codes a tick size."""
+    return X.tables()
+
+
+def size_ticket(
+    price: float,
+    median_turnover_60: float | None = None,
+    risk_budget_idr: float | None = None,
+    exit_method: str | None = None,
+    spread_ticks: int = 2,
+) -> dict[str, object]:
+    """Size one order without running a universe pass (docs/21 §8)."""
+    return S.size_ticket(
+        price, median_turnover_60, risk_budget_idr, exit_method, spread_ticks
+    )
+
+
+def idx_tables() -> dict[str, object]:
+    """The tick, AR and fee tables, for a UI that will not hard-code them."""
+    return _idx_block()
 
 
 def _rule_required(key: str, spec: M.FamilySpec) -> bool:
@@ -388,5 +404,7 @@ __all__ = [
     "ladder",
     "method_card",
     "plan",
+    "idx_tables",
     "set_source",
+    "size_ticket",
 ]

@@ -13,7 +13,7 @@ import {
 	CandidateRow,
 	EvidenceBadge,
 	Section,
-	Verdict,
+	VerdictHero,
 	WatchRow,
 	idr,
 	pct,
@@ -75,19 +75,7 @@ export default function Tonight() {
 
 	return (
 		<Page>
-			<Verdict
-				open={plan.open}
-				headline={plan.headline}
-				sessionLabel={plan.session_label}
-				horizon={plan.horizon}
-				evidence={evidence}
-				costs={plan.costs}
-				coverage={coverage}
-				indexClose={regime.index_close}
-				universeSize={regime.universe_size}
-				nextSession={plan.next_session}
-				nextSessionBasis={plan.next_session_basis}
-			/>
+			<VerdictHero plan={plan} />
 
 			{plan.holdout && !plan.holdout.winners_surviving && (
 				<div className="mb-6 border border-[var(--border)] border-l-[3px] border-l-[var(--gold)] bg-[var(--panel)] p-4">
@@ -155,11 +143,11 @@ export default function Tonight() {
 			</Section>
 
 			<Section
-				title={plan.open ? `Buy for ${plan.horizon}` : "Not buying tonight"}
+				title={plan.verdict.buys ? `Buy for ${plan.horizon}` : "Not buying tonight"}
 				subtitle={
-					plan.open
-						? "Every name below cleared all six conditions. Entry, target and stop are already priced for you — you only have to place the order."
-						: "The gate is shut, so the honest answer is no names. The study measured its win rate on the trades it did take, which is exactly why it waits for these conditions rather than buying something close."
+					plan.verdict.buys
+						? "Every name below cleared every condition this method applies and can be sized at 2% of its own turnover. Entry, target, stop and size are priced for you — you only have to place the order."
+						: "The verdict above is the honest answer. The study measured its win rate on the trades it did take, which is exactly why it waits for these conditions rather than buying something close."
 				}
 				right={`${idr(coverage.tradable_on_session as number)} close to firing`}
 			>

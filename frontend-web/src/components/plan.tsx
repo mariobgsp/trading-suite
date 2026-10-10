@@ -20,6 +20,8 @@ import type {
 	Gate,
 	GateKey,
 	Plan,
+	Verdict,
+	VerdictCheck,
 	WatchItem,
 } from "@/lib/api/plan";
 
@@ -97,92 +99,171 @@ export function Section({
 
 /* ── the verdict ───────────────────────────────────────────────────────────── */
 
-export function Verdict({
-	open,
-	headline,
-	sessionLabel,
-	horizon,
-	evidence,
-	costs,
-	coverage,
-	indexClose,
-	universeSize,
-	nextSession,
-	nextSessionBasis,
-}: {
-	open: boolean;
-	headline: string;
-	sessionLabel: string;
-	horizon: string;
-	evidence: Evidence;
-	/** The running chain's cost model, so no component restates the number. */
-	costs?: Plan["costs"];
-	coverage: Plan["coverage"];
-	indexClose: number | null;
-	universeSize: number;
-	nextSession?: string;
-	nextSessionBasis?: Plan["next_session_basis"];
-}) {
-	const tone = open ? "var(--up)" : "var(--gold)";
+/**
+ * The verdict, at the size the decision deserves.
+ *
+ * Four states and only one of them is a buy. `DATA_UNSAFE` is deliberately the
+ * loudest, and it is the backend that withholds the tickets: a screen that says
+ * "buy" on a broken bar source is worse than one that says nothing.
+ */
+export function VerdictHero({ plan }: { plan: Plan }) {
+	const v = plan.verdict;
+	const tone =
+		v.state === "ENTER"
+			? "var(--up)"
+			: v.state === "DATA_UNSAFE"
+				? "var(--down)"
+				: "var(--gold)";
+	const word: Record<string, string> = {
+		ENTER: "Enter",
+		WAIT: "Wait",
+		NO_TRADE: "No trade",
+		DATA_UNSAFE: "Data unsafe",
+	};
 	return (
 		<section
 			className="relative overflow-hidden border border-[var(--border)] bg-[var(--panel)]"
 			style={{ borderLeftWidth: 3, borderLeftColor: tone }}
 			aria-live="polite"
 		>
-			<div className="flex flex-col gap-5 p-5 sm:p-7 lg:flex-row lg:items-start lg:justify-between lg:gap-10">
+			<div className="flex flex-col gap-6 p-5 sm:p-7 lg:flex-row lg:items-start lg:justify-between lg:gap-10">
 				<div className="min-w-0">
 					<p className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--text-ghost)]">
-						{sessionLabel} · plan for {horizon}
+						{plan.session_label} · plan for {plan.horizon}
 					</p>
-					<p className="mt-2 flex items-center gap-2.5">
+					<div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
 						<span
 							className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
 							style={{ background: tone }}
 							aria-hidden
 						/>
 						<span
-							className="font-display text-[26px] leading-none tracking-[-0.01em] sm:text-[32px]"
+							className="font-display text-[30px] leading-none tracking-[-0.01em] sm:text-[38px]"
 							style={{ color: tone }}
 						>
-							{open ? "Buy list open" : "Nothing to buy"}
+							{word[v.state] ?? v.state}
 						</span>
+						<span className="font-mono text-[11px] uppercase tracking-[0.14em] text-[var(--text-ghost)]">
+							{v.state}
+						</span>
+					</div>
+					<p className="mt-3 max-w-[64ch] text-[15px] leading-relaxed text-[var(--text)]">
+						{v.headline}
 					</p>
-					<p className="mt-3 max-w-[52ch] text-[14px] leading-relaxed text-[var(--text-dim)]">
-						{headline}
+					<p className="mt-2 max-w-[64ch] text-[13px] leading-relaxed text-[var(--text-dim)]">
+						{v.detail}
 					</p>
-					<p className="mt-4 font-mono text-[11px] leading-relaxed text-[var(--text-ghost)]">
-						{idr(universeSize)} names traded ·{" "}
-						{coverage.codes != null ? `${coverage.codes} in universe` : ""}
-						{indexClose != null ? ` · IHSG ${idr(indexClose)}` : ""}
+					<div className="mt-4 border-l-2 pl-3" style={{ borderColor: tone }}>
+						<p className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--text-faint)]">
+							Do this
+						</p>
+						<p className="mt-1 max-w-[64ch] text-[13px] leading-relaxed text-[var(--text)]">
+							{v.action}
+						</p>
+					</div>
+					<p className="mt-3 max-w-[64ch] text-[12px] leading-relaxed text-[var(--text-faint)]">
+						<span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--text-ghost)]">
+							What would change it ·{" "}
+						</span>
+						{v.change_needed}
 					</p>
-					<p className="mt-1 font-mono text-[11px] leading-relaxed text-[var(--text-ghost)]">
-						{nextSession && (
-							<>
-								Next session {nextSession} ·{" "}
-								{nextSessionBasis === "exchange_calendar" ? (
-									<span className="text-[var(--text-dim)]">from the exchange calendar</span>
-								) : (
-									/* Beyond the last known session no calendar can say whether a
-									   public holiday falls, so say that rather than imply
-									   the date is confirmed. */
-									<span title="The exchange calendar ends at the last session in the data. Past that, only weekends are skipped — a public holiday would not be.">
-										next weekday, holiday unverified
-									</span>
-								)}
-							</>
-						)}
-						{coverage.phantom_bars_dropped ? (
-							<span className="text-[var(--gold)]">
-								{" "}
-								· {coverage.phantom_bars_dropped} bars dropped: sessions the exchange never held
-							</span>
-						) : null}
+					<p className="mt-3 font-mono text-[11px] leading-relaxed text-[var(--text-ghost)]">
+						{idr(plan.regime.universe_size)} names above their 200-day average · breadth{" "}
+						{pct(plan.regime.breadth, 0)}
+						{plan.regime.index_close != null ? ` · IHSG ${idr(plan.regime.index_close)}` : ""}
+						<br />
+						Look again {v.recheck_on} ·{" "}
+						{v.recheck_basis === "exchange_calendar"
+							? "from the exchange calendar"
+							: "next weekday, holiday unverified"}
 					</p>
+					{v.state === "ENTER" && (
+						<p className="mt-3 max-w-[64ch] text-[12px] leading-relaxed text-[var(--text-dim)]">
+							Order by <span className="font-mono text-[var(--text)]">{v.place_by}</span> WIB.{" "}
+							{v.place_note}
+						</p>
+					)}
+					{v.state === "DATA_UNSAFE" && <IntegrityList checks={v.integrity} />}
 				</div>
-				<EvidenceBadge evidence={evidence} roundTripPct={costs?.round_trip} />
+				<div className="w-full shrink-0 space-y-3 lg:w-[330px]">
+					{v.state === "ENTER" && plan.corrected ? (
+						<CorrectedEvidenceCard evidence={plan.corrected} />
+					) : null}
+					{v.state !== "ENTER" ? <StandDownPanel verdict={v} /> : null}
+				</div>
 			</div>
 		</section>
+	);
+}
+
+/**
+ * The measured case for not trading, where the decision is made.
+ *
+ * "No trade" is only an answer if it has a reason, and this app's reason is a
+ * measurement rather than a mood: the same rules, run in the same band on the
+ * same data, lose to costs — and the same book with that band traded draws a 67%
+ * drawdown against 7.9% without it.
+ */
+export function StandDownPanel({ verdict }: { verdict: Verdict }) {
+	const c = verdict.stand_down_case;
+	if (!c) return null;
+	const side = c.sideways;
+	const book = c.book;
+	const signed = (value: number | null | undefined) =>
+		value == null ? "—" : `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
+	return (
+		<div className="border border-[var(--border)] bg-[var(--panel-2)] p-4">
+			<p className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-faint)]">
+				Why flat is the finding
+			</p>
+			{side?.win_rate != null && side.avg_ret_pct != null ? (
+				<p className="mt-2 text-[12px] leading-relaxed text-[var(--text-dim)]">
+					The study ran these same rules in the flat band anyway:{" "}
+					<span className="text-[var(--text)]">{pct(side.win_rate, 1)} win</span> at{" "}
+					<span className="text-[var(--text)]">{signed(side.avg_ret_pct)}</span> a trade. That band
+					drifts {signed(side.drift_5s_pct)} per five sessions while a round trip costs{" "}
+					{pctRaw(c.round_trip_pct, 2)}, so it would have to capture{" "}
+					{side.capture_needed_x ?? "—"}× the drift to pay for itself.
+				</p>
+			) : null}
+			{book?.trend_only?.available && book?.with_sideways?.available ? (
+				<p className="mt-2 text-[12px] leading-relaxed text-[var(--text-dim)]">
+					Same screen, same period, {idr(book.slots)} slots: with the flat band skipped it books{" "}
+					<span className="text-[var(--up)]">{signed(book.trend_only.total_pct)}</span> at a{" "}
+					{book.trend_only.max_drawdown_pct?.toFixed(1)}% drawdown. With the band traded,{" "}
+					<span className="text-[var(--down)]">{signed(book.with_sideways.total_pct)}</span> at{" "}
+					{book.with_sideways.max_drawdown_pct?.toFixed(1)}%.
+				</p>
+			) : null}
+			<p className="mt-3 border-t border-[var(--border)] pt-2.5 font-mono text-[11px] leading-relaxed text-[var(--text-ghost)]">
+				This band is {pct(c.bands.sideways, 0)} of{" "}
+				{c.sessions_measured != null ? idr(c.sessions_measured) : "—"} measured sessions. Long-run
+				median breadth {pct(c.long_run_median, 0)}.
+			</p>
+		</div>
+	);
+}
+
+/** The integrity checks, listed rather than summarised when one fails. */
+export function IntegrityList({ checks }: { checks: VerdictCheck[] }) {
+	if (!checks?.length) return null;
+	return (
+		<ul className="mt-4 space-y-1.5 border-t border-[var(--border)] pt-3">
+			{checks.map((check) => (
+				<li key={check.key} className="flex gap-2 text-[12px] leading-relaxed">
+					<span
+						className="mt-[3px] font-mono text-[11px]"
+						style={{ color: check.ok ? "var(--up)" : "var(--down)" }}
+						aria-hidden
+					>
+						{check.ok ? "✓" : "✕"}
+					</span>
+					<span className={check.ok ? "text-[var(--text-faint)]" : "text-[var(--text-dim)]"}>
+						<span className="text-[var(--text)]">{check.label}</span> — {check.detail}
+					</span>
+				</li>
+			))}
+		</ul>
 	);
 }
 

@@ -318,6 +318,61 @@ class WatchItem:
 
 
 @dataclass(frozen=True)
+class CapitulationItem:
+    """A tier-3 capitulation-bounce name (docs/25, docs/20 sec 7-8).
+
+    Only present in the capitulation band (breadth < 0.25), and never a ticket:
+    every measured row for this rule failed the study's 80%/+5% bar, and the
+    rule's apparent edge on semi-annual folds fell apart on quarterly windows
+    and under the survivorship haircut. It is a watch with its failures
+    attached, so a user can see what the study was looking at - and why it
+    declined to ship it.
+    """
+
+    ticker: str
+    close: float
+    as_of: date
+    breadth: float
+    # The five measured conditions of the sweep champion (cfg 6: rsi2 <= 30, a
+    # 5-session flush of at least 5%, between 5% and 30% under the 200sma, the
+    # flush stabilising, and an ATR% above the dead-name floor).
+    rsi2: float | None
+    ret5: float | None
+    ret10: float | None
+    dist_200_pct: float | None
+    atr14_pct: float | None
+    flushed: bool
+    washed: bool
+    in_band: bool
+    stabilising: bool
+    alive: bool
+    passed_all: bool
+    score: float
+
+    def as_dict(self) -> dict[str, object]:
+        return dict(
+            ticker=self.ticker,
+            close=self.close,
+            as_of=self.as_of.isoformat(),
+            breadth=round(self.breadth, 4),
+            rsi2=None if self.rsi2 is None else round(self.rsi2, 2),
+            ret5=None if self.ret5 is None else round(self.ret5, 2),
+            ret10=None if self.ret10 is None else round(self.ret10, 2),
+            dist_200_pct=(
+                None if self.dist_200_pct is None else round(self.dist_200_pct, 2)
+            ),
+            atr14_pct=None if self.atr14_pct is None else round(self.atr14_pct, 2),
+            flushed=self.flushed,
+            washed=self.washed,
+            in_band=self.in_band,
+            stabilising=self.stabilising,
+            alive=self.alive,
+            passed_all=self.passed_all,
+            score=round(self.score, 2),
+        )
+
+
+@dataclass(frozen=True)
 class Regime:
     """The market-wide gate, which is shared by every name in the plan.
 
@@ -338,6 +393,11 @@ class Regime:
     universe_size: int
     band: str = "trending"
     action: str = "trade"
+    # The measured 5-session forward drift of this band, aggregated from the
+    # study's own cross-sectional diagnostic (results/three_regime_diagnostic.csv,
+    # 262k sessions) at request time. Carried on the regime so the verdict's
+    # "stand flat / watch" reads as a number, not an instruction.
+    measured_drift: dict[str, object] | None = None
 
     def as_dict(self) -> dict[str, object]:
         return dict(
@@ -351,6 +411,9 @@ class Regime:
             universe_size=self.universe_size,
             band=self.band,
             action=self.action,
+            measured_drift=(
+                dict(self.measured_drift) if self.measured_drift else None
+            ),
         )
 
 
@@ -580,6 +643,14 @@ class Plan:
     # other is what the study now publishes, and a screen showing only the first
     # is quoting a number its own author has withdrawn.
     corrected: Evidence | None = None
+    # The tier-3 watch in the capitulation band (docs/25). Empty on every other
+    # band. Never a ticket: the study measured this rule as a lead, not a result.
+    capitulation_watch: tuple[CapitulationItem, ...] = ()
+    # The measured case behind that watch - the sweep, the clean-universe
+    # re-measurement, the survivorship and quarterly stress. Attached only when
+    # the band is capitulation, so the panel that shows the watch shows its
+    # failures in the same glance.
+    capitulation_evidence: dict[str, object] | None = None
 
     def as_dict(self) -> dict[str, object]:
         return dict(
@@ -604,6 +675,10 @@ class Plan:
             holdout=self.holdout.as_dict() if self.holdout else None,
             frequency=self.frequency.as_dict() if self.frequency else None,
             corrected=self.corrected.as_dict() if self.corrected else None,
+            capitulation_watch=[w.as_dict() for w in self.capitulation_watch],
+            capitulation_evidence=(
+                dict(self.capitulation_evidence) if self.capitulation_evidence else None
+            ),
             idx=dict(self.idx),
             verdict=dict(self.verdict),
             five_year=dict(self.five_year),

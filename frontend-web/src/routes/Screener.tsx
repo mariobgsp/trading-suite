@@ -16,6 +16,7 @@ import { Link } from "@tanstack/react-router";
 import { planApi, type Plan, type RankedRow } from "@/lib/api/plan";
 import { usePlanRefreshSignal } from "@/lib/refresh";
 import { Section, idr } from "@/components/plan";
+import { RegimeDriftStrip } from "@/components/regimes";
 import { Page } from "./Tonight";
 
 type Sort = "gates" | "rs" | "near" | "ticker";
@@ -96,6 +97,19 @@ export default function Screener() {
 					because the study says to buy it.
 				</p>
 			</header>
+
+			<RegimeDriftStrip regime={plan.regime} />
+
+			{plan.capitulation_watch?.length > 0 && (
+				<p className="mb-6 border border-[var(--border)] border-l-[3px] border-l-[var(--gold)] bg-[var(--panel)] p-4 text-[13px] leading-relaxed text-[var(--text-dim)]">
+					<span className="font-semibold text-[var(--text)]">Capitulation watch:</span> 
+					{plan.capitulation_watch.length} name
+					{plan.capitulation_watch.length === 1 ? "" : "s"} match the study tier-3
+					bounce conditions tonight. That tier failed the study 80% win and +5% per
+					trade bar on every sweep cell and broke under quarterly windows, so these are
+					watched, never bought. See tonight plan for the full record.
+				</p>
+			)}
 
 			<Section
 				title={`${idr(rows.length)} names ranked`}

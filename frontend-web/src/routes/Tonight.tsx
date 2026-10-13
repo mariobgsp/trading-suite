@@ -10,6 +10,7 @@
 import { useEffect, useState } from "react";
 import { planApi, type Plan } from "@/lib/api/plan";
 import { usePlanRefreshSignal } from "@/lib/refresh";
+import { CapitulationWatch, RegimeDriftStrip } from "@/components/regimes";
 import {
 	CandidateRow,
 	EvidenceBadge,
@@ -122,6 +123,7 @@ export default function Tonight() {
 					</span>
 					<span className="font-mono text-[12px] text-[var(--text-dim)]">→ {band.action}</span>
 				</div>
+				<RegimeDriftStrip regime={regime} />
 				<div className="grid gap-px border border-[var(--border)] bg-[var(--border)] sm:grid-cols-2">
 					<Gate
 						label="Market breadth"
@@ -186,6 +188,8 @@ export default function Tonight() {
 					</ul>
 				</Section>
 			)}
+
+			{plan.capitulation_watch?.length > 0 && <CapitulationWatch plan={plan} />}
 
 			<Section
 				title="What this method is worth"

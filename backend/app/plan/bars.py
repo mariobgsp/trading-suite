@@ -189,12 +189,16 @@ class Frames:
         return counts
 
     def coverage_on(self, session: pd.Timestamp) -> int:
-        """How many names have a bar on exactly this session."""
+        """How many names have a bar on exactly this session.
+
+        The last-bar check would read 0 for every replayed session (a frame's
+        final bar is the archive's end, not the session being replayed), so the
+        count is a presence scan over the session's own date.
+        """
         return sum(
             1
             for frame in self.bars.values()
-            if not frame.empty and pd.Timestamp(frame["date"].iloc[-1]) >= session
-            and pd.Timestamp(frame["date"].iloc[-1]) == session
+            if not frame.empty and bool((frame["date"] == session).any())
         )
 
     def __len__(self) -> int:

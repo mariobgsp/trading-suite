@@ -8,6 +8,7 @@
 
 import { useEffect, useState } from "react";
 import { planApi, type BookRow, type MethodCard } from "@/lib/api/plan";
+import { RegimeSection } from "@/components/regimes";
 import { usePlanRefreshSignal } from "@/lib/refresh";
 import {
 	CorrectedEvidenceCard,
@@ -951,6 +952,8 @@ export default function Method() {
 					</div>
 				) : null}
 			</Section>
+
+			<RegimeSection card={card.regimes} capitulation={card.capitulation} />
 
 			<Section title="What this is not">
 				<div className="border border-[var(--border)] bg-[var(--panel-2)] p-5">

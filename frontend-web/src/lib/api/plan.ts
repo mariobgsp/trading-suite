@@ -163,6 +163,34 @@ export interface WatchItem {
 	gates_total: number;
 }
 
+/**
+ * A tier-3 capitulation-bounce name (docs/25, docs/20 sec 7-8).
+ *
+ * Only present in the capitulation band, and never a ticket: every measured
+ * row for this rule failed the study's 80%/+5% bar, and its edge on
+ * semi-annual folds fell apart on quarterly windows and under the
+ * survivorship haircut. The five conditions are shown so the reader can see
+ * exactly what the rule would have flagged - and why it was not shipped.
+ */
+export interface CapitulationItem {
+	ticker: string;
+	close: number;
+	as_of: string;
+	breadth: number;
+	rsi2: number | null;
+	ret5: number | null;
+	ret10: number | null;
+	dist_200_pct: number | null;
+	atr14_pct: number | null;
+	flushed: boolean;
+	washed: boolean;
+	in_band: boolean;
+	stabilising: boolean;
+	alive: boolean;
+	passed_all: boolean;
+	score: number;
+}
+
 export type RegimeBand = "trending" | "sideways" | "capitulation";
 export type RegimeAction = "trade" | "flat" | "watch";
 
@@ -185,6 +213,24 @@ export interface Regime {
 	universe_size: number;
 	band: RegimeBand;
 	action: RegimeAction;
+	/** The band's own measured 5-session drift, aggregated from the study's
+	 *  262k-session diagnostic at request time. Null when the study is absent. */
+	measured_drift: BandDrift | null;
+}
+
+/**
+ * What a breadth band actually did over the next five sessions.
+ *
+ * Aggregated from `results/three_regime_diagnostic.csv` - the study's own
+ * unconditional 5-session forward return per session - using the app's band
+ * edges. This is the number the flat/watch instruction is cut on, so it is
+ * carried beside the instruction rather than buried in the Method page.
+ */
+export interface BandDrift {
+	sessions: number;
+	folds: number;
+	mean_drift_5s_pct: number | null;
+	median_drift_5s_pct: number | null;
 }
 
 export interface Evidence {
@@ -353,6 +399,10 @@ export interface Plan {
 	evidence: Evidence;
 	/** The same chain, measured after the study's correctness pass. Cited. */
 	corrected: Evidence | null;
+	/** The tier-3 capitulation watch. Empty on every band but capitulation. */
+	capitulation_watch: CapitulationItem[];
+	/** Its measured case - including the sweeps and stresses that refused it. */
+	capitulation_evidence: CapitulationEvidence | null;
 	ladder: Evidence[];
 	costs: {
 		fee_buy: number;
@@ -737,7 +787,162 @@ export interface MethodCard {
 	costs: { round_trip_pct: number; note: string; idx_note?: string };
 	/** The IDX tables, so the costs section does not restate a tick size. */
 	idx: IdxTables;
+	/** The regime work of docs/25-26: drift, holdouts, replays, tiers, flow, exits. */
+	regimes: RegimeCard | null;
+	/** The measured case for watching - never trading - the capitulation tier. */
+	capitulation: CapitulationEvidence | null;
 	studies_at: string;
+}
+
+/** One cell of the tier-3 capitulation sweep (three_regime_sweep_*.csv). */
+export interface CapSweepCell {
+	cap_rsi2: number;
+	cap_flush_pct: number;
+	cap_atr_stop: boolean;
+	t3_n: number;
+	t3_win_rate: number;
+	t3_avg_ret_pct: number;
+	t3_folds: number;
+	hit: boolean;
+}
+
+/** A tier's bound table row (survivorship_bound.csv). */
+export interface TierBound {
+	n: number;
+	tickers: number;
+	win_rate: number;
+	avg_ret_pct: number;
+	profit_factor: number;
+}
+
+/** A tier re-measured on 12 quarterly windows (quarterly_three_regime_screen.csv). */
+export interface TierQuarterly {
+	n: number;
+	win_rate: number;
+	avg_ret_pct: number;
+	profit_factor: number;
+	folds: number;
+}
+
+export interface TierBlock {
+	bounds: Record<string, TierBound>;
+	quarterly?: TierQuarterly;
+}
+
+/** A frozen regime spec, projected over the full history and haircut. */
+export interface FrozenReplay {
+	family: string;
+	side: string;
+	trades: number;
+	win_rate: number;
+	avg_ret_pct: number;
+	book_total_pct: number;
+	book_cagr_pct: number;
+	book_max_dd_pct: number;
+	survivorship_win_rate: number;
+	survivorship_avg_ret_pct: number;
+	cost: string;
+}
+
+/** The same frozen spec on 12 quarterly windows (regime_quarterly.csv). */
+export interface FrozenQuarterly {
+	n: number;
+	win_rate: number;
+	avg_ret_pct: number;
+	profit_factor: number;
+	windows: number;
+	win_rate_range: string;
+	losing_windows: number;
+	survivorship_win_rate: number;
+	survivorship_avg_ret_pct: number;
+	survivorship_n: number;
+}
+
+/** The top-25 holdout ledger for one regime (regime_holdout.csv). */
+export interface RegimeHoldoutBlock {
+	label: string;
+	cells_tested: number;
+	holds: number;
+	best_hold: {
+		family: string;
+		side: string;
+		n: number;
+		win_rate: number;
+		avg_ret_pct: number;
+		folds: number;
+	};
+	hold_win_rate_lo: number | null;
+}
+
+/** The forward-AUC census of the flow indicators against breadth. */
+export interface FlowCensus {
+	breadth_auc: number;
+	best_flow: { indicator: string; auc: number };
+	indicators: number;
+	stable_share: number | null;
+	breadth_leads: boolean;
+	source: string;
+}
+
+/** One row of the study's pooled exit census (exit_method_oos.csv). */
+export interface ExitCensusRow {
+	exit_method: string;
+	target_pct: number | null;
+	stop_pct: number | null;
+	hold: number | null;
+	shape: string | null;
+	trades: number;
+	win_rate: number;
+	avg_ret_pct: number;
+	median_ret_pct: number | null;
+}
+
+/** The regime layer as the Method page reads it. Every block may be absent. */
+export interface RegimeCard {
+	bands: Record<RegimeBand, BandDrift> | null;
+	/** Why the aggregated band drifts can differ slightly from the study's prose. */
+	bands_note: string | null;
+	holdout: { regimes: Record<string, RegimeHoldoutBlock>; source: string } | null;
+	replays: {
+		replays: Record<string, FrozenReplay>;
+		quarterly: Record<string, FrozenQuarterly>;
+		source: string;
+		quarterly_source: string;
+	} | null;
+	tiers: {
+		tiers: Record<string, TierBlock>;
+		source: string;
+		quarterly_source: string;
+	} | null;
+	cap_sweep: {
+		illiquid: CapSweepCell | null;
+		liquid_control: CapSweepCell | null;
+		configs: number;
+		source: string;
+	} | null;
+	flow: FlowCensus | null;
+	exits: { exits: ExitCensusRow[]; source: string } | null;
+}
+
+/** The measured case behind the capitulation watch - failures included. */
+export interface CapitulationEvidence {
+	sweep: {
+		illiquid: CapSweepCell | null;
+		liquid_control: CapSweepCell | null;
+		configs: number;
+		source: string;
+	};
+	clean_universe: { win_rate: number | null; avg_ret_pct: number | null };
+	semi_annual: {
+		n: number | null;
+		win_rate: number | null;
+		avg_ret_pct: number | null;
+		survivorship_win_rate: number | null;
+		survivorship_avg_ret_pct: number | null;
+	};
+	quarterly: TierQuarterly | null;
+	lead_not_result: boolean;
+	why: string;
 }
 
 /**

@@ -32,6 +32,7 @@ from . import method as M
 from .bars import Frames
 from .model import (
     Candidate,
+    CapitulationItem,
     Gate,
     GateHistory,
     GateKey,
@@ -67,6 +68,21 @@ MAX_PARTICIPATION = 0.02
 # A "breakout" of more than this over the 40-day high is a gap or a corporate
 # action, not a breakout, and the study's geometry would never have filled it.
 MAX_BREAKOUT_PCT = 15.0
+# -- the capitulation watch (docs/25, docs/20 sec 7-8) -------------------------
+# The tier-3 bounce, transcribed from the study's own `cap_bounce` family
+# (src/strategies.py) with the sweep champion's parameters (cfg 6 of
+# results/three_regime_sweep_screen_flat.csv: cap_rsi2 30.0, cap_flush 5.0,
+# cap_atr_stop True) and the constants of src/common.py (CAP_*). This is a
+# *watch*: every measured row for the rule failed the study's 80%/+5% bar, and
+# the rule broke on quarterly windows and under the survivorship haircut.
+CAP_RSI2_MAX = 30.0
+CAP_FLUSH_PCT = 5.0
+CAP_MIN_BELOW_SMA_PCT = 5.0
+CAP_MAX_BELOW_SMA_PCT = 30.0
+CAP_ATR_FLOOR_PCT = 2.0
+# How many tier-3 names the plan will carry at most. The band is rare (7.2% of
+# sessions) and the conditions are strict, so a bound only protects the payload.
+CAP_WATCH_LIMIT = 25
 # How many sessions of gate history the reason payload carries. Bounded because
 # the history calls the screen's own breadth and relative-strength passes once
 # per session: a dozen sessions costs about five seconds, and the value above the
@@ -85,6 +101,32 @@ def _sma(s: pd.Series, n: int) -> pd.Series:
 def _volatility(close: pd.Series) -> pd.Series:
     """20-session realised volatility in percent, as the study computes it."""
     return close.pct_change().rolling(M.VOL_WINDOW).std() * 100.0
+
+
+def _rsi2(close: pd.Series) -> pd.Series:
+    """RSI(2), computed exactly as the study computes it (src/indicators.py).
+
+    `ewm(alpha=1/n)` Wilder flavour, so a comparison between the app's watch and
+    the study's `cap_bounce` signal is a comparison of numbers, not of
+    approximations.
+    """
+    d = close.diff()
+    gains = d.clip(lower=0.0).ewm(alpha=1.0 / 2, adjust=False).mean()
+    losses = (-d).clip(lower=0.0).ewm(alpha=1.0 / 2, adjust=False).mean()
+    return 100.0 - 100.0 / (1.0 + gains / losses)
+
+
+def _atr14(high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:
+    """ATR(14), Wilder flavour, as the study computes it (src/indicators.py)."""
+    tr = pd.concat(
+        [
+            high - low,
+            (high - close.shift(1)).abs(),
+            (low - close.shift(1)).abs(),
+        ],
+        axis=1,
+    ).max(axis=1)
+    return tr.ewm(alpha=1.0 / 14, adjust=False).mean()
 
 
 def _median_turnover(window: pd.DataFrame) -> float | None:
@@ -919,6 +961,109 @@ def _regime(
 
 
 # ── the two public operations ────────────────────────────────────────────────
+def cap_watch(
+    frames: Frames,
+    as_of: pd.Timestamp,
+    breadth: float,
+    limit: int = CAP_WATCH_LIMIT,
+) -> tuple[CapitulationItem, ...]:
+    """The tier-3 capitulation-bounce names at one session (docs/25).
+
+    Runs only in the capitulation band, and only this band: the study measured
+    the flat band as a loss and every other regime's rules as failures, but the
+    capitulation bounce was the one non-trending rule that came anywhere near
+    the bar on semi-annual folds. It is a watch, not a ticket: every sweep
+    config's HIT flag is False, and the quarterly windows and the survivorship
+    haircut broke it. The returned names carry the study's parameters (cfg 6 of
+    the sweep: rsi2 <= 30, a 5-session flush of at least 5%, between 5% and 30%
+    under the 200sma, the flush stabilising, ATR% above the dead-name floor)
+    so the UI can show precisely what its author measured - and refused.
+
+    The same feature definitions as the study's own `cap_bounce` family
+    (strategies.py, common.py): rsi2 and atr14 are Wilder-flavour EWMs, and all
+    comparisons are numeric so a NaN fails the gate rather than passing it.
+    """
+    if breadth >= M.BREADTH_CAPITULATION:
+        return ()
+    rows: list[CapitulationItem] = []
+    for code, frame in frames.bars.items():
+        window = frame[frame["date"] <= as_of]
+        if len(window) < M.MA_WINDOW + 1 or window["date"].iloc[-1] != as_of:
+            continue
+        if not tradable(window)[0]:
+            continue
+        if not {"high", "low", "close"}.issubset(window.columns):
+            continue  # a feed without high/low cannot carry an ATR reading
+        close = float(window["close"].iloc[-1])
+        if close <= 0:
+            continue
+
+        cond = _cap_conditions(window, close)
+        if cond is None or not cond["passed"]:
+            continue  # the watch only carries names the rule itself would flag
+        rows.append(
+            CapitulationItem(
+                ticker=code,
+                close=close,
+                as_of=as_of.date(),
+                breadth=breadth,
+                rsi2=cond["rsi2"],
+                ret5=cond["ret5"],
+                ret10=cond["ret10"],
+                dist_200_pct=cond["dist_200_pct"],
+                atr14_pct=cond["atr14_pct"],
+                flushed=cond["flushed"],
+                washed=cond["washed"],
+                in_band=cond["in_band"],
+                stabilising=cond["stabilising"],
+                alive=cond["alive"],
+                passed_all=cond["passed"],
+                score=cond["score"],
+            )
+        )
+    rows.sort(key=lambda item: -item.score)
+    return tuple(rows[:limit])
+
+
+def _cap_conditions(window: pd.DataFrame, close: float) -> dict[str, object] | None:
+    """The five measured tier-3 conditions for one window, as the study codes them.
+
+    Returns None when the window cannot carry a reading. The comparisons are
+    numeric so a NaN fails the gate rather than passing it - the study's own
+    convention (strategies.py regime helpers). Shared by `cap_watch` and the
+    conformance test, so the screen and its verifier measure one implementation.
+    """
+    rsi2 = float(_rsi2(window["close"]).iloc[-1])
+    ret5 = 100.0 * (close / float(window["close"].iloc[-6]) - 1.0)
+    ret10 = 100.0 * (close / float(window["close"].iloc[-11]) - 1.0)
+    sma200 = float(_sma(window["close"], M.MA_WINDOW).iloc[-1])
+    atrp = 100.0 * float(_atr14(window["high"], window["low"], window["close"]).iloc[-1]) / close
+
+    finite = all(np.isfinite(v) for v in (rsi2, ret5, ret10, sma200, atrp))
+    dist_200 = 100.0 * (close / sma200 - 1.0) if finite else float("nan")
+
+    flushed = finite and rsi2 <= CAP_RSI2_MAX
+    washed = finite and ret5 <= -CAP_FLUSH_PCT
+    in_band = finite and -CAP_MAX_BELOW_SMA_PCT <= dist_200 <= -CAP_MIN_BELOW_SMA_PCT
+    stabilising = finite and ret5 >= ret10 * 0.5
+    alive = finite and atrp >= CAP_ATR_FLOOR_PCT
+    passed = flushed and washed and in_band and stabilising and alive
+    return {
+        "rsi2": rsi2 if finite else None,
+        "ret5": ret5 if finite else None,
+        "ret10": ret10 if finite else None,
+        "dist_200_pct": dist_200 if finite else None,
+        "atr14_pct": atrp if finite else None,
+        "flushed": flushed,
+        "washed": washed,
+        "in_band": in_band,
+        "stabilising": stabilising,
+        "alive": alive,
+        "passed": passed,
+        "score": (-ret5 if finite else 0.0) + (CAP_RSI2_MAX - rsi2 if finite else 0.0),
+    }
+
+
 def screen(
     frames: Frames,
     as_of: pd.Timestamp,

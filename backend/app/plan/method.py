@@ -28,7 +28,23 @@ from . import citations as C
 from .model import Evidence, Holdout, RegimeFrequency
 
 # Where the study lives. Overridable so a checkout elsewhere still works.
-DOCS_DIR = Path(os.environ.get("TRADING_DOCS_DIR", "~/Projects/trading-backtest-docs")).expanduser()
+# The documented default is `~/Projects/trading-backtest-docs`, but a checkout
+# sitting beside this repo (../trading-backtest-docs) is found too, so the app
+# works from a clone without a TRADING_DOCS_DIR export.
+def _default_docs_dir() -> Path:
+    env = os.environ.get("TRADING_DOCS_DIR")
+    if env:
+        return Path(env).expanduser()
+    legacy = Path("~/Projects/trading-backtest-docs").expanduser()
+    if legacy.exists():
+        return legacy
+    sibling = Path(__file__).resolve().parents[4] / "trading-backtest-docs"
+    if sibling.exists():
+        return sibling
+    return legacy  # keep the documented default; plan() fails loudly without it
+
+
+DOCS_DIR = _default_docs_dir()
 RESULTS = DOCS_DIR / "results"
 TOP10_CSV = RESULTS / "top10_methods.csv"
 METHOD_TABLE_CSV = RESULTS / "method_table.csv"

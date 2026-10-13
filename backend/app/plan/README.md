@@ -338,3 +338,30 @@ study's own numbers — those are the app's overlay, labelled as such. The five-
 replay books −68.2% for tier 1 and −80.5% pooled; the survivorship haircut leaves
 +0.04% and the unseen folds +0.09%. `./trading-suite verify` runs the checks that
 keep the rest of this document true.
+
+## The regime layer: what the rounds after the chain measured
+
+`plan()` gained a regime layer in the same spirit as the corrected chain: the
+study's later rounds measured what is tradable inside each breadth band, and the
+app carries those measurements rather than a story about them.
+
+- `regimes.py` reads ten artifacts from `results/` at request time and stores no
+  number of its own: the 262k-session drift diagnostic (aggregated onto the app's
+  own band edges), the per-regime holdout ledger, the frozen replays and their
+  quarterly stress, the tier bounds, the capitulation sweep, the flow census and
+  the exit census. Every block degrades to `None` when the study lacks the file.
+- `Regime.measured_drift` carries the band's own 5-session drift onto every plan,
+  so the flat/watch instruction is shown with the number it was cut on.
+- `screen.cap_watch()` transcribes the study's `cap_bounce` family at the sweep
+  champion's parameters. It runs only in the capitulation band and returns only
+  the names the rule itself would flag - a watch, never a ticket.
+  `tests/test_plan_regimes.py` runs the study's own `strategies.signals()` for the
+  same family over the same bars and fails when the two disagree.
+- The Method page's "The three regimes" section renders the whole ledger,
+  refusals included: 0 of 1,060 bearish and 0 of 820 sideways cells cleared the
+  bar, no regime cell survived its holdout, both frozen replays turn negative
+  under survivorship, and the flow indicators lag breadth.
+
+`invalidate()` clears the regime caches on the same schedule as the plan, so a
+study round that rewrites an artifact is picked up by the next refresh rather
+than at the next restart.

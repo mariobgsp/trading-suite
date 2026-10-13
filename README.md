@@ -120,6 +120,38 @@ build when a cited line changes. The rule chain itself is diffed against the
 study's own `strategies.signals()` by
 [`tests/test_plan_conformance.py`](backend/tests/test_plan_conformance.py).
 
+## The regime layer
+
+The verdict is cut on three breadth bands, and the rounds that produced those
+bands then measured what is tradable inside each one. That work - 1,060 bearish
+cells, 820 sideways cells and 1,007 institutional-activity cells, each carried to
+unseen folds and then re-measured on quarterly windows and under the survivorship
+haircut - is read from the study's own artifacts at request time and shown where
+the decision is made:
+
+| Where | What it shows |
+| --- | --- |
+| Tonight, under the band | the band's measured 5-session drift, aggregated from the study's 262k-session diagnostic (+2.11% capitulation, about 0 sideways, +0.63% trending) |
+| Tonight, in the capitulation band | the tier-3 watch: the names the study's `cap_bounce` rule would flag, with the sweep, the clean-universe re-measurement and the quarterly stress that refused it |
+| Method, "The three regimes" | the per-regime holdout ledger, the frozen replays and their stress, the tier table, the flow census and the exit census |
+| Screener | the same measured drift, and the capitulation watchers when the band is one |
+
+The study's answer, which the app carries rather than argues with: **nothing in the
+bearish, sideways or institutional regimes clears the bar.** 0 of 1,060 bearish and
+0 of 820 sideways cells cleared 80%/+5%; the best bearish rule is the long
+`washout_donchian` at 71.65% / +3.02% (3 of 6 folds), the best sideways rule is
+`range_revert` at 56.35% / +1.24%; every short family loses after costs; gating the
+champion on institutional accumulation made it worse (51.06% to 45.52% win); and the
+flow indicators were measured to *lag* breadth (best forward AUC 0.915 against
+breadth's 0.996). All of it lives in
+[`backend/app/plan/regimes.py`](backend/app/plan/regimes.py), read from the artifacts,
+and [`tests/test_plan_regimes.py`](backend/tests/test_plan_regimes.py) fails the build
+when an artifact stops carrying what the UI quotes.
+
+The capitulation tier is the one lead the study found - and it refused it: 79.39% /
++7.26% on 131 illiquid trades, 53.15% / +0.15% on the clean universe, 60.47% / +2.84%
+quarterly, and negative under the survivorship haircut. The app shows the watch list
+with every one of those numbers attached, and never as a ticket.
 ## Data
 
 **The study is a hard dependency.** By default the app reads
@@ -164,11 +196,11 @@ not use them.
 | Path | What it is |
 | --- | --- |
 | `frontend-web/src/routes/{Tonight,Screener,Method,Name}.tsx` | the four screens |
-| `frontend-web/src/components/{plan,MarketChart,RefreshButton,ThemeToggle}.tsx` | shared vocabulary, charts, refresh |
+| `frontend-web/src/components/{plan,regimes,MarketChart,RefreshButton,ThemeToggle}.tsx` | shared vocabulary, the regime ledger, charts, refresh |
 | `frontend-web/src/lib/{api/plan.ts,refresh.ts,cache.ts,theme.ts}` | types + SWR client + the re-read signal |
-| `backend/app/plan/` | the module: `screen`, `method`, `model`, `verdict`, `refresh`, `idx`, `citations`, `bars` |
+| `backend/app/plan/` | the module: `screen`, `method`, `model`, `verdict`, `refresh`, `idx`, `citations`, `bars`, `regimes` |
 | `backend/app/routers/plan.py` | the HTTP seam for the plan |
-| `backend/tests/test_plan_*.py` | conformance, citations, sizing, verdict, why-now, refresh |
+| `backend/tests/test_plan_*.py` | conformance, citations, sizing, verdict, why-now, refresh, regimes |
 | `docs/architecture/*.puml` | diagrams of the **earlier** 5-route desk — not redrawn for this app |
 | `legacy/` | archived repos, not part of this app |
 | `trading-suite` / `trading-suite.sh` | the runner (identical twins) |
@@ -195,14 +227,18 @@ frontend reads `VITE_API_URL` instead with the same default.
 ./trading-suite verify        # backend suite, then the frontend typecheck
 ```
 
-- **Backend**: 176 passed, 6 skipped, 2 failed. The two failures are
+- **Backend**: 193 passed, 6 skipped, 2 failed. The two failures are
   `tests/test_lpm.py` (Stockbit LPM math) and they fail identically on the commit
   before the plan work — they are not caused by it.
-- The plan tests need the study checkout; the conformance test imports the study's
-  own signal code.
+- The plan tests need the study checkout; the conformance tests import the study's
+  own signal code. `tests/test_plan_regimes.py` runs the study's own `cap_bounce`
+  family against the app's capitulation watch and guards every regime artifact the
+  UI quotes.
 - `pytest` is **not** in `backend/requirements.txt`. If the venv lacks it:
   `uv pip install --python backend/.venv/bin/python pytest`.
 - **Frontend**: `cd frontend-web && npm run typecheck` (or `npm run build`).
+  `@types/node` is a devDependency; without it the `node:test` / `node:url`
+  imports in the existing test files and `vite.config.ts` fail the typecheck.
 
 ## Known gaps
 

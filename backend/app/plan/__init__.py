@@ -16,6 +16,7 @@ universe pass, and the front end asks for it more than once.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import threading
 from datetime import date
@@ -25,6 +26,7 @@ import pandas as pd
 from . import citations as C
 from . import idx as X
 from . import method as M
+from . import regimes as R
 from . import screen as S
 from . import verdict as V
 from .bars import COVERAGE_FLOOR, BarsSource, Frames, default_source
@@ -66,6 +68,7 @@ def invalidate() -> None:
         _cache.clear()
     M.clear_cache()
     S.clear_history_cache()
+    R.clear_cache()
 
 
 def _horizon(as_of: date) -> str:
@@ -106,6 +109,17 @@ def plan(as_of: date | None = None, exit_method: str | None = None) -> Plan:
         return hit
 
     regime, candidates, watchlist, ranked = S.screen(frames, session, exit_name, spec)
+    # The band's measured 5-session drift travels with the regime, so the
+    # verdict's stand-down case can show a number rather than an instruction.
+    regime = dataclasses.replace(regime, measured_drift=R.band_drift(regime.band))
+    # In the capitulation band the plan watches the tier-3 rule (docs/25): the
+    # only non-trending rule the study measured anywhere near the bar - and the
+    # one it refused on quarterly windows and survivorship. Never a ticket.
+    cap_watch = (
+        S.cap_watch(frames, session, regime.breadth)
+        if regime.band == "capitulation"
+        else ()
+    )
     as_of_date = session.date()
     calendar = frames.sessions()
     market_open = regime.breadth_open and (regime.index_above_200 or not spec.need_bench)
@@ -123,7 +137,12 @@ def plan(as_of: date | None = None, exit_method: str | None = None) -> Plan:
         required_gates=required,
         evidence=evidence,
         bars_session=as_of_date,
-        exchange_session=calendar[-1].date() if calendar else None,
+        # For a replay the anchor is the session being replayed, so the
+        # exchange calendar read is the last session at or before it - otherwise
+        # every ?as_of= replay would fail the bars-current check by construction.
+        exchange_session=(
+            next((d.date() for d in reversed(calendar) if d <= session), None)
+        ),
         universe_size=regime.universe_size,
         names_on_session=frames.coverage_on(session),
         phantom_dropped=frames.phantom_dropped,
@@ -198,6 +217,12 @@ def plan(as_of: date | None = None, exit_method: str | None = None) -> Plan:
         corrected=M.corrected_evidence(),
         idx=_idx_block(),
         five_year=M.five_year_replay(),
+        capitulation_watch=cap_watch,
+        # The watch and its refusals travel together: a panel that showed the
+        # names without the sweep's HIT flags and the quarterly stress would be
+        # presenting a lead as a result, which is the one thing this app must not
+        # do with this rule.
+        capitulation_evidence=(R.capitulation_evidence() if cap_watch else None),
     )
     with _lock:
         _cache[key] = result
@@ -389,6 +414,8 @@ def method_card() -> dict[str, object]:
             ),
         },
         "idx": _idx_block(),
+        "regimes": R.card(),
+        "capitulation": R.capitulation_evidence(),
         "studies_at": M.DOCS_DIR.name,
     }
 

@@ -61,3 +61,6 @@ pilot/.tanstack/
 # promotional video — separate project, not part of the suite.
 # Covers its deps, rendered output and public assets.
 video/
+
+# local scratch: study summaries and one-off verification scripts
+.scratch/

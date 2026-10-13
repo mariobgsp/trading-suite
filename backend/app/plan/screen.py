@@ -61,6 +61,14 @@ MIN_TURNOVER_IDR = 250_000_000.0
 # of the price. See `idx.economic_floor_note()`.
 MIN_PRICE_IDR = 50.0
 TURNOVER_WINDOW = 60
+# When a ticket's real round trip runs above the study's own cost model, the
+# ticket says so. The threshold is deliberately 0.0 rather than a tolerance:
+# the study's model already carries 0.10% of slippage, so anything above it is a
+# spread the headline never paid. A Rp500-2,000 name clears this by ~0.76% to
+# 1.17%, which is 41% to 63% of the study's whole +1.85%/trade - too much of the
+# edge to leave unstated. There is no upper bound worth setting: the point is
+# that every headline renders its own friction, not that some do.
+FRICTION_NOTE_PCT = 0.0
 # ── sizing (docs/21 §8) — what makes a thin name's number real ──────────────
 POSITION_FLOOR_IDR = 2_000_000.0
 POSITION_CAP_IDR = 10_000_000.0
@@ -826,11 +834,19 @@ def _geometry(
         )
     if shares == 0 and study_size is not None:
         notes.append("No size fits both the 2% ADV cap and the risk budget.")
-    if friction.over_study_pct > 0.01:
+    if friction.over_study_pct > FRICTION_NOTE_PCT:
+        headline = M.corrected_evidence().avg_ret_pct
+        share = (
+            f" That spread is {friction.spread_pct / headline * 100.0:.0f}% of the "
+            f"study's +{headline:.2f}%/trade headline."
+            if headline
+            else ""
+        )
         notes.append(
             f"A real round trip costs about {friction.total_pct:.2f}% at this price "
             f"({friction.fees_pct:.2f}% fees + {friction.spread_pct:.2f}% spread), against "
-            f"the study's {friction.study_model_pct:.2f}% model."
+            f"the study's {friction.study_model_pct:.2f}% model, which carries no spread "
+            f"term.{share}"
         )
     if not idx.target_inside_ar(entry, target):
         notes.append(

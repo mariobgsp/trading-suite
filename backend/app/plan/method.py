@@ -25,7 +25,9 @@ from functools import lru_cache
 from pathlib import Path
 
 from . import citations as C
+from . import idx
 from .model import Evidence, Holdout, RegimeFrequency
+
 
 # Where the study lives. Overridable so a checkout elsewhere still works.
 # The documented default is `~/Projects/trading-backtest-docs`, but a checkout
@@ -65,6 +67,11 @@ HOLDOUT_CELLS_CSV = RESULTS / "holdout_search_cells_screen.csv"
 BREADTH_DAYS_CSV = RESULTS / "results_breadth_days.csv"
 MAX_RETURN_CEILING_CSV = RESULTS / "max_return_ceiling.csv"
 FIVE_YEAR_REPLAY_CSV = RESULTS / "five_year_replay_flat.csv"
+# Every trade the replay took, with its entry price. The re-cost pass reads this
+# rather than the summary file, because the tick term depends on each trade's own
+# price band.
+FIVE_YEAR_TRADES_CSV = RESULTS / "five_year_trades_flat.csv"
+EPISODE_CI_CSV = RESULTS / "episode_block_ci.csv"
 
 # ── the rule chain ───────────────────────────────────────────────────────────
 # A strategy is named `family` x `exit`. Three families cleared both bars in the
@@ -127,6 +134,7 @@ HOLDOUT_CAVEAT = (
     "Measured on folds the search never saw, so this is the honest expectation. "
     "It clears neither bar: not 80% win rate, and not +5% per trade."
 )
+
 
 @dataclass(frozen=True)
 class FamilySpec:
@@ -242,6 +250,7 @@ def family_spec(family: str | None) -> FamilySpec:
     if family and family in FAMILY_SPECS:
         return FAMILY_SPECS[family]
     return FAMILY_SPECS[DEFAULT_FAMILY]
+
 
 # Exit ladder options, as (target %, stop %, hold bars). Measured, not invented:
 # every one of these is a row of results/top10_methods.csv.
@@ -529,11 +538,7 @@ def deployment() -> dict[str, object]:
     # fill at the open and open positions are marked to market, so this is
     # deeper than the realised-only figure `portfolio_multi.csv` still carries.
     canonical = next(
-        (
-            dict(r)
-            for r in _rows(PORTFOLIO_TEST_CSV)
-            if r.get("family") == STUDY_PICK_FAMILY
-        ),
+        (dict(r) for r in _rows(PORTFOLIO_TEST_CSV) if r.get("family") == STUDY_PICK_FAMILY),
         None,
     )
 
@@ -621,9 +626,10 @@ def robustness() -> dict[str, object]:
             f"wins {quarterly['pick_win_rate']:.1f}% — below the 80% the headline "
             "quotes. The headline number comes from six-month windows."
         )
-    if survivorship.get("worst_drop_avg_pct") is not None and survivorship.get(
-        "baseline_avg_pct"
-    ) is not None:
+    if (
+        survivorship.get("worst_drop_avg_pct") is not None
+        and survivorship.get("baseline_avg_pct") is not None
+    ):
         flags.append(
             "The panel is missing 13.4% of a full listing, because it is built "
             "from today's listing. Removing the best fifth of the names traded "
@@ -676,9 +682,7 @@ def _quarterly() -> dict[str, object]:
     pooling does not rescue the effect.
     """
     books = _rows(QUARTERLY_BOOKS_CSV)
-    pick = next(
-        (r for r in books if r.get("book", "").startswith("pick ")), None
-    )
+    pick = next((r for r in books if r.get("book", "").startswith("pick ")), None)
     analysis = _rows(QUARTERLY_ANALYSIS_CSV)
 
     traded: list[dict[str, str]] = []
@@ -750,11 +754,7 @@ def _survivorship() -> dict[str, object]:
         return (
             next((r for r in rows if r.get("cell") == cell and r.get("bound") == "full"), None),
             next(
-                (
-                    r
-                    for r in rows
-                    if r.get("cell") == cell and r.get("bound") == "survivorship"
-                ),
+                (r for r in rows if r.get("cell") == cell and r.get("bound") == "survivorship"),
                 None,
             ),
         )
@@ -776,13 +776,15 @@ def _survivorship() -> dict[str, object]:
                 return i
         return 50
 
-    candidates = sorted(
-        dict.fromkeys(r.get("cell", "") for r in rows), key=lambda c: (rank(c), c)
+    candidates = sorted(dict.fromkeys(r.get("cell", "") for r in rows), key=lambda c: (rank(c), c))
+    preferred = (
+        next((c for c in candidates if rank(c) < 99), None)
+        or next(
+            (c for c in dict.fromkeys(r.get("cell", "") for r in rows) if c == "tier1"),
+            None,
+        )
+        or next(iter(dict.fromkeys(r.get("cell", "") for r in rows)), None)
     )
-    preferred = next((c for c in candidates if rank(c) < 99), None) or next(
-        (c for c in dict.fromkeys(r.get("cell", "") for r in rows) if c == "tier1"),
-        None,
-    ) or next(iter(dict.fromkeys(r.get("cell", "") for r in rows)), None)
 
     base, stressed = pair(preferred or "")
 
@@ -950,8 +952,7 @@ def horizons() -> tuple[dict[str, object], ...]:
                 "detail": (
                     f"The same entry chain held for up to {hold} sessions. "
                     + (
-                        "This is the cap the app runs, and the one the corrected figures "
-                        "belong to."
+                        "This is the cap the app runs, and the one the corrected figures belong to."
                         if exit_name == STUDY_PICK_EXIT
                         else "Measured, and it does not clear the study's own +5% bar - "
                         "which is why the shipped cap is the longer one."
@@ -1023,6 +1024,7 @@ def corrected_evidence() -> Evidence:
     Every figure travels with the file, line and sentence it came from, and
     `test_plan_citations.py` fails the build if the study stops saying it.
     """
+
     def cited(label: str) -> float | None:
         return C.value(label)
 
@@ -1062,6 +1064,7 @@ def corrected_evidence() -> Evidence:
         n_specs=_family_spec_count(STUDY_PICK_FAMILY),
         single_spec_trades=int(C.value("single_spec_trades") or 0) or None,
     )
+
 
 # ── the holdout (docs/22) ─────────────────────────────────────────────────────
 # Why this is a separate reader rather than another row of `ladder()`: every row
@@ -1212,6 +1215,301 @@ def five_year_replay() -> dict[str, object]:
             "are missing entirely. Survivorship runs through every tier."
         ),
     }
+
+
+# ── the headline, priced on the tick grid ────────────────────────────────────
+# The study's 0.50% round trip is fees (0.40%) plus a fixed 0.10% of slippage. It
+# carries no spread term, and on the IDX grid the spread is the largest cost a
+# thin name pays: one tick is 1.0% of a Rp100 price and 0.2% of a Rp5,000 one.
+# The study's ledger holds the entry price of all 1,732 trades, so the term can be
+# charged back onto the headline instead of living only in a per-ticket footnote.
+#
+# This is an arithmetic pass over a published ledger, never a re-run or a rewrite:
+# the study's +1.85% stays the study's number and the re-cost is shown beside it.
+# `entry_px` is corporate-action adjusted (57 of 57 tier-1 rows are fractional),
+# so the bands are applied to an adjusted price and the output is a bound on the
+# cost rather than a measurement of real fills.
+SPREAD_TICKS_LO = 1
+SPREAD_TICKS_HI = 2
+
+# The tick bands themselves live in `idx` (transcribed from the exchange's price
+# fractions). They are repeated as edges here only so the report can say *where*
+# on the grid the cost lands.
+_RECOST_BANDS: tuple[tuple[str, float, float], ...] = (
+    ("<200", 0.0, 200.0),
+    ("200-500", 200.0, 500.0),
+    ("500-2,000", 500.0, 2_000.0),
+    ("2,000-5,000", 2_000.0, 5_000.0),
+    (">=5,000", 5_000.0, float("inf")),
+)
+
+
+@dataclass(frozen=True)
+class ReCost:
+    """The published headline beside the same headline on the tick grid.
+
+    Two variants travel together and must never be confused: the *published* cell
+    (the 76 trades in docs/21 §0a) and the *ledger* cell (the 57 tier-1 trades in
+    `five_year_trades_flat.csv`). They are different samples with different means,
+    so each carries its own re-cost rather than one standing in for the other.
+    """
+
+    modelled_mean_pct: float | None
+    modelled_trades: float | None
+    spread_1tick_pct: float | None
+    spread_2tick_pct: float | None
+    recosted_mean_1tick_pct: float | None
+    recosted_mean_2tick_pct: float | None
+    ledger_tier1_mean_pct: float | None
+    ledger_tier1_trades: int
+    ledger_recosted_1tick_pct: float | None
+    ledger_recosted_2tick_pct: float | None
+    bands: tuple[dict[str, object], ...]
+    median_entry_px: float | None
+    assumption: str
+    caveat: str
+    measured: bool
+
+    def as_dict(self) -> dict[str, object]:
+        return dict(
+            modelled_mean_pct=self.modelled_mean_pct,
+            modelled_trades=self.modelled_trades,
+            spread_1tick_pct=self.spread_1tick_pct,
+            spread_2tick_pct=self.spread_2tick_pct,
+            recosted_mean_1tick_pct=self.recosted_mean_1tick_pct,
+            recosted_mean_2tick_pct=self.recosted_mean_2tick_pct,
+            ledger_tier1_mean_pct=self.ledger_tier1_mean_pct,
+            ledger_tier1_trades=self.ledger_tier1_trades,
+            ledger_recosted_1tick_pct=self.ledger_recosted_1tick_pct,
+            ledger_recosted_2tick_pct=self.ledger_recosted_2tick_pct,
+            bands=[dict(b) for b in self.bands],
+            median_entry_px=self.median_entry_px,
+            assumption=self.assumption,
+            caveat=self.caveat,
+            measured=self.measured,
+        )
+
+
+@lru_cache(maxsize=1)
+def recost_headline() -> ReCost:
+    """The headline re-priced with an explicit tick/spread term.
+
+    The term is charged *on top of* the study's 0.50%, which already contains
+    0.10% of slippage; netting that allowance back would raise every figure here
+    by 0.10pp, so the reported range is the conservative end of the arithmetic.
+
+    Returns `measured=False` with the published figures intact when the ledger is
+    absent, so an older checkout of the study shows the headline alone rather than
+    a re-cost computed from nothing.
+    """
+    modelled = C.value("tier1_corrected_avg_ret_pct")
+    modelled_n = C.value("tier1_corrected_trades")
+
+    rows = [r for r in _rows(FIVE_YEAR_TRADES_CSV) if (r.get("tier") or "").strip() == "1"]
+
+    # (price, spread at one tick, spread at two ticks), each spread as a % of the
+    # price the trade actually paid.
+    priced: list[tuple[float, float, float]] = []
+    for r in rows:
+        px = _f(r, "entry_px")
+        if not px or px <= 0:
+            continue
+        tick = idx.tick_for(px)
+        if not tick:
+            continue
+        priced.append((px, tick / px * 100.0, SPREAD_TICKS_HI * tick / px * 100.0))
+
+    def mean(values: list[float]) -> float | None:
+        return sum(values) / len(values) if values else None
+
+    spread_1 = mean([p[1] for p in priced])
+    spread_2 = mean([p[2] for p in priced])
+
+    rets = [v for v in (_f(r, "ret_pct") for r in rows) if v is not None]
+    ledger_mean = mean(rets)
+    prices = sorted(p[0] for p in priced)
+    median_px = prices[len(prices) // 2] if prices else None
+
+    bands: list[dict[str, object]] = []
+    for label, lo, hi in _RECOST_BANDS:
+        in_band = [p for p in priced if lo <= p[0] < hi]
+        b1 = mean([p[1] for p in in_band])
+        b2 = mean([p[2] for p in in_band])
+        bands.append(
+            dict(
+                band=label,
+                trades=len(in_band),
+                share_pct=(round(len(in_band) / len(priced) * 100.0, 1) if priced else None),
+                spread_1tick_pct=round(b1, 2) if b1 is not None else None,
+                spread_2tick_pct=round(b2, 2) if b2 is not None else None,
+            )
+        )
+
+    return ReCost(
+        modelled_mean_pct=modelled,
+        modelled_trades=modelled_n,
+        spread_1tick_pct=round(spread_1, 2) if spread_1 is not None else None,
+        spread_2tick_pct=round(spread_2, 2) if spread_2 is not None else None,
+        recosted_mean_1tick_pct=(
+            round(modelled - spread_1, 2)
+            if (modelled is not None and spread_1 is not None)
+            else None
+        ),
+        recosted_mean_2tick_pct=(
+            round(modelled - spread_2, 2)
+            if (modelled is not None and spread_2 is not None)
+            else None
+        ),
+        ledger_tier1_mean_pct=round(ledger_mean, 4) if ledger_mean is not None else None,
+        ledger_tier1_trades=len(rets),
+        ledger_recosted_1tick_pct=(
+            round(ledger_mean - spread_1, 2)
+            if (ledger_mean is not None and spread_1 is not None)
+            else None
+        ),
+        ledger_recosted_2tick_pct=(
+            round(ledger_mean - spread_2, 2)
+            if (ledger_mean is not None and spread_2 is not None)
+            else None
+        ),
+        bands=tuple(bands),
+        median_entry_px=round(median_px, 2) if median_px is not None else None,
+        assumption=(
+            "The tick term is charged on top of the study's 0.50% model, which "
+            "already contains 0.10% of slippage and no spread. Netting that "
+            "allowance back would raise each re-costed figure by 0.10pp."
+        ),
+        caveat=(
+            "Arithmetic over the study's own ledger, not a re-run and not a new "
+            "measurement: `entry_px` is corporate-action adjusted (57 of 57 tier-1 "
+            "rows are fractional), so the bands are applied to an adjusted price. "
+            "Read the result as a bound on the cost, not as real fills."
+        ),
+        measured=bool(priced) and modelled is not None,
+    )
+
+
+@dataclass(frozen=True)
+class EpisodeCI:
+    """The tier-1 record read as a few tapes rather than as 57 independent draws.
+
+    The shipped gate is open in a minority of sessions and those sessions arrive in
+    contiguous runs. Every trade inside one run shares a tape, so the number of
+    independent observations is the number of trade-bearing episodes, not the trade
+    count. The Wilson interval the card quotes is the per-trade one; this carries the
+    episode-blocked interval that has to sit beside it.
+    """
+
+    measured: bool
+    sessions: int | None
+    gate_open_sessions: int | None
+    gate_open_share: float | None
+    episodes: int | None
+    mean_episode_sessions: float | None
+    longest_episode_sessions: int | None
+    trades: int | None
+    trade_episodes: int | None
+    largest_episode_trade_share: float | None
+    win_rate: float | None
+    mean_ret_pct: float | None
+    naive_win_rate: tuple[float, float] | None
+    naive_mean: tuple[float, float] | None
+    block_win_rate: tuple[float, float] | None
+    block_mean: tuple[float, float] | None
+    note: str
+
+    def as_dict(self) -> dict[str, object]:
+        return dict(
+            measured=self.measured,
+            sessions=self.sessions,
+            gate_open_sessions=self.gate_open_sessions,
+            gate_open_share=self.gate_open_share,
+            episodes=self.episodes,
+            mean_episode_sessions=self.mean_episode_sessions,
+            longest_episode_sessions=self.longest_episode_sessions,
+            trades=self.trades,
+            trade_episodes=self.trade_episodes,
+            largest_episode_trade_share=self.largest_episode_trade_share,
+            win_rate=self.win_rate,
+            mean_ret_pct=self.mean_ret_pct,
+            naive_win_rate=list(self.naive_win_rate) if self.naive_win_rate else None,
+            naive_mean=list(self.naive_mean) if self.naive_mean else None,
+            block_win_rate=list(self.block_win_rate) if self.block_win_rate else None,
+            block_mean=list(self.block_mean) if self.block_mean else None,
+            note=self.note,
+        )
+
+
+@lru_cache(maxsize=1)
+def episode_ci() -> EpisodeCI:
+    """The episode-blocked interval for tier 1, read from the study's measurement.
+
+    `scripts/episode_block_ci.py` in the study writes `results/episode_block_ci.csv`:
+    the gate's episode structure, how tier 1's trades distribute over those episodes,
+    and two bootstrap intervals - the naive per-trade one and a Politis-Romano
+    stationary bootstrap over the session timeline. This reads that file; it does not
+    recompute it, and it reports `measured=False` when the file is absent so an older
+    checkout shows the Wilson interval alone.
+    """
+    values: dict[str, str] = {}
+    for row in _rows(EPISODE_CI_CSV):
+        key = (row.get("metric") or "").strip()
+        if key:
+            values[key] = (row.get("value") or "").strip()
+
+    def num(key: str) -> float | None:
+        raw = values.get(key)
+        if raw is None or not raw:
+            return None
+        try:
+            return float(raw)
+        except ValueError:
+            return None
+
+    def whole(key: str) -> int | None:
+        value = num(key)
+        return int(value) if value is not None else None
+
+    def pair(lo_key: str, hi_key: str) -> tuple[float, float] | None:
+        lo, hi = num(lo_key), num(hi_key)
+        return (lo, hi) if lo is not None and hi is not None else None
+
+    trade_episodes = whole("tier1_trade_episodes")
+    trades = whole("tier1_trades")
+    episodes = whole("episodes")
+    note = (
+        "The gate is open in a minority of sessions and those sessions arrive in a "
+        "few contiguous runs. The Wilson interval beside the headline counts every "
+        "trade as an independent draw; the block interval resamples whole runs "
+        "instead, because trades inside one run share a tape."
+    )
+    if trades and trade_episodes:
+        note += (
+            f" Here {trades} tier-1 trades sit in {trade_episodes} episode(s)"
+            + (f" out of {episodes} the gate opened" if episodes else "")
+            + ", so the effective number of independent observations is that "
+            "episode count, not the trade count."
+        )
+
+    return EpisodeCI(
+        measured=bool(values),
+        sessions=whole("sessions_measured"),
+        gate_open_sessions=whole("gate_open_sessions"),
+        gate_open_share=num("gate_open_share"),
+        episodes=episodes,
+        mean_episode_sessions=num("mean_episode_sessions"),
+        longest_episode_sessions=whole("longest_episode_sessions"),
+        trades=trades,
+        trade_episodes=trade_episodes,
+        largest_episode_trade_share=num("largest_episode_trade_share"),
+        win_rate=num("tier1_win_rate"),
+        mean_ret_pct=num("tier1_mean_ret_pct"),
+        naive_win_rate=pair("naive_win_rate_lo", "naive_win_rate_hi"),
+        naive_mean=pair("naive_mean_lo", "naive_mean_hi"),
+        block_win_rate=pair("block_win_rate_lo", "block_win_rate_hi"),
+        block_mean=pair("block_mean_lo", "block_mean_hi"),
+        note=note,
+    )
 
 
 @lru_cache(maxsize=1)

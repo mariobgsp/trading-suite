@@ -92,7 +92,7 @@ def plan(as_of: date | None = None, exit_method: str | None = None) -> Plan:
 
     try:
         frames = _load(source, label)
-    except Exception as exc:  # noqa: BLE001 - a bad data root must not 500 the page
+    except Exception as exc:
         log.warning("plan: could not load bars from %s: %s", label, exc)
         raise
 
@@ -116,9 +116,7 @@ def plan(as_of: date | None = None, exit_method: str | None = None) -> Plan:
     # only non-trending rule the study measured anywhere near the bar - and the
     # one it refused on quarterly windows and survivorship. Never a ticket.
     cap_watch = (
-        S.cap_watch(frames, session, regime.breadth)
-        if regime.band == "capitulation"
-        else ()
+        S.cap_watch(frames, session, regime.breadth) if regime.band == "capitulation" else ()
     )
     as_of_date = session.date()
     calendar = frames.sessions()
@@ -140,9 +138,7 @@ def plan(as_of: date | None = None, exit_method: str | None = None) -> Plan:
         # For a replay the anchor is the session being replayed, so the
         # exchange calendar read is the last session at or before it - otherwise
         # every ?as_of= replay would fail the bars-current check by construction.
-        exchange_session=(
-            next((d.date() for d in reversed(calendar) if d <= session), None)
-        ),
+        exchange_session=(next((d.date() for d in reversed(calendar) if d <= session), None)),
         universe_size=regime.universe_size,
         names_on_session=frames.coverage_on(session),
         phantom_dropped=frames.phantom_dropped,
@@ -196,11 +192,7 @@ def plan(as_of: date | None = None, exit_method: str | None = None) -> Plan:
             live_appended=frames.live_appended,
             partial_bars_rejected=frames.partial_bars_rejected,
             reason_seconds=next(
-                (
-                    c.reason.seconds
-                    for c in candidates
-                    if c.reason is not None
-                ),
+                (c.reason.seconds for c in candidates if c.reason is not None),
                 None,
             ),
         ),
@@ -345,6 +337,14 @@ def method_card() -> dict[str, object]:
         # Three tiers, never blended. `citations` carries the file, line and
         # sentence behind every figure that is cited rather than read.
         "corrected": M.corrected_evidence().as_dict(),
+        # The same headline with an explicit tick/spread term charged against it.
+        # Shown beside the corrected figure rather than replacing it: the study's
+        # number stays the study's, and this says what the IDX grid does to it.
+        "recost": M.recost_headline().as_dict(),
+        # The Wilson interval counts every trade as an independent draw. Tier 1's
+        # record sits inside a single gate-open run, so the block interval that
+        # resamples whole runs travels beside it rather than replacing it.
+        "episode_ci": M.episode_ci().as_dict(),
         "citations": [c.as_dict() for c in C.all_citations()],
         "evidence_tiers": {
             "searched": evidence.as_dict(),
@@ -360,13 +360,9 @@ def method_card() -> dict[str, object]:
                 "family": name,
                 "summary": s.label(),
                 "breadth": s.breadth,
-                "oos_trades": next(
-                    (e.oos_trades for e in ladder if e.family == name), None
-                ),
+                "oos_trades": next((e.oos_trades for e in ladder if e.family == name), None),
                 "win_rate": next((e.win_rate for e in ladder if e.family == name), None),
-                "avg_ret_pct": next(
-                    (e.avg_ret_pct for e in ladder if e.family == name), None
-                ),
+                "avg_ret_pct": next((e.avg_ret_pct for e in ladder if e.family == name), None),
                 "fold_worst_win_rate": next(
                     (e.fold_worst_win_rate for e in ladder if e.family == name), None
                 ),
@@ -410,8 +406,11 @@ def method_card() -> dict[str, object]:
             "note": "Fees and slippage are inside every measured trade.",
             "idx_note": (
                 "This is the study's flat model and it carries no spread term. The "
-                "ticket prices the real one separately."
+                "ticket prices the real one separately, and `recost` charges the "
+                "tick grid back onto the headline itself."
             ),
+            "recost_assumption": M.recost_headline().assumption,
+            "episode_ci_note": M.episode_ci().note,
         },
         "idx": _idx_block(),
         "regimes": R.card(),
@@ -455,9 +454,7 @@ def size_ticket(
     spread_ticks: int = 2,
 ) -> dict[str, object]:
     """Size one order without running a universe pass (docs/21 §8)."""
-    return S.size_ticket(
-        price, median_turnover_60, risk_budget_idr, exit_method, spread_ticks
-    )
+    return S.size_ticket(price, median_turnover_60, risk_budget_idr, exit_method, spread_ticks)
 
 
 def idx_tables() -> dict[str, object]:
@@ -494,15 +491,15 @@ __all__ = [
     "Plan",
     "Regime",
     "WatchItem",
+    "cancel_refresh",
     "detail",
+    "idx_tables",
     "invalidate",
     "ladder",
     "method_card",
     "plan",
-    "cancel_refresh",
-    "idx_tables",
     "refresh_status",
     "set_source",
-    "start_refresh",
     "size_ticket",
+    "start_refresh",
 ]

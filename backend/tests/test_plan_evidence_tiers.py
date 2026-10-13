@@ -13,6 +13,8 @@ table, not the 900-name universe. The expensive end-to-end checks live in
 
 from __future__ import annotations
 
+import pytest
+
 from app.plan import citations as C
 from app.plan import method as M
 from app.plan import method_card
@@ -120,3 +122,66 @@ def test_the_method_card_carries_all_the_tiers_and_their_provenance():
         assert cited["quote"]
     # The corrected block is the one the Method page renders as the headline.
     assert card["corrected_block"]["tier1_corrected_win_rate"]["value"] == 0.7632
+
+
+def test_the_card_carries_the_headline_recosted_on_the_tick_grid():
+    """The study's +1.85% beside what the IDX grid does to it.
+
+    The re-cost is arithmetic over the study's own ledger, so it must never
+    replace the published figure: both travel, and the card says explicitly that
+    the tick term is charged *on top of* the study's model rather than instead
+    of it (the model already contains 0.10% of slippage).
+    """
+    card = method_card()
+    recost = card["recost"]
+
+    assert recost["measured"] is True
+    assert recost["modelled_mean_pct"] == pytest.approx(1.85)
+    assert card["corrected"]["avg_ret_pct"] == pytest.approx(1.85), (
+        "the study's own figure must survive beside its re-cost"
+    )
+
+    # Two ticks cost more than one, and each re-cost is the headline less the
+    # spread it charged. If either stops holding, the arithmetic moved.
+    assert recost["spread_1tick_pct"] < recost["spread_2tick_pct"]
+    assert recost["recosted_mean_1tick_pct"] == pytest.approx(
+        1.85 - recost["spread_1tick_pct"], abs=0.01
+    )
+    assert recost["recosted_mean_2tick_pct"] == pytest.approx(
+        1.85 - recost["spread_2tick_pct"], abs=0.01
+    )
+
+    # Every tier-1 trade in the ledger lands in exactly one band, so the report
+    # cannot quietly drop the expensive names and report a cheaper average.
+    assert recost["ledger_tier1_trades"] == 57
+    assert sum(b["trades"] for b in recost["bands"]) == 57
+    assert all(b["share_pct"] is not None for b in recost["bands"])
+
+    # The two things a reader has to know to trust the number at all.
+    assert "on top of" in recost["assumption"]
+    assert "corporate-action adjusted" in recost["caveat"]
+    assert "bound on the cost" in recost["caveat"]
+
+
+def test_the_record_is_read_as_episodes_not_as_independent_trades():
+    """Tier 1's 57 trades sit inside a single gate-open run.
+
+    The Wilson interval beside the headline counts every trade as an independent
+    draw. When the whole record is one run the effective sample is that run, so
+    the episode-blocked interval has to travel beside the per-trade one and be
+    visibly wider. If this ever stops holding the study's measurement moved.
+    """
+    ci = method_card()["episode_ci"]
+
+    assert ci["measured"] is True
+    assert ci["trades"] == 57
+    assert ci["trade_episodes"] is not None and ci["trade_episodes"] < 5
+    assert ci["largest_episode_trade_share"] == pytest.approx(1.0)
+    assert ci["gate_open_share"] is not None and ci["gate_open_share"] < 0.25
+
+    naive_lo, naive_hi = ci["naive_win_rate"]
+    block_lo, block_hi = ci["block_win_rate"]
+    assert block_lo < naive_lo, "blocking must not narrow the interval"
+    assert (block_hi - block_lo) > (naive_hi - naive_lo)
+
+    assert "effective number of independent observations" in ci["note"]

@@ -113,6 +113,11 @@ cmd_clean() {
   fi
 }
 
+cmd_plan() {
+  ensure_backend_venv
+  (cd "$BACKEND" && .venv/bin/python -m app.plan.cli "$@")
+}
+
 # The two checks that decide whether the claims on screen are still true: the
 # backend suite (which diffs the rule chain against the study's own code, and
 # every cited figure against the study's own documents) and the typecheck.
@@ -141,11 +146,12 @@ cmd_verify() {
 
 case "${1:-run}" in
   run|dev)      cmd_run ;;
+  plan)         shift; cmd_plan "$@" ;;
   stop)         cmd_stop ;;
   logs)         cmd_logs ;;
   build)        cmd_build ;;
   start)        cmd_start ;;
   verify)       cmd_verify ;;
   clean)        cmd_clean ;;
-  *) echo "Usage: $0 {run|dev|build|start|stop|logs|verify|clean}"; exit 1 ;;
+  *) echo "Usage: $0 {run|dev|plan|build|start|stop|logs|verify|clean}"; exit 1 ;;
 esac

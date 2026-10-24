@@ -286,12 +286,17 @@ export default function MarketChart({
 		chart.timeScale().fitContent();
 	}, [indicators, options?.overlayIndicators, theme]);
 
-	// LPM overlay (normalized to candle range) + Intensity histogram below
+	// Optional LPM-style overlay + intensity histogram.
+	//
+	// These default OFF. The old default was ON, which meant the Name page drew
+	// an unlabeled CMF-normalized line that looked like a bandarmology model. A
+	// proxy must opt in and be labeled; the Flow page uses its own separated
+	// proxy series instead of this heuristic overlay.
 	useEffect(() => {
 		const chart = chartRef.current;
 		if (!chart || history.length < 20) return;
-		const showLpm = options?.showLpm !== false;
-		const showIntensity = options?.showIntensity !== false;
+		const showLpm = options?.showLpm === true;
+		const showIntensity = options?.showIntensity === true;
 		// Always teardown disabled overlays before any early exit — fixes
 		// LPM toggle that appeared stuck (both-false returned before cleanup).
 		if (!showLpm && lpmRef.current && chartRef.current) {

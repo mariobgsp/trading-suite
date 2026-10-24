@@ -619,6 +619,13 @@ def accumulation_scan(days: int = 20, limit: int = 50, watchlist: list[str] | No
 
 
 def stockbit_lpm_intensity(ticker: str, days: int = 60, force: bool = False) -> dict[str, Any]:
+    """Legacy-shaped LPM endpoint, now backed by the causal Flow proxy.
+
+    This used to compute a different, undocumented formula that looked into the
+    next three bars' broker flow. That is look-ahead and cannot be used live.
+    The response shape is preserved for older clients; the values are the same
+    transparent proxy the `/api/flow` surface uses, and the metadata says so.
+    """
     ticker = ticker.upper().strip()
     try:
         days = max(20, min(90, int(days)))
@@ -636,51 +643,103 @@ def stockbit_lpm_intensity(ticker: str, days: int = 60, force: bool = False) -> 
         ob = orderbook_snapshot(ticker, force=False)
     except Exception:
         ob = None
-    ob_imb = 0.0
-    if isinstance(ob, dict) and ob.get("available"):
-        try:
-            ob_imb = float(ob.get("imbalance") or 0)
-        except (TypeError, ValueError):
-            ob_imb = 0.0
-    lpm_series = []
-    intensity_series = []
-    for idx, d in enumerate(per_day):
-        price = d.get("price")
-        if price is None:
-            lpm_series.append(None)
-            intensity_series.append(0.0)
+
+    import pandas as pd
+
+    from app.flow import lpm as flow_lpm
+
+    dates: list[str] = []
+    prices: list[float | None] = []
+    volumes: list[float] = []
+    broker_lots: list[float] = []
+    for row in per_day:
+        date = str(row.get("date") or "")[:10]
+        if not date:
             continue
         try:
-            top3 = float(d.get("top3_net") or 0)
+            price = float(row.get("price")) if row.get("price") is not None else None
+        except (TypeError, ValueError):
+            price = None
+        try:
+            volume = float(row.get("volume") or 0.0)
+        except (TypeError, ValueError):
+            volume = 0.0
+        try:
+            top3 = float(row.get("top3_net") or 0.0)
         except (TypeError, ValueError):
             top3 = 0.0
-        vol = d.get("volume")
+        dates.append(date)
+        prices.append(price)
+        volumes.append(volume)
+        broker_lots.append(top3)
+
+    if not dates or not any(price is not None for price in prices):
+        payload = {
+            "ticker": ticker,
+            "available": False,
+            "days": days,
+            "dates": [],
+            "lpm": [],
+            "score": [],
+            "direction": [],
+            "intensity": [],
+            "orderbook": ob,
+            "as_of": hist.get("as_of"),
+            "source": "unavailable",
+            "quality": "proxy",
+            "warnings": ["no broker/price rows"],
+        }
+        db.set(cache_key, payload)
+        return payload
+
+    index = pd.to_datetime(dates, errors="coerce")
+    closes = pd.Series(prices, index=index, dtype=float)
+    volume_series = pd.Series(volumes, index=index, dtype=float)
+    broker_series = pd.Series(broker_lots, index=index, dtype=float)
+    frame = pd.DataFrame(
+        {
+            "Open": closes,
+            "High": closes,
+            "Low": closes,
+            "Close": closes,
+            "Volume": volume_series,
+        },
+        index=index,
+    )
+    frame, meta = flow_lpm.score_frame(frame, broker_net_lots=broker_series)
+    avg_volume = volume_series.rolling(20, min_periods=1).mean()
+    intensity = (volume_series / avg_volume).replace([float("inf"), float("-inf")], 0).fillna(0.0)
+
+    def _clean(value: object) -> float | None:
         try:
-            vol_f = float(vol) if vol is not None else 0.0
+            out = float(value)  # type: ignore[arg-type]
         except (TypeError, ValueError):
-            vol_f = 0.0
-        vols = []
-        for x in per_day[max(0, idx-19):idx+1]:
-            if x.get("volume") is not None:
-                try:
-                    vols.append(float(x.get("volume") or 0))
-                except (TypeError, ValueError):
-                    pass
-        avg_vol = sum(vols)/len(vols) if vols else vol_f or 1.0
-        broker_pressure = (top3 / avg_vol * 1000) if avg_vol else 0.0
-        import math
-        broker_norm = math.tanh(broker_pressure / 5000)
-        cmf_proxy = broker_norm
-        if idx == len(per_day)-1 and ob_imb != 0:
-            cmf_proxy = 0.7 * broker_norm + 0.3 * ob_imb
-        try:
-            lpm_raw = float(price) * (1 + cmf_proxy * 0.12) if price is not None else None
-        except (TypeError, ValueError):
-            lpm_raw = None
-        lpm_series.append(lpm_raw)
-        intensity_base = (vol_f / avg_vol) if avg_vol else 0.0
-        intensity_series.append(round(intensity_base * (1 + abs(broker_norm) * 0.5), 3))
-    payload = {"ticker": ticker, "available": hist.get("available", False) or (ob is not None and ob.get("available")), "days": days, "dates": hist.get("dates", []), "lpm": lpm_series, "intensity": intensity_series, "orderbook": ob, "as_of": hist.get("as_of")}
+            return None
+        return None if out != out else round(out, 3)
+
+    lpm_series = [_clean(value) for value in frame["lpm_price_space"].tolist()]
+    score_series = [_clean(value) for value in frame["lpm_score"].tolist()]
+    direction_series = [str(value) for value in frame["lpm_direction"].tolist()]
+    intensity_series = [_clean(value) for value in intensity.tolist()]
+    warnings = list(meta.get("warnings") or [])
+    warnings.append("legacy endpoint now returns the causal Flow proxy, not the old formula")
+    if float(frame["High"].sub(frame["Low"]).abs().sum()) == 0.0:
+        warnings.append("OHLCV high/low unavailable; the CMF term is zero")
+    payload = {
+        "ticker": ticker,
+        "available": bool(hist.get("available", False) or (isinstance(ob, dict) and ob.get("available"))),
+        "days": days,
+        "dates": dates,
+        "lpm": lpm_series,
+        "score": score_series,
+        "direction": direction_series,
+        "intensity": intensity_series,
+        "orderbook": ob,
+        "as_of": hist.get("as_of"),
+        "source": meta.get("source"),
+        "quality": "proxy",
+        "warnings": warnings,
+    }
     db.set(cache_key, payload)
     return payload
 

@@ -17,8 +17,10 @@ from app.routers import (  # pyright: ignore[reportAttributeAccessIssue]
     alerts,
     analysis,
     backtest,
+    flow,
     intel,
     market,
+    overview,
     plan,
     portfolio,
     regime,
@@ -89,6 +91,25 @@ def _warm_stockbit_jwt() -> None:
     threading.Thread(target=_run, daemon=True, name="warm-stockbit").start()
 
 
+def _warm_overview() -> None:
+    """Start the cached market-dashboard build after startup.
+
+    The GET path serves the previous SQLite snapshot immediately; this thread
+    only makes sure a current-session snapshot exists for the first visit.
+    """
+    import threading
+
+    def _run() -> None:
+        try:
+            from app.overview import warm
+
+            warm()
+        except Exception as e:  # noqa: BLE001
+            logging.getLogger(__name__).warning("overview warm failed: %s", e)
+
+    threading.Thread(target=_run, daemon=True, name="warm-overview").start()
+
+
 def _warm_universe_history() -> None:
     """Background-warm the full universe's 2y history (parallel, deduped).
 
@@ -125,7 +146,12 @@ app = FastAPI(
     description="Merged IDX trading platform: backtester, screener, validator, "
     "portfolio, sentiment radar, regime filter.",
     version="0.1.0",
-    on_startup=[_warm_bbca_cache, _warm_stockbit_jwt, _warm_universe_history],
+    on_startup=[
+        _warm_bbca_cache,
+        _warm_stockbit_jwt,
+        _warm_universe_history,
+        _warm_overview,
+    ],
 )
 
 app.add_middleware(
@@ -138,6 +164,8 @@ app.add_middleware(
 
 for router in (
     plan.router,
+    flow.router,
+    overview.router,
     analysis.router,
     alerts.router,
     intel.router,

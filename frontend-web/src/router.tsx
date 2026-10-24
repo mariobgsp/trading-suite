@@ -13,12 +13,16 @@ import Tonight from "@/routes/Tonight";
 import Name from "@/routes/Name";
 import Method from "@/routes/Method";
 import Screener from "@/routes/Screener";
+import Flow from "@/routes/Flow";
+import Market from "@/routes/Market";
 
 /**
- * Four screens, and that is the whole navigation.
+ * Six screens, and that is the whole navigation.
  *
  *   Tonight  - what to buy, or why not to
  *   Screener - every name, ranked by how near it is to being buyable
+ *   Flow     - bandarmology-style cards and a transparent flow proxy
+ *   Market   - the daily breadth, stress and rotation dashboard
  *   Method   - the rules and the measured proof
  *   Name     - one name, priced as a trade, with its chart
  *
@@ -38,6 +42,8 @@ const DESCRIPTION =
 const NAV = [
 	{ to: "/", label: "Tonight" },
 	{ to: "/screener", label: "Screener" },
+	{ to: "/flow", label: "Flow" },
+	{ to: "/market", label: "Market" },
 	{ to: "/method", label: "Method" },
 ] as const;
 
@@ -60,11 +66,11 @@ function RootComponent() {
 				Skip to content
 			</a>
 			<header className="sticky top-0 z-40 border-b border-[var(--border)] bg-[var(--bg)]">
-				<div className="mx-auto flex max-w-[1180px] items-center justify-between gap-6 px-4 py-3 sm:px-6 lg:px-8">
+				<div className="mx-auto flex max-w-[1180px] items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
 					<Link to="/" className="shrink-0 font-display text-[15px] tracking-[-0.01em] text-[var(--text)]">
 						Tonight
 					</Link>
-					<nav aria-label="Sections" className="flex items-center gap-5 sm:gap-7">
+					<nav aria-label="Sections" className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 sm:gap-x-6">
 						{NAV.map(({ to, label }) => (
 							<Link
 								key={to}
@@ -147,6 +153,18 @@ const screenerRoute = createRoute({
 	component: Screener,
 });
 
+const flowRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: "/flow",
+	component: Flow,
+});
+
+const marketRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: "/market",
+	component: Market,
+});
+
 /* A retired tool path. The 22-tool desk is gone, so these land on the plan. A
  * `?ticker=` carried in from a bookmark is preserved rather than dropped, so an
  * old "screener?ticker=BBCA" link still opens that name. */
@@ -193,6 +211,8 @@ export const router = createRouter({
 	routeTree: rootRoute.addChildren([
 		indexRoute,
 		screenerRoute,
+		flowRoute,
+		marketRoute,
 		methodRoute,
 		nameRoute,
 		...retiredRoutes,

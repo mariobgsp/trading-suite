@@ -26,10 +26,13 @@ COLUMNS = [
     "change",
     "change_abs",
     "sector",
+    "industry",
     "market_cap_basic",
     "volume",
 ]
-CACHE_KEY = "idx:tv:scan"
+# Versioned because the cached row shape gained `industry`; an old v1 row would
+# otherwise be served for five minutes without it.
+CACHE_KEY = "idx:tv:scan:v2"
 CACHE_TTL_SECONDS = 300  # 5 min — movers are a "today" readout, not long-lived
 
 _LOCK = threading.Lock()
@@ -74,6 +77,7 @@ def _scrape_universe() -> list[dict[str, Any]]:
                 "change": _to_float(raw.get("change_abs")),
                 "change_percent": round(change_pct, 2),
                 "sector": str(raw.get("sector") or ""),
+                "industry": str(raw.get("industry") or ""),
                 "market_cap": _to_float(raw.get("market_cap_basic")),
                 "volume": _to_float(raw.get("volume")),
             }

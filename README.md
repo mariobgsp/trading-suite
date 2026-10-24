@@ -46,14 +46,22 @@ your browser resolves `localhost` to IPv6 and the backend is IPv4, start the
 frontend with `VITE_API_URL=http://127.0.0.1:8000` and open `http://127.0.0.1:5173`.
 </details>
 
-## The four screens
+## The six screens
 
 | Route | The question it answers |
 | --- | --- |
 | `/` **Tonight** | Should I buy anything, and if so what exactly? The verdict, the order ticket for each name, the watchlist, and the measured case for standing down |
 | `/screener` | Every name, ranked by how near it is to being buyable. No buy signals, on purpose |
+| `/flow` | A bandarmology-style research panel: technical cards and a **transparent flow-pressure proxy**. Not the vendor LPM, and never a plan input |
+| `/market` | The daily market dashboard: breadth, our stress gauge, and weekly sector, conglomerate and industry rotation |
 | `/method` | The rule chain, the result, the horizons that were measured and refused, the costs, and every citation |
 | `/name/$ticker` | One name: each condition with its value and how long it has held, the run-up to the signal, the levels, the ticket, the chart |
+
+The Flow panel is deliberately outside the method. Its score is built from Chaikin
+Money Flow plus the current IDX foreign-flow print (and optional Stockbit broker
+rows on explicit detail requests). The vendor formula and its data are proprietary;
+the UI says "proxy" wherever the line appears, and the accuracy panel reports the
+proxy's own forward-return record rather than a parity claim.
 
 ## The answer it gives
 
@@ -164,8 +172,8 @@ TRADING_DOCS_DIR=/path/to/study ./trading-suite run
 - Bars: the study's `data/raw/*.csv` through its manifest (with its per-file
   sha256 provenance and the phantom-bar repair re-applied on every load).
 - Results: `results/*.csv` — the census, the ladder, the holdout, the replay.
-- The API also keeps its own cache at `backend/data/cache.db` (SQLite WAL) for
-  yfinance/IDX/Intel feeds. Delete the file to reset.
+- The API also keeps its own cache at `backend/data/cache/cache.db` (SQLite WAL)
+  for yfinance/IDX/Intel feeds and the Flow payloads. Delete the file to reset.
 
 **Refresh** (the button in the header) pulls the latest daily bars and re-runs the
 analysis. Two rules keep it honest: a bar dated **today is refused until 16:02 WIB**
@@ -173,6 +181,22 @@ analysis. Two rules keep it honest: a bar dated **today is refused until 16:02 W
 breadth is a share of the universe. The live tail is merged **in memory** — nothing
 is ever written back into the study. The first press fetches the whole universe and
 takes minutes; later ones are incremental.
+
+**Caching.** Both research surfaces persist computed payloads in the same SQLite
+WAL cache as the market data (`backend/data/cache/cache.db`). Flow keys are
+`flow:v2:*`; Market uses `computed:overview:v1:*`.
+
+- **Flow**: cards, series and validation reports are keyed by their exact inputs
+  and served for `FLOW_CACHE_TTL` seconds (default 300). Stale entries are kept
+  for `FLOW_CACHE_STALE_DAYS` (default 7) and served with a warning if recompute
+  fails. `?refresh=1` bypasses the cache; `GET /api/flow/cache` shows the keys,
+  and `POST /api/flow/cache/clear` removes only Flow entries.
+- **Market**: `GET /api/overview` only reads a persisted snapshot. A background
+  job builds the first snapshot at startup and after a session changes; the page
+  shows the previous snapshot while the new one is built. `POST
+  /api/overview/refresh` starts the single-flight job, `GET
+  /api/overview/status` reports its phase, and `GET /api/overview/cache` shows
+  the store. A warm GET is a SQLite read, not a universe scan.
 
 ## API
 
@@ -183,24 +207,41 @@ takes minutes; later ones are incremental.
 | `GET /api/plan/{ticker}` | one name: gates with run lengths, the why-now run-up, levels, a sized geometry |
 | `POST /api/plan/size` | size one order and price its friction, without a universe pass |
 | `POST /api/plan/refresh` | start a refresh job (poll `GET /api/plan/refresh/{id}`, stop with `POST …/cancel`) |
+| `GET /api/flow/cards` | bounded Flow card scan; `universe=watchlist|movers|plan|tickers`, `limit`, `source` |
+| `GET /api/flow/{ticker}` | price + proxy-flow series and parameters for one name |
+| `POST /api/flow/validate` | forward-return report for a bounded list of names; vendor parity only with `FLOW_VENDOR_CSV` |
+| `GET /api/flow/health` | source availability, cache stats and the proxy disclaimer |
+| `GET /api/flow/cache` | Flow cache keys, path, TTLs and DB size |
+| `POST /api/flow/cache/clear` | delete only `flow:v2:*` cache entries |
+| `GET /api/overview` | cached daily dashboard snapshot; 202 with build progress when the first snapshot is still being built |
+| `GET /api/overview/status` | build phase, timing, coverage and errors |
+| `POST /api/overview/refresh` | start/reuse the single-flight dashboard build |
+| `GET /api/overview/cache` | overview cache keys, path, bytes and last build |
+| `POST /api/overview/cache/clear` | delete only overview snapshots |
+| `GET /api/overview/archive/{session}` | a persisted snapshot for a past session |
 | `GET /api/health`, `/docs` | health and Swagger |
 
 The older groups (`/api/market/*`, `/api/intel/*`, `/api/screener/*`,
 `/api/validator/*`, `/api/regime/*`, `/api/portfolio/*`, `/api/backtest/*`,
 `/api/summary/*`, `/api/alerts/*`, `/api/sentiment/*`, `/api/analysis/*`) are still
-mounted in `backend/app/main.py` for the legacy surfaces; the four plan screens do
-not use them.
+mounted in `backend/app/main.py` for the legacy surfaces; the plan screens do
+not use them. Flow uses `/api/flow/*` plus the existing market history endpoint
+for its candles. Market uses `/api/overview/*` only; it reads study history and
+the cached TradingView universe.
 
 ## Layout
 
 | Path | What it is |
 | --- | --- |
-| `frontend-web/src/routes/{Tonight,Screener,Method,Name}.tsx` | the four screens |
-| `frontend-web/src/components/{plan,regimes,MarketChart,RefreshButton,ThemeToggle}.tsx` | shared vocabulary, the regime ledger, charts, refresh |
-| `frontend-web/src/lib/{api/plan.ts,refresh.ts,cache.ts,theme.ts}` | types + SWR client + the re-read signal |
-| `backend/app/plan/` | the module: `screen`, `method`, `model`, `verdict`, `refresh`, `idx`, `citations`, `bars`, `regimes` |
-| `backend/app/routers/plan.py` | the HTTP seam for the plan |
-| `backend/tests/test_plan_*.py` | conformance, citations, sizing, verdict, why-now, refresh, regimes |
+| `frontend-web/src/routes/{Tonight,Screener,Flow,Market,Method,Name}.tsx` | the six screens |
+| `frontend-web/src/components/{plan,regimes,FlowChart,MarketChart,market,RefreshButton,ThemeToggle}.tsx` | shared vocabulary, the regime ledger, charts, the dashboard, refresh |
+| `frontend-web/src/lib/{api/plan.ts,api/flow.ts,api/overview.ts,refresh.ts,cache.ts,theme.ts}` | types + SWR client + the re-read signal |
+| `backend/app/plan/` | the nightly method: `screen`, `method`, `model`, `verdict`, `refresh`, `idx`, `citations`, `bars`, `regimes` |
+| `backend/app/flow/` | the research proxy: `technicals`, `lpm`, `sources`, `cards`, `series`, `validate` |
+| `backend/app/overview/` | the cache-first dashboard: `universe`, `summary`, `gauge`, `rotation`, `snapshot` |
+| `backend/app/computed_cache.py` | the shared versioned SQLite cache for computed payloads |
+| `backend/app/routers/{plan,flow,overview}.py` | the HTTP seams |
+| `backend/tests/test_plan_*.py`, `test_flow_*.py`, `test_overview_*.py` | conformance, citations, sizing, verdict, refresh, regimes; Flow proxy and causality; Market summary/rotation/cache |
 | `docs/architecture/*.puml` | diagrams of the **earlier** 5-route desk — not redrawn for this app |
 | `legacy/` | archived repos, not part of this app |
 | `trading-suite` / `trading-suite.sh` | the runner (identical twins) |
@@ -215,7 +256,10 @@ tiers, the size rule, the verdict machine and what it still cannot claim.
 | `TRADING_DOCS_DIR` | where the study lives (default `~/Projects/trading-backtest-docs`) |
 | `CORS_ORIGINS` | allowed browser origins (defaults include `:3000`, `:5173` and `:4173`) |
 | `YFINANCE_CACHE_TTL`, `YFINANCE_HISTORY_CACHE_TTL`, `FOREX_CACHE_TTL` | feed cache lifetimes |
-| `STOCKBIT_JWT_TOKEN` / `STOCKBIT_USERNAME` / `STOCKBIT_PASSWORD` | Stockbit broker feed (optional) |
+| `STOCKBIT_JWT_TOKEN` / `STOCKBIT_USERNAME` / `STOCKBIT_PASSWORD` | Stockbit broker feed (optional; used by Flow detail requests when explicitly asked) |
+| `FLOW_VENDOR_CSV` | optional licensed `date,ticker,lpm` CSV for a vendor-parity report; nothing is scraped |
+| `FLOW_CACHE_TTL` / `FLOW_CACHE_TTL_VALIDATE` / `FLOW_CACHE_STALE_DAYS` | Flow cache freshness (300s), validation freshness (3600s), stale retention (7 days) |
+| `OVERVIEW_CACHE_TTL` | Market snapshot freshness (default 900s) |
 | `GEMINI_API_KEY`, `OPENCODE_GO_API_KEY` | AI summaries in the legacy surfaces (optional) |
 
 `.env.example` still lists `NEXT_PUBLIC_API_URL` from the Next.js era; the Vite
@@ -227,9 +271,12 @@ frontend reads `VITE_API_URL` instead with the same default.
 ./trading-suite verify        # backend suite, then the frontend typecheck
 ```
 
-- **Backend**: 193 passed, 6 skipped, 2 failed. The two failures are
-  `tests/test_lpm.py` (Stockbit LPM math) and they fail identically on the commit
-  before the plan work — they are not caused by it.
+- **Backend**: 248 passed, 6 skipped, 0 failed (full run, ~7m29s on the study
+  checkout). The old `tests/test_lpm.py` failures were a look-ahead formula;
+  that test file now pins causality, and the legacy endpoint uses the Flow proxy.
+  `tests/test_flow_*.py` cover the technicals, the proxy, the cache, the HTTP
+  seam and the accuracy report; `tests/test_overview_*.py` cover the Market
+  summary, stress gauge, rotation and the cache-first snapshot job.
 - The plan tests need the study checkout; the conformance tests import the study's
   own signal code. `tests/test_plan_regimes.py` runs the study's own `cap_bounce`
   family against the app's capitulation watch and guards every regime artifact the

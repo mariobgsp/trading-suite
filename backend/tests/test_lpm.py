@@ -1,35 +1,120 @@
-"""Unit tests for LPM math in stockbit_lpm_intensity.
+"""The Flow proxy is causal, finite, and honest about its source.
 
-Pin the contract:
-- LPM[i] is anchored to current bar's price (close * (1 + mean(next3 broker_norm) * 0.05))
-- Last 3 bars carry the prior LPM value forward (no future data, keep line continuous)
-- Series length matches per_day length
-- Returns floats in price space (within +/-5% of close)
-- Backend contract: dict with {ticker, lpm: list, intensity: list, available, days, dates, orderbook, as_of}
+The old tests in this file pinned a formula that let future broker flow change
+earlier LPM values. That is look-ahead; it cannot be used live and cannot be
+validated against a forward return. The tests below replace it with the rule the
+rest of the app depends on: at bar t, only bars <= t are read.
 """
 
 from __future__ import annotations
 
 import math
-import os
-import sys
-import unittest
 from unittest.mock import patch
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import numpy as np
+import pandas as pd
+import pytest
+
+from app.flow import lpm as L
 
 
-def _synthetic_per_day(n: int = 30, base_price: float = 1000.0):
-    """per_day-shaped dicts. top3_net ramps up then down so the LPM signal has a clear shape."""
+def _frame(n: int = 120) -> pd.DataFrame:
+    rng = np.random.default_rng(11)
+    close = 100.0 * np.exp(np.cumsum(rng.normal(0.0004, 0.01, n)))
+    index = pd.bdate_range("2025-01-01", periods=n)
+    return pd.DataFrame(
+        {
+            "Open": close * (1.0 + rng.normal(0.0, 0.002, n)),
+            "High": close * (1.0 + np.abs(rng.normal(0.0, 0.006, n))),
+            "Low": close * (1.0 - np.abs(rng.normal(0.0, 0.006, n))),
+            "Close": close,
+            "Volume": rng.integers(1_000_000, 5_000_000, n).astype(float),
+        },
+        index=index,
+    )
+
+
+def _broker(frame: pd.DataFrame, sign: float = 1.0) -> pd.Series:
+    values = np.linspace(-1.0, 1.0, len(frame)) * 500_000.0 * sign
+    return pd.Series(values, index=frame.index)
+
+
+def test_proxy_is_causal_when_future_broker_flow_changes():
+    frame = _frame()
+    broker_a = _broker(frame, sign=1.0)
+    broker_b = broker_a.copy()
+    cutoff = 80
+    broker_b.iloc[cutoff:] = broker_b.iloc[cutoff:] * -3.0
+
+    scored_a, _ = L.score_frame(frame, broker_net_lots=broker_a)
+    scored_b, _ = L.score_frame(frame, broker_net_lots=broker_b)
+
+    a = scored_a["lpm_score"].iloc[:cutoff].to_numpy()
+    b = scored_b["lpm_score"].iloc[:cutoff].to_numpy()
+    assert np.allclose(a, b, equal_nan=True)
+
+
+def test_proxy_reads_only_the_past_when_future_prices_change():
+    frame = _frame()
+    frame_b = frame.copy()
+    cutoff = 70
+    frame_b.iloc[cutoff:, frame_b.columns.get_loc("Close")] *= 2.0
+    frame_b.iloc[cutoff:, frame_b.columns.get_loc("Volume")] *= 0.5
+
+    scored_a, _ = L.score_frame(frame)
+    scored_b, _ = L.score_frame(frame_b)
+    assert np.allclose(
+        scored_a["lpm_score"].iloc[:cutoff].to_numpy(),
+        scored_b["lpm_score"].iloc[:cutoff].to_numpy(),
+        equal_nan=True,
+    )
+
+
+def test_score_is_bounded_and_price_space_is_near_close():
+    frame = _frame()
+    scored, meta = L.score_frame(frame, broker_net_lots=_broker(frame))
+    score = scored["lpm_score"].dropna()
+    assert len(score) > 20
+    assert float(score.min()) >= -1.0001
+    assert float(score.max()) <= 1.0001
+    assert meta["quality"] == "proxy"
+    assert meta["has_broker"] is True
+
+    price = scored["lpm_price_space"].dropna()
+    close = scored["Close"].loc[price.index]
+    ratio = (price / close - 1.0).abs()
+    assert float(ratio.max()) <= L.PRICE_SPACE_SCALE + 1e-9
+
+
+def test_direction_thresholds():
+    assert L.direction(L.DIRECTION_THRESHOLD + 0.001) == "rising"
+    assert L.direction(-L.DIRECTION_THRESHOLD - 0.001) == "falling"
+    assert L.direction(0.0) == "flat"
+    assert L.direction(None) == "unavailable"
+    assert L.direction(float("nan")) == "unavailable"
+
+
+def test_no_flow_falls_back_to_cmf_and_says_so():
+    frame = _frame()
+    scored, meta = L.score_frame(frame)
+    assert meta["source"] == "ohlcv+cmf"
+    assert meta["has_foreign"] is False
+    assert meta["has_broker"] is False
+    assert any("price/volume proxy" in warning for warning in meta["warnings"])
+    assert scored["lpm_score"].notna().sum() > 0
+
+
+def _per_day(n: int = 30, base_price: float = 1000.0, flip_after: int | None = None):
     rows = []
     for i in range(n):
-        # u-shape: top3_net = 1000 + 500*sin(i/5) so mean(next3) varies smoothly
         top3 = 1000.0 + 500.0 * math.sin(i / 5.0)
+        if flip_after is not None and i >= flip_after:
+            top3 *= -2.0
         rows.append(
             {
                 "date": f"2026-01-{(i % 28) + 1:02d}",
                 "price": base_price + i,
-                "volume": 1_000_000,
+                "volume": 1_000_000.0,
                 "available": True,
                 "rows": [],
                 "top3_net": top3,
@@ -38,80 +123,48 @@ def _synthetic_per_day(n: int = 30, base_price: float = 1000.0):
     return rows
 
 
-class LpmMathTest(unittest.TestCase):
-    def setUp(self):
-        # Stub broker_history + orderbook_snapshot so the call is fully offline.
-        from app import stockbit
+def test_legacy_endpoint_returns_causal_proxy_shape():
+    from app import stockbit
 
-        self._bh_patch = patch.object(
-            stockbit, "broker_history", return_value={"per_day": _synthetic_per_day(30), "available": True, "dates": [], "as_of": "2026-01-01T00:00:00Z"}
-        )
-        self._ob_patch = patch.object(stockbit, "orderbook_snapshot", return_value={"available": False})
-        self._bh_patch.start()
-        self._ob_patch.start()
+    with patch.object(
+        stockbit,
+        "broker_history",
+        return_value={
+            "per_day": _per_day(30),
+            "available": True,
+            "dates": [],
+            "as_of": "2026-01-01T00:00:00Z",
+        },
+    ), patch.object(stockbit, "orderbook_snapshot", return_value={"available": False}):
+        out = stockbit.stockbit_lpm_intensity("BBCA", days=30, force=True)
 
-    def tearDown(self):
-        self._bh_patch.stop()
-        self._ob_patch.stop()
-
-    def test_returns_payload_shape(self):
-        from app.stockbit import stockbit_lpm_intensity
-
-        out = stockbit_lpm_intensity("BBCA", days=30, force=True)
-        self.assertIn("lpm", out)
-        self.assertIn("intensity", out)
-        self.assertIn("ticker", out)
-        self.assertEqual(out["ticker"], "BBCA")
-        self.assertEqual(len(out["lpm"]), 30)
-        self.assertEqual(len(out["intensity"]), 30)
-
-    def test_lpm_lives_in_price_space(self):
-        """LPM value at bar i must be within +/-5% of price[i]."""
-        from app.stockbit import stockbit_lpm_intensity
-
-        out = stockbit_lpm_intensity("BBCA", days=30, force=True)
-        # The last 3 bars carry the prior LPM forward -> skip them
-        for i, v in enumerate(out["lpm"][:-3]):
-            self.assertIsNotNone(v, f"lpm[{i}] should not be None")
-            price = 1000.0 + i
-            self.assertGreater(v, price * 0.94)
-            self.assertLess(v, price * 1.06)
-
-    def test_last_bar_carries_forward(self):
-        """The very last bar has no future window; LPM carries the prior value forward so the line stays drawn."""
-        from app.stockbit import stockbit_lpm_intensity
-
-        out = stockbit_lpm_intensity("BBCA", days=30, force=True)
-        lpm = out["lpm"]
-        # Bar 28 has window [29:30] = 1 bar, so it computes from one value.
-        # Bar 29 (last) has no future, so it carries the prior value forward.
-        self.assertEqual(lpm[29], lpm[28])
-
-    def test_lead_is_structural(self):
-        """LPM value at bar i must change when future broker_norms change, even if price[i] is constant."""
-        from app import stockbit
-
-        # Two synthetic histories with the SAME prices but DIFFERENT future broker flow
-        per_day_a = _synthetic_per_day(30)
-        per_day_b = _synthetic_per_day(30)
-        # Shift top3_net on bars 20..29 so the LPM at bars 17..20 should change
-        for i in range(20, 30):
-            per_day_b[i]["top3_net"] = per_day_b[i]["top3_net"] * -1  # flip sign
-
-        with patch.object(stockbit, "broker_history", side_effect=[
-            {"per_day": per_day_a, "available": True, "dates": [], "as_of": ""},
-            {"per_day": per_day_b, "available": True, "dates": [], "as_of": ""},
-        ]), patch.object(stockbit, "orderbook_snapshot", return_value={"available": False}):
-            out_a = stockbit.stockbit_lpm_intensity("BBCA", days=30, force=True)
-            out_b = stockbit.stockbit_lpm_intensity("BBCA", days=30, force=True)
-
-        # LPM at bar 18 (uses bars 19..21) should differ between A and B
-        self.assertNotEqual(out_a["lpm"][18], out_b["lpm"][18])
-        # LPM at bar 26 (last with future window) should differ
-        self.assertNotEqual(out_a["lpm"][26], out_b["lpm"][26])
-        # Price[18] is the same -> line anchor is the same; only the magnitude differs
-        # because future flow changed.
+    assert out["ticker"] == "BBCA"
+    for key in ("lpm", "score", "direction", "intensity", "source", "quality"):
+        assert key in out
+    assert len(out["lpm"]) == 30
+    assert len(out["score"]) == 30
+    assert len(out["intensity"]) == 30
+    assert out["quality"] == "proxy"
+    assert "causal Flow proxy" in " ".join(out["warnings"])
+    assert all(value is None or math.isfinite(value) for value in out["lpm"])
 
 
-if __name__ == "__main__":
-    unittest.main()
+def test_legacy_endpoint_does_not_let_future_flow_change_past_values():
+    from app import stockbit
+
+    base = {"available": True, "dates": [], "as_of": "2026-01-01T00:00:00Z"}
+    with patch.object(
+        stockbit,
+        "broker_history",
+        side_effect=[
+            {**base, "per_day": _per_day(30)},
+            {**base, "per_day": _per_day(30, flip_after=20)},
+        ],
+    ), patch.object(stockbit, "orderbook_snapshot", return_value={"available": False}):
+        first = stockbit.stockbit_lpm_intensity("BBRI", days=30, force=True)
+        second = stockbit.stockbit_lpm_intensity("BBRI", days=30, force=True)
+
+    # Bars before the changed window must be identical. The old formula failed
+    # this exact test by construction.
+    for i in range(18):
+        assert first["lpm"][i] == pytest.approx(second["lpm"][i])

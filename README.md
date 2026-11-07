@@ -1,14 +1,14 @@
 # Trading Suite — the nightly IDX plan
 
 > One question, answered once a session: **which Indonesian stocks should I buy at
-> the next open, and why?** Four screens, a FastAPI backend, and a rule chain
-> re-transcribed from a walk-forward study — with the study's own artifacts as the
-> evidence, and "no trade" as a first-class answer.
+> the next open, and why?** Seven screens, a FastAPI backend, a Go Stockbit
+> companion, and a rule chain re-transcribed from a walk-forward study — with the
+> study's own artifacts as the evidence, and "no trade" as a first-class answer.
 
 ```
 ┌──────────────────────┐   /api/plan*   ┌────────────────────┐   ┌──────────────────────┐
 │ Vite + React SPA     │ ─────────────▶ │ FastAPI  :8000     │──▶│ study results (CSV)  │
-│ :5173  (4 screens)   │ ◀───────────── │ app/plan/*         │   │ + daily bars + live  │
+│ :5173  (7 screens)   │ ◀───────────── │ app/plan/*         │   │ + daily bars + live  │
 └──────────────────────┘   SWR cache    └─────────┬──────────┘   │   tail (yfinance)    │
                                                  │ SQLite WAL   └──────────────────────┘
                                           ┌──────▼───────┐
@@ -20,15 +20,20 @@
 
 ```sh
 chmod +x ./trading-suite
-./trading-suite run      # backend :8000 + frontend :5173
-# open http://127.0.0.1:5173
-./trading-suite verify    # backend tests + frontend typecheck
-./trading-suite stop      # kill both
+./trading-suite run      # stockbitd :8787 + backend :8000 + frontend :5173
+# open http://127.0.0.1:5173/stockbit and save your Stockbit sign-in once; it signs in automatically
+./trading-suite verify    # backend tests + frontend typecheck + go test -short
+./trading-suite stop      # kill all three
 ./trading-suite logs      # tail -f /tmp/trading-suite/*.log
 ```
 
 The backend needs the study checkout (see [Data](#data)) before `plan` can answer
 anything; the first request reads ~887 ticker files and takes a few seconds.
+
+The runner also starts the local `stockbitd` companion on `127.0.0.1:8787` when it
+is built (or builds it when Go is available). The Stockbit screen is then ready
+for its one-time browser login; without the daemon the rest of the app still
+runs and that screen shows a designed `daemon_unavailable` state.
 
 <details>
 <summary>Raw commands, if you prefer not to use the runner</summary>
@@ -46,13 +51,14 @@ your browser resolves `localhost` to IPv6 and the backend is IPv4, start the
 frontend with `VITE_API_URL=http://127.0.0.1:8000` and open `http://127.0.0.1:5173`.
 </details>
 
-## The six screens
+## The seven screens
 
 | Route | The question it answers |
 | --- | --- |
 | `/` **Tonight** | Should I buy anything, and if so what exactly? The verdict, the order ticket for each name, the watchlist, and the measured case for standing down |
 | `/screener` | Every name, ranked by how near it is to being buyable. No buy signals, on purpose |
 | `/flow` | A bandarmology-style research panel: technical cards and a **transparent flow-pressure proxy**. Not the vendor LPM, and never a plan input |
+| `/stockbit` **Stockbit** | One saved sign-in, automatic browser form fill, the maintained cookie jar, the Stockbit quote/info/orderbook/broker rows, the personal watchlist, and the suite's recommendation for the loaded name |
 | `/market` | The daily market dashboard: breadth, our stress gauge, and weekly sector, conglomerate and industry rotation |
 | `/method` | The rule chain, the result, the horizons that were measured and refused, the costs, and every citation |
 | `/name/$ticker` | One name: each condition with its value and how long it has held, the run-up to the signal, the levels, the ticket, the chart |
@@ -62,6 +68,16 @@ Money Flow plus the current IDX foreign-flow print (and optional Stockbit broker
 rows on explicit detail requests). The vendor formula and its data are proprietary;
 the UI says "proxy" wherever the line appears, and the accuracy panel reports the
 proxy's own forward-return record rather than a parity claim.
+
+The Stockbit screen owns the automatic sign-in. Save the stockbit.com account
+once; the local `stockbitd` companion opens a real Chromium window, fills
+Stockbit's own form, submits it, and keeps the resulting cookie jar and access
+token fresh. The password is stored locally with mode 0600 and is never returned
+by the API or written to a log. A verification code, PIN or challenge from
+Stockbit is the one step only you can complete in that window. The page merges
+the suite's measured plan for the loaded name (gates, geometry, recommendation)
+with the Stockbit quote and broker rows. That broker flow is context only: it is
+not an input to the plan's verdict, and the page says so next to the numbers.
 
 ## The answer it gives
 
@@ -169,11 +185,58 @@ with every one of those numbers attached, and never as a ticket.
 TRADING_DOCS_DIR=/path/to/study ./trading-suite run
 ```
 
-- Bars: the study's `data/raw/*.csv` through its manifest (with its per-file
-  sha256 provenance and the phantom-bar repair re-applied on every load).
+- Bars: the normalized local store at `backend/data/market.db` (SQLite, ~887
+  names / ~1M rows), imported from the study's `data/raw/*.csv` and manifest.
+  The CSVs + manifest remain the provenance of record; the store is the app's
+  read path. The plan's default bar source is the store; a missing store falls
+  back to the study CSVs, then to live Yahoo.
 - Results: `results/*.csv` — the census, the ladder, the holdout, the replay.
 - The API also keeps its own cache at `backend/data/cache/cache.db` (SQLite WAL)
   for yfinance/IDX/Intel feeds and the Flow payloads. Delete the file to reset.
+  The persisted plans live there too under `computed:plan:*`.
+
+**Weekly data update.** The store is refreshed once a week from Yahoo, through
+the study's resumable fetch:
+
+```sh
+./trading-suite sync-data            # fetch 5y, repair, import, warm the plan (10-20m)
+./trading-suite sync-data --no-fetch # repair + import the current study CSVs (~1m)
+```
+
+The sync is exclusive (a second run exits with `lock_busy`), replaces the bar
+snapshot atomically, and computes the plan once at the end so the app's next start
+does not pay the 26-second screen. It also runs the study's own phantom-bar
+repair before importing: a fresh 5-year window can start earlier for the
+benchmark than for a ticker whose fetch failed, and the plan's
+`no_phantom_bars` integrity check would correctly refuse such a source
+(`DATA_UNSAFE`). The systemd timer runs it every Saturday at
+09:00 Asia/Jakarta:
+
+```sh
+cp systemd/trading-suite-sync.{service,timer} ~/.config/systemd/user/
+# edit the checkout path in the service if it is not ~/Projects/trading-suite
+systemctl --user daemon-reload
+systemctl --user enable --now trading-suite-sync.timer
+systemctl --user list-timers trading-suite-sync.timer
+journalctl --user -u trading-suite-sync.service
+```
+
+The normal plan and daily history then read the store and do not call Yahoo.
+Two paths deliberately still do: the explicit **Refresh** button (it needs the
+latest bars) and the quote/IDX/Intel feeds whose TTLs are shorter than a week.
+Weekly bars cannot be a live quote; the plan labels the data's `as_of` instead
+of pretending otherwise.
+- **Stockbit.** The broker rows and the quote/orderbook data come from the local
+  `stockbitd` companion: a small Go app that signs in to Stockbit automatically
+  from a saved password (or an existing cookie), keeps the cookie jar and refresh
+  token alive, and serves the data on `127.0.0.1:8787`. The runner starts it when
+  it is built (and builds it when Go is available); `STOCKBITD_URL` defaults to
+  that port. The `/stockbit` screen is the sign-in and data surface, and the
+  backend proxies its JSON. When the daemon is healthy, Flow's explicit broker
+  detail also delegates to it; when it is down, that data path falls back to the
+  legacy `STOCKBIT_JWT_TOKEN` and the screen shows `daemon_unavailable`. Set
+  `STOCKBITD_URL=` empty to disable the daemon deliberately. See
+  [`stockbitd/README.md`](stockbitd/README.md).
 
 **Refresh** (the button in the header) pulls the latest daily bars and re-runs the
 analysis. Two rules keep it honest: a bar dated **today is refused until 16:02 WIB**
@@ -182,9 +245,13 @@ breadth is a share of the universe. The live tail is merged **in memory** — no
 is ever written back into the study. The first press fetches the whole universe and
 takes minutes; later ones are incremental.
 
-**Caching.** Both research surfaces persist computed payloads in the same SQLite
+**Caching.** The research surfaces persist computed payloads in the same SQLite
 WAL cache as the market data (`backend/data/cache/cache.db`). Flow keys are
-`flow:v2:*`; Market uses `computed:overview:v1:*`.
+`flow:v2:*`; Market uses `computed:overview:v1:*`; the plan uses
+`computed:plan:v1:*`, keyed by the store snapshot, the requested session and the
+method family. A warm plan is ~0.05s against the measured 26s cold screen; the
+sync warms it after every import. Bump `PLAN_CACHE_VERSION` in
+`backend/app/plan/__init__.py` when the rule chain changes.
 
 - **Flow**: cards, series and validation reports are keyed by their exact inputs
   and served for `FLOW_CACHE_TTL` seconds (default 300). Stale entries are kept
@@ -219,6 +286,13 @@ WAL cache as the market data (`backend/data/cache/cache.db`). Flow keys are
 | `GET /api/overview/cache` | overview cache keys, path, bytes and last build |
 | `POST /api/overview/cache/clear` | delete only overview snapshots |
 | `GET /api/overview/archive/{session}` | a persisted snapshot for a past session |
+| `GET /api/stockbit/status` | the Stockbit session proxied from `stockbitd`; `state=daemon_unavailable` when it is not running |
+| `POST /api/stockbit/login` | start the one-time browser login; poll `GET /api/stockbit/login/{id}`, cancel with `POST …/cancel` |
+| `POST /api/stockbit/session/token`, `/cookies`, `/refresh`, `/logout` | adopt a token or cookie, force a refresh, or disconnect |
+| `POST /api/stockbit/session/credentials`, `/clear` | save or forget the automatic Stockbit sign-in the daemon uses to fill the login form |
+| `GET /api/stockbit/symbol/{ticker}` | quote, company info, orderbook and broker rows for one name |
+| `GET /api/stockbit/brokers/{ticker}?date=`, `/orderbook/{ticker}`, `/watchlist` | the individual reads |
+| `GET /api/stockbit/cache`, `POST /api/stockbit/cache/clear` | the daemon's read cache, separate from the session |
 | `GET /api/health`, `/docs` | health and Swagger |
 
 The older groups (`/api/market/*`, `/api/intel/*`, `/api/screener/*`,
@@ -233,15 +307,22 @@ the cached TradingView universe.
 
 | Path | What it is |
 | --- | --- |
-| `frontend-web/src/routes/{Tonight,Screener,Flow,Market,Method,Name}.tsx` | the six screens |
+| `frontend-web/src/routes/{Tonight,Screener,Flow,Stockbit,Market,Method,Name}.tsx` | the seven screens |
 | `frontend-web/src/components/{plan,regimes,FlowChart,MarketChart,market,RefreshButton,ThemeToggle}.tsx` | shared vocabulary, the regime ledger, charts, the dashboard, refresh |
-| `frontend-web/src/lib/{api/plan.ts,api/flow.ts,api/overview.ts,refresh.ts,cache.ts,theme.ts}` | types + SWR client + the re-read signal |
+| `frontend-web/src/lib/{api/plan.ts,api/flow.ts,api/overview.ts,api/stockbit.ts,refresh.ts,cache.ts,theme.ts}` | types + SWR client + the re-read signal |
 | `backend/app/plan/` | the nightly method: `screen`, `method`, `model`, `verdict`, `refresh`, `idx`, `citations`, `bars`, `regimes` |
 | `backend/app/flow/` | the research proxy: `technicals`, `lpm`, `sources`, `cards`, `series`, `validate` |
 | `backend/app/overview/` | the cache-first dashboard: `universe`, `summary`, `gauge`, `rotation`, `snapshot` |
-| `backend/app/computed_cache.py` | the shared versioned SQLite cache for computed payloads |
+| `backend/app/computed_cache.py` | the shared versioned SQLite cache for computed payloads, including the persisted plan |
+| `backend/app/market_store.py` | the normalized SQLite daily-bar store imported from the study snapshot |
+| `backend/scripts/sync_market.py` | the weekly fetch → import → plan-warm job |
+| `systemd/trading-suite-sync.{service,timer}` | the Saturday 09:00 WIB data update |
+| `backend/data/market.db` | the local bar store (gitignored; rebuilt by the sync) |
+| `backend/app/stockbit_daemon.py` | the suite's client of `stockbitd`: raw transport, health/fallback decision, legacy-shaped mappings |
+| `backend/app/routers/stockbit.py` | the `/api/stockbit/*` proxy; keeps the daemon's status codes and one `daemon_unavailable` state |
+| `stockbitd/` | the standalone Go Stockbit session keeper: saved automatic sign-in, cookie/token maintenance, data API and panel |
 | `backend/app/routers/{plan,flow,overview}.py` | the HTTP seams |
-| `backend/tests/test_plan_*.py`, `test_flow_*.py`, `test_overview_*.py` | conformance, citations, sizing, verdict, refresh, regimes; Flow proxy and causality; Market summary/rotation/cache |
+| `backend/tests/test_plan_*.py`, `test_flow_*.py`, `test_overview_*.py`, `test_stockbit_*.py` | conformance, citations, sizing, verdict, refresh, regimes; Flow proxy and causality; Market summary/rotation/cache; the Stockbit proxy and adapter |
 | `docs/architecture/*.puml` | diagrams of the **earlier** 5-route desk — not redrawn for this app |
 | `legacy/` | archived repos, not part of this app |
 | `trading-suite` / `trading-suite.sh` | the runner (identical twins) |
@@ -253,10 +334,15 @@ tiers, the size rule, the verdict machine and what it still cannot claim.
 
 | Variable | Purpose |
 | --- | --- |
-| `TRADING_DOCS_DIR` | where the study lives (default `~/Projects/trading-backtest-docs`) |
+| `TRADING_DOCS_DIR` | where the study lives (default `~/Projects/trading-backtest-docs`); also the sync's default `--study-root` |
+| `MARKET_DB` | override the local bar store path (default `backend/data/market.db`) |
+| `PLAN_CACHE_TTL_SECONDS` | how long a persisted plan remains readable (default 8 days; the computed-cache hard stale is 7 days) |
 | `CORS_ORIGINS` | allowed browser origins (defaults include `:3000`, `:5173` and `:4173`) |
 | `YFINANCE_CACHE_TTL`, `YFINANCE_HISTORY_CACHE_TTL`, `FOREX_CACHE_TTL` | feed cache lifetimes |
-| `STOCKBIT_JWT_TOKEN` / `STOCKBIT_USERNAME` / `STOCKBIT_PASSWORD` | Stockbit broker feed (optional; used by Flow detail requests when explicitly asked) |
+| `STOCKBITD_URL` | the local `stockbitd` session keeper (default `http://127.0.0.1:8787`). The runner starts it; set it empty to disable the daemon and use the legacy JWT. See [`stockbitd/README.md`](stockbitd/README.md) |
+| `STOCKBITD_TIMEOUT` | timeout for the local daemon (seconds, default 8) |
+| `STOCKBIT_USERNAME` / `STOCKBIT_PASSWORD` | optional one-time automatic sign-in for the daemon. The suite copies a legacy `.env` pair into `stockbitd` once; the `/stockbit` form is the usual path. Stored on this machine only |
+| `STOCKBIT_JWT_TOKEN` | legacy Stockbit JWT path, used only when the daemon is disabled or down |
 | `FLOW_VENDOR_CSV` | optional licensed `date,ticker,lpm` CSV for a vendor-parity report; nothing is scraped |
 | `FLOW_CACHE_TTL` / `FLOW_CACHE_TTL_VALIDATE` / `FLOW_CACHE_STALE_DAYS` | Flow cache freshness (300s), validation freshness (3600s), stale retention (7 days) |
 | `OVERVIEW_CACHE_TTL` | Market snapshot freshness (default 900s) |
@@ -268,21 +354,37 @@ frontend reads `VITE_API_URL` instead with the same default.
 ## Testing
 
 ```sh
-./trading-suite verify        # backend suite, then the frontend typecheck
+./trading-suite verify        # backend suite, frontend typecheck, go test -short
 ```
 
-- **Backend**: 248 passed, 6 skipped, 0 failed (full run, ~7m29s on the study
-  checkout). The old `tests/test_lpm.py` failures were a look-ahead formula;
-  that test file now pins causality, and the legacy endpoint uses the Flow proxy.
+- **Backend**: 288 passed, 6 skipped, 0 failed (full run, ~8–13m on the study
+  checkout depending on cache and load, with the dev servers stopped so the
+  live-contract tests skip). The old `tests/test_lpm.py` failures were a
+  look-ahead formula; that test file now pins causality, and the legacy endpoint
+  uses the Flow proxy. Two cases cover the persisted-plan cache and three cover
+  the market store. Nineteen cases
+  are `tests/test_stockbit_daemon.py`, the local `stockbitd` adapter, and
+  sixteen are `tests/test_stockbit_proxy.py`, the `/api/stockbit/*` seam.
   `tests/test_flow_*.py` cover the technicals, the proxy, the cache, the HTTP
   seam and the accuracy report; `tests/test_overview_*.py` cover the Market
-  summary, stress gauge, rotation and the cache-first snapshot job.
+  summary, stress gauge, rotation and the cache-first snapshot job. The
+  `tests/test_api_contracts.py` cases run only when a backend is listening on
+  `:8000`; run `./trading-suite verify` after `stop` for the offline profile.
+  The plan-cache tests clear the persisted plan; `./trading-suite sync-data
+  --no-fetch --json` warms it again (or the next start computes once).
 - The plan tests need the study checkout; the conformance tests import the study's
   own signal code. `tests/test_plan_regimes.py` runs the study's own `cap_bounce`
   family against the app's capitulation watch and guards every regime artifact the
   UI quotes.
 - `pytest` is **not** in `backend/requirements.txt`. If the venv lacks it:
   `uv pip install --python backend/.venv/bin/python pytest`.
+- **stockbitd**: `cd stockbitd && go test ./... && go vet ./...`. The CDP smoke
+  test launches the real browser in headless mode when one is installed; it
+  skips otherwise. The runner's verify uses `-short` for this suite. The
+  credentials store, the form-fill script and its escaping are unit-tested; the
+  automatic sign-in was also exercised end-to-end against a local login fixture
+  (the daemon filled the form, read the resulting storage and adopted the
+  session).
 - **Frontend**: `cd frontend-web && npm run typecheck` (or `npm run build`).
   `@types/node` is a devDependency; without it the `node:test` / `node:url`
   imports in the existing test files and `vite.config.ts` fail the typecheck.

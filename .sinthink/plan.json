@@ -1,0 +1,2057 @@
+{
+  "version": 1,
+  "feature": "stockbit-trading-suite",
+  "title": "Stockbit in the trading suite \u2014 one login, maintained cookies, a native surface",
+  "nouns": [
+    {
+      "name": "Session",
+      "kind": "record",
+      "file": "stockbitd/internal/session/session.go"
+    },
+    {
+      "name": "Token",
+      "kind": "record",
+      "file": "stockbitd/internal/session/token.go"
+    },
+    {
+      "name": "Cookie",
+      "kind": "record",
+      "file": "stockbitd/internal/session/cookie.go"
+    },
+    {
+      "name": "SessionError",
+      "kind": "variant",
+      "file": "stockbitd/internal/session/errors.go"
+    },
+    {
+      "name": "Harvest",
+      "kind": "record",
+      "file": "stockbitd/internal/browser/harvest.go"
+    },
+    {
+      "name": "LoginAttempt",
+      "kind": "record",
+      "file": "stockbitd/internal/browser/browser.go"
+    },
+    {
+      "name": "SymbolSnapshot",
+      "kind": "record",
+      "file": "stockbitd/internal/stockbit/models.go"
+    },
+    {
+      "name": "BrokerRow",
+      "kind": "record",
+      "file": "stockbitd/internal/stockbit/models.go"
+    },
+    {
+      "name": "Watchlist",
+      "kind": "record",
+      "file": "stockbitd/internal/stockbit/models.go"
+    },
+    {
+      "name": "Config",
+      "kind": "record",
+      "file": "stockbitd/internal/config/config.go"
+    },
+    {
+      "name": "DaemonStatus",
+      "kind": "record",
+      "file": "backend/app/stockbit_daemon.py"
+    },
+    {
+      "name": "StockbitAttempt",
+      "kind": "record",
+      "file": "frontend-web/src/lib/api/stockbit.ts"
+    },
+    {
+      "name": "StockbitSnapshot",
+      "kind": "record",
+      "file": "frontend-web/src/lib/api/stockbit.ts"
+    },
+    {
+      "name": "StockbitWatchlist",
+      "kind": "record",
+      "file": "frontend-web/src/lib/api/stockbit.ts"
+    },
+    {
+      "name": "StockbitCache",
+      "kind": "record",
+      "file": "frontend-web/src/lib/api/stockbit.ts"
+    },
+    {
+      "name": "Credentials",
+      "kind": "record",
+      "file": "stockbitd/internal/credentials/credentials.go"
+    },
+    {
+      "name": "StockbitCredentials",
+      "kind": "record",
+      "file": "frontend-web/src/lib/api/stockbit.ts"
+    },
+    {
+      "name": "MarketSnapshot",
+      "kind": "record",
+      "file": "backend/app/market_store.py"
+    },
+    {
+      "name": "DailyBar",
+      "kind": "record",
+      "file": "backend/app/market_store.py"
+    },
+    {
+      "name": "PlanArtifact",
+      "kind": "record",
+      "file": "backend/app/plan/__init__.py"
+    }
+  ],
+  "graph": {
+    "nodes": [
+      {
+        "id": "config.load",
+        "label": "config.Load",
+        "file": "stockbitd/internal/config/config.go",
+        "a": "env -> Config",
+        "e": [
+          "config_invalid",
+          "home_unresolved"
+        ],
+        "r": [
+          "os_env"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "store.load",
+        "label": "store.Load",
+        "file": "stockbitd/internal/session/store.go",
+        "a": "path -> Session",
+        "e": [
+          "session_missing",
+          "session_corrupt",
+          "permission_denied"
+        ],
+        "r": [
+          "data_dir"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "store.save",
+        "label": "store.Save",
+        "file": "stockbitd/internal/session/store.go",
+        "a": "Session -> path",
+        "e": [
+          "write_failed",
+          "permission_denied"
+        ],
+        "r": [
+          "data_dir"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "token.decode",
+        "label": "token.Decode",
+        "file": "stockbitd/internal/session/token.go",
+        "a": "jwt -> Claims",
+        "e": [
+          "invalid_token"
+        ],
+        "r": [],
+        "cardinality": "one"
+      },
+      {
+        "id": "cookie.parse",
+        "label": "cookie.ParseHeader",
+        "file": "stockbitd/internal/session/cookie.go",
+        "a": "cookie header -> []Cookie",
+        "e": [
+          "invalid_cookie"
+        ],
+        "r": [],
+        "cardinality": "one"
+      },
+      {
+        "id": "cookie.credential",
+        "label": "cookie.Credential",
+        "file": "stockbitd/internal/session/cookie.go",
+        "a": "[]Cookie -> Token pair",
+        "e": [
+          "invalid_cookie",
+          "invalid_token",
+          "no_credentials"
+        ],
+        "r": [],
+        "cardinality": "one"
+      },
+      {
+        "id": "session.status",
+        "label": "Manager.Status",
+        "file": "stockbitd/internal/session/session.go",
+        "a": "Session -> Status",
+        "e": [
+          "session_corrupt"
+        ],
+        "r": [
+          "store.load"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "session.ensure",
+        "label": "Manager.Ensure",
+        "file": "stockbitd/internal/session/session.go",
+        "a": "Session -> access token",
+        "e": [
+          "not_connected",
+          "reauth_required",
+          "upstream_error",
+          "upstream_timeout"
+        ],
+        "r": [
+          "session.refresh"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "session.refresh",
+        "label": "Manager.Refresh",
+        "file": "stockbitd/internal/session/refresh.go",
+        "a": "refresh token -> Session",
+        "e": [
+          "reauth_required",
+          "rate_limited",
+          "upstream_error",
+          "upstream_timeout",
+          "invalid_response"
+        ],
+        "r": [
+          "http_client",
+          "store.save"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "session.request",
+        "label": "Manager.RequestJSON",
+        "file": "stockbitd/internal/session/session.go",
+        "a": "request -> JSON",
+        "e": [
+          "not_connected",
+          "reauth_required",
+          "rate_limited",
+          "challenge_required",
+          "upstream_error",
+          "upstream_timeout",
+          "invalid_response"
+        ],
+        "r": [
+          "session.ensure",
+          "http_client"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "session.adopt_token",
+        "label": "Manager.AdoptToken",
+        "file": "stockbitd/internal/session/session.go",
+        "a": "token strings -> Session",
+        "e": [
+          "invalid_token",
+          "token_expired"
+        ],
+        "r": [
+          "store.save"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "session.adopt_cookies",
+        "label": "Manager.AdoptCookies",
+        "file": "stockbitd/internal/session/session.go",
+        "a": "cookie header -> Session",
+        "e": [
+          "invalid_cookie",
+          "invalid_token",
+          "no_credentials"
+        ],
+        "r": [
+          "cookie.parse",
+          "store.save"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "session.adopt_harvest",
+        "label": "Manager.AdoptHarvest",
+        "file": "stockbitd/internal/session/session.go",
+        "a": "Harvest -> Session",
+        "e": [
+          "invalid_cookie",
+          "invalid_token"
+        ],
+        "r": [
+          "store.save"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "session.logout",
+        "label": "Manager.Logout",
+        "file": "stockbitd/internal/session/session.go",
+        "a": "Session -> none",
+        "e": [
+          "write_failed"
+        ],
+        "r": [
+          "store"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "session.keepalive",
+        "label": "Manager.KeepAlive",
+        "file": "stockbitd/internal/session/session.go",
+        "a": "tick -> Session",
+        "e": [
+          "reauth_required",
+          "upstream_error",
+          "upstream_timeout"
+        ],
+        "r": [
+          "session.refresh"
+        ],
+        "cardinality": "many"
+      },
+      {
+        "id": "browser.discover",
+        "label": "Discover",
+        "file": "stockbitd/internal/browser/browser.go",
+        "a": "Config -> Capabilities",
+        "e": [
+          "browser_not_found",
+          "no_display",
+          "unsupported_browser"
+        ],
+        "r": [
+          "os_browser"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "browser.login",
+        "label": "runLogin",
+        "file": "stockbitd/internal/browser/browser.go",
+        "a": "Capabilities -> Harvest",
+        "e": [
+          "login_timeout",
+          "login_cancelled",
+          "browser_closed",
+          "cdp_error",
+          "launch_failed"
+        ],
+        "r": [
+          "cdp",
+          "profile_dir"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "browser.start",
+        "label": "Manager.Start",
+        "file": "stockbitd/internal/browser/browser.go",
+        "a": "none -> LoginAttempt",
+        "e": [
+          "already_running",
+          "browser_not_found",
+          "no_display"
+        ],
+        "r": [
+          "browser.login"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "browser.cancel",
+        "label": "Manager.Cancel",
+        "file": "stockbitd/internal/browser/browser.go",
+        "a": "attempt id -> LoginAttempt",
+        "e": [
+          "attempt_not_found"
+        ],
+        "r": [
+          "login_attempts"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "cdp.call",
+        "label": "Conn.Call",
+        "file": "stockbitd/internal/browser/cdp.go",
+        "a": "method -> result",
+        "e": [
+          "cdp_error",
+          "pipe_closed"
+        ],
+        "r": [
+          "chrome_process"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "cdp.evaluate",
+        "label": "Conn.Evaluate",
+        "file": "stockbitd/internal/browser/cdp.go",
+        "a": "expression -> JSON",
+        "e": [
+          "cdp_error",
+          "script_error"
+        ],
+        "r": [
+          "cdp.call"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "cdp.cookies",
+        "label": "Conn.Cookies",
+        "file": "stockbitd/internal/browser/cdp.go",
+        "a": "none -> []Cookie",
+        "e": [
+          "cdp_error"
+        ],
+        "r": [
+          "cdp.call"
+        ],
+        "cardinality": "many"
+      },
+      {
+        "id": "harvest.parse",
+        "label": "ParsePage",
+        "file": "stockbitd/internal/browser/harvest.go",
+        "a": "page storage -> Harvest",
+        "e": [
+          "invalid_cookie",
+          "invalid_token",
+          "no_credentials"
+        ],
+        "r": [],
+        "cardinality": "one"
+      },
+      {
+        "id": "stockbit.request",
+        "label": "Client.get",
+        "file": "stockbitd/internal/stockbit/client.go",
+        "a": "HTTP -> JSON",
+        "e": [
+          "not_connected",
+          "reauth_required",
+          "rate_limited",
+          "challenge_required",
+          "upstream_error",
+          "upstream_timeout",
+          "invalid_response"
+        ],
+        "r": [
+          "session.request"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "stockbit.brokers",
+        "label": "Client.Brokers",
+        "file": "stockbitd/internal/stockbit/client.go",
+        "a": "ticker/date -> Brokers",
+        "e": [
+          "invalid_ticker",
+          "invalid_date",
+          "upstream_error"
+        ],
+        "r": [
+          "stockbit.request",
+          "cache"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "stockbit.orderbook",
+        "label": "Client.Orderbook",
+        "file": "stockbitd/internal/stockbit/client.go",
+        "a": "ticker -> Orderbook",
+        "e": [
+          "invalid_ticker",
+          "upstream_error"
+        ],
+        "r": [
+          "stockbit.request",
+          "cache"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "stockbit.snapshot",
+        "label": "Client.Snapshot",
+        "file": "stockbitd/internal/stockbit/client.go",
+        "a": "ticker -> SymbolSnapshot",
+        "e": [
+          "invalid_ticker",
+          "not_connected",
+          "reauth_required",
+          "upstream_error"
+        ],
+        "r": [
+          "stockbit.brokers",
+          "stockbit.orderbook",
+          "cache"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "stockbit.watchlist",
+        "label": "Client.Watchlist",
+        "file": "stockbitd/internal/stockbit/client.go",
+        "a": "none -> Watchlist",
+        "e": [
+          "not_connected",
+          "reauth_required",
+          "upstream_error"
+        ],
+        "r": [
+          "stockbit.request",
+          "cache"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "api.status",
+        "label": "GET /api/status",
+        "file": "stockbitd/internal/api/server.go",
+        "a": "none -> StatusResponse",
+        "e": [
+          "session_corrupt"
+        ],
+        "r": [
+          "session.status"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "api.login_start",
+        "label": "POST /api/login/browser",
+        "file": "stockbitd/internal/api/server.go",
+        "a": "none -> LoginAttempt",
+        "e": [
+          "browser_not_found",
+          "no_display",
+          "already_running",
+          "invalid_request"
+        ],
+        "r": [
+          "browser.start"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "api.login_poll",
+        "label": "GET /api/login/browser/{id}",
+        "file": "stockbitd/internal/api/server.go",
+        "a": "id -> LoginAttempt",
+        "e": [
+          "attempt_not_found"
+        ],
+        "r": [
+          "browser"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "api.adopt_token",
+        "label": "POST /api/session/token",
+        "file": "stockbitd/internal/api/server.go",
+        "a": "body -> Status",
+        "e": [
+          "invalid_token",
+          "token_expired",
+          "invalid_request"
+        ],
+        "r": [
+          "session.adopt_token"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "api.adopt_cookies",
+        "label": "POST /api/session/cookies",
+        "file": "stockbitd/internal/api/server.go",
+        "a": "body -> Status",
+        "e": [
+          "invalid_cookie",
+          "invalid_token",
+          "no_credentials",
+          "invalid_request"
+        ],
+        "r": [
+          "session.adopt_cookies"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "api.snapshot",
+        "label": "GET /api/data/symbol/{ticker}",
+        "file": "stockbitd/internal/api/server.go",
+        "a": "ticker -> SymbolSnapshot",
+        "e": [
+          "invalid_ticker",
+          "not_connected",
+          "reauth_required",
+          "upstream_error"
+        ],
+        "r": [
+          "stockbit.snapshot"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "api.watchlist",
+        "label": "GET /api/data/watchlist",
+        "file": "stockbitd/internal/api/server.go",
+        "a": "none -> Watchlist",
+        "e": [
+          "not_connected",
+          "reauth_required",
+          "upstream_error"
+        ],
+        "r": [
+          "stockbit.watchlist"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "api.cache_clear",
+        "label": "POST /api/cache/clear",
+        "file": "stockbitd/internal/api/server.go",
+        "a": "none -> count",
+        "e": [
+          "invalid_request"
+        ],
+        "r": [
+          "cache"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "api.router",
+        "label": "Server.routes",
+        "file": "stockbitd/internal/api/server.go",
+        "a": "HTTP -> response",
+        "e": [
+          "not_found",
+          "method_not_allowed",
+          "invalid_request",
+          "forbidden_origin"
+        ],
+        "r": [
+          "handlers"
+        ],
+        "cardinality": "many"
+      },
+      {
+        "id": "suite.adapter",
+        "label": "stockbit_daemon.request",
+        "file": "backend/app/stockbit_daemon.py",
+        "a": "env -> daemon response",
+        "e": [
+          "daemon_unavailable",
+          "invalid_response"
+        ],
+        "r": [
+          "HTTP"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "suite.delegate",
+        "label": "app.stockbit delegation",
+        "file": "backend/app/stockbit.py",
+        "a": "call -> payload",
+        "e": [
+          "daemon_unavailable",
+          "invalid_response"
+        ],
+        "r": [
+          "suite.adapter"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "proxy.raw",
+        "label": "stockbit_daemon.request_raw",
+        "file": "backend/app/stockbit_daemon.py",
+        "a": "request -> (status, body)",
+        "e": [
+          "daemon_unavailable",
+          "invalid_response"
+        ],
+        "r": [
+          "HTTP"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "proxy.status",
+        "label": "GET /api/stockbit/status",
+        "file": "backend/app/routers/stockbit.py",
+        "a": "none -> DaemonStatus",
+        "e": [
+          "daemon_unavailable"
+        ],
+        "r": [
+          "proxy.raw"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "proxy.login_start",
+        "label": "POST /api/stockbit/login",
+        "file": "backend/app/routers/stockbit.py",
+        "a": "none -> attempt",
+        "e": [
+          "daemon_unavailable",
+          "already_running",
+          "invalid_request"
+        ],
+        "r": [
+          "proxy.raw"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "proxy.login_poll",
+        "label": "GET /api/stockbit/login/{id}",
+        "file": "backend/app/routers/stockbit.py",
+        "a": "id -> attempt",
+        "e": [
+          "daemon_unavailable",
+          "attempt_not_found"
+        ],
+        "r": [
+          "proxy.raw"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "proxy.login_cancel",
+        "label": "POST /api/stockbit/login/{id}/cancel",
+        "file": "backend/app/routers/stockbit.py",
+        "a": "id -> attempt",
+        "e": [
+          "daemon_unavailable",
+          "attempt_not_found"
+        ],
+        "r": [
+          "proxy.raw"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "proxy.session_token",
+        "label": "POST /api/stockbit/session/token",
+        "file": "backend/app/routers/stockbit.py",
+        "a": "body -> status",
+        "e": [
+          "daemon_unavailable",
+          "invalid_token",
+          "invalid_request"
+        ],
+        "r": [
+          "proxy.raw"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "proxy.session_cookies",
+        "label": "POST /api/stockbit/session/cookies",
+        "file": "backend/app/routers/stockbit.py",
+        "a": "body -> status",
+        "e": [
+          "daemon_unavailable",
+          "invalid_cookie",
+          "invalid_request"
+        ],
+        "r": [
+          "proxy.raw"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "proxy.refresh",
+        "label": "POST /api/stockbit/session/refresh",
+        "file": "backend/app/routers/stockbit.py",
+        "a": "none -> status",
+        "e": [
+          "daemon_unavailable",
+          "reauth_required"
+        ],
+        "r": [
+          "proxy.raw"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "proxy.logout",
+        "label": "POST /api/stockbit/logout",
+        "file": "backend/app/routers/stockbit.py",
+        "a": "none -> status",
+        "e": [
+          "daemon_unavailable"
+        ],
+        "r": [
+          "proxy.raw"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "proxy.symbol",
+        "label": "GET /api/stockbit/symbol/{ticker}",
+        "file": "backend/app/routers/stockbit.py",
+        "a": "ticker -> StockbitSnapshot",
+        "e": [
+          "daemon_unavailable",
+          "invalid_ticker",
+          "invalid_date",
+          "reauth_required",
+          "upstream_error"
+        ],
+        "r": [
+          "proxy.raw"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "proxy.brokers",
+        "label": "GET /api/stockbit/brokers/{ticker}",
+        "file": "backend/app/routers/stockbit.py",
+        "a": "ticker/date -> brokers",
+        "e": [
+          "daemon_unavailable",
+          "invalid_ticker",
+          "invalid_date",
+          "reauth_required",
+          "upstream_error"
+        ],
+        "r": [
+          "proxy.raw"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "proxy.orderbook",
+        "label": "GET /api/stockbit/orderbook/{ticker}",
+        "file": "backend/app/routers/stockbit.py",
+        "a": "ticker -> orderbook",
+        "e": [
+          "daemon_unavailable",
+          "invalid_ticker",
+          "reauth_required",
+          "upstream_error"
+        ],
+        "r": [
+          "proxy.raw"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "proxy.watchlist",
+        "label": "GET /api/stockbit/watchlist",
+        "file": "backend/app/routers/stockbit.py",
+        "a": "none -> StockbitWatchlist",
+        "e": [
+          "daemon_unavailable",
+          "reauth_required",
+          "upstream_error"
+        ],
+        "r": [
+          "proxy.raw"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "proxy.cache",
+        "label": "GET /api/stockbit/cache",
+        "file": "backend/app/routers/stockbit.py",
+        "a": "none -> cache stats",
+        "e": [
+          "daemon_unavailable"
+        ],
+        "r": [
+          "proxy.raw"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "proxy.cache_clear",
+        "label": "POST /api/stockbit/cache/clear",
+        "file": "backend/app/routers/stockbit.py",
+        "a": "none -> count",
+        "e": [
+          "daemon_unavailable",
+          "invalid_request"
+        ],
+        "r": [
+          "proxy.raw"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "proxy.router",
+        "label": "stockbit router",
+        "file": "backend/app/routers/stockbit.py",
+        "a": "HTTP -> response",
+        "e": [
+          "not_found",
+          "method_not_allowed"
+        ],
+        "r": [
+          "proxy.raw"
+        ],
+        "cardinality": "many"
+      },
+      {
+        "id": "suite.health",
+        "label": "stockbit_daemon.healthy",
+        "file": "backend/app/stockbit_daemon.py",
+        "a": "none -> bool",
+        "e": [
+          "daemon_unavailable"
+        ],
+        "r": [
+          "HTTP"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "suite.use_daemon",
+        "label": "stockbit_daemon.use_daemon",
+        "file": "backend/app/stockbit_daemon.py",
+        "a": "env -> bool",
+        "e": [
+          "daemon_unavailable"
+        ],
+        "r": [
+          "suite.health"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "runner.stockbitd",
+        "label": "trading-suite stockbitd",
+        "file": "trading-suite.sh",
+        "a": "repo -> process",
+        "e": [
+          "binary_missing",
+          "go_missing",
+          "port_busy",
+          "start_failed"
+        ],
+        "r": [
+          "stockbitd binary",
+          "port"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "ui.transport_error",
+        "label": "ApiError",
+        "file": "frontend-web/src/lib/api/transport.ts",
+        "a": "response -> ApiError",
+        "e": [
+          "http_error"
+        ],
+        "r": [],
+        "cardinality": "one"
+      },
+      {
+        "id": "ui.stockbit_api",
+        "label": "stockbitApi",
+        "file": "frontend-web/src/lib/api/stockbit.ts",
+        "a": "HTTP -> types",
+        "e": [
+          "daemon_unavailable",
+          "reauth_required",
+          "http_error"
+        ],
+        "r": [
+          "ui.transport_error"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "ui.stockbit_screen",
+        "label": "Stockbit screen",
+        "file": "frontend-web/src/routes/Stockbit.tsx",
+        "a": "none -> screen",
+        "e": [
+          "status_error",
+          "login_failed",
+          "data_error"
+        ],
+        "r": [
+          "ui.stockbit_api"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "ui.router",
+        "label": "router /stockbit",
+        "file": "frontend-web/src/router.tsx",
+        "a": "path -> screen",
+        "e": [
+          "not_found"
+        ],
+        "r": [
+          "ui.stockbit_screen"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "ui.plan_api",
+        "label": "planApi",
+        "file": "frontend-web/src/lib/api/plan.ts",
+        "a": "HTTP -> Plan/PlanDetail",
+        "e": [
+          "plan_unavailable",
+          "http_error"
+        ],
+        "r": [
+          "ui.transport_error"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "ui.stockbit_analysis",
+        "label": "StockbitAnalysis",
+        "file": "frontend-web/src/routes/Stockbit.tsx",
+        "a": "ticker+plan+snapshot -> recommendation",
+        "e": [
+          "plan_unavailable",
+          "data_error"
+        ],
+        "r": [
+          "ui.plan_api",
+          "ui.stockbit_api"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "credentials.load",
+        "label": "credentials.Store.Load",
+        "file": "stockbitd/internal/credentials/credentials.go",
+        "a": "file/env -> pair",
+        "e": [
+          "credentials_missing",
+          "credentials_invalid",
+          "permission_denied"
+        ],
+        "r": [
+          "data_dir"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "credentials.save",
+        "label": "credentials.Store.Save",
+        "file": "stockbitd/internal/credentials/credentials.go",
+        "a": "pair -> file",
+        "e": [
+          "credentials_invalid",
+          "write_failed",
+          "permission_denied"
+        ],
+        "r": [
+          "data_dir"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "credentials.clear",
+        "label": "credentials.Store.Clear",
+        "file": "stockbitd/internal/credentials/credentials.go",
+        "a": "none -> none",
+        "e": [
+          "write_failed"
+        ],
+        "r": [
+          "data_dir"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "browser.autofill",
+        "label": "browser autofill",
+        "file": "stockbitd/internal/browser/browser.go",
+        "a": "credentials/form -> submitted",
+        "e": [
+          "invalid_credentials",
+          "login_form_not_found",
+          "script_error",
+          "cdp_error"
+        ],
+        "r": [
+          "cdp",
+          "login_page"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "api.credentials",
+        "label": "POST /api/session/credentials",
+        "file": "stockbitd/internal/api/server.go",
+        "a": "body -> status",
+        "e": [
+          "credentials_invalid",
+          "invalid_request",
+          "write_failed"
+        ],
+        "r": [
+          "credentials.save"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "proxy.credentials",
+        "label": "POST /api/stockbit/session/credentials",
+        "file": "backend/app/routers/stockbit.py",
+        "a": "body -> status",
+        "e": [
+          "daemon_unavailable",
+          "credentials_invalid",
+          "invalid_request"
+        ],
+        "r": [
+          "proxy.raw"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "suite.env_credentials",
+        "label": "stockbit_daemon.adopt_env_credentials",
+        "file": "backend/app/stockbit_daemon.py",
+        "a": "env -> adopted",
+        "e": [
+          "daemon_unavailable",
+          "credentials_invalid"
+        ],
+        "r": [
+          "proxy.raw"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "ui.credentials",
+        "label": "CredentialsForm",
+        "file": "frontend-web/src/routes/Stockbit.tsx",
+        "a": "form -> saved",
+        "e": [
+          "invalid_credentials",
+          "credentials_missing",
+          "error"
+        ],
+        "r": [
+          "ui.stockbit_api"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "ui.autologin",
+        "label": "automatic sign-in",
+        "file": "frontend-web/src/routes/Stockbit.tsx",
+        "a": "status -> attempt",
+        "e": [
+          "credentials_missing",
+          "invalid_credentials",
+          "login_form_not_found",
+          "login_timeout"
+        ],
+        "r": [
+          "ui.credentials",
+          "ui.stockbit_api"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "store.import",
+        "label": "market_store.import_study",
+        "file": "backend/app/market_store.py",
+        "a": "study manifest + CSVs -> complete snapshot",
+        "e": [
+          "manifest_missing",
+          "no_tickers",
+          "parse_error",
+          "write_failed"
+        ],
+        "r": [
+          "study_data",
+          "data_dir"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "store.read",
+        "label": "market_store.read_bars/read_history",
+        "file": "backend/app/market_store.py",
+        "a": "codes or ticker/period -> bars",
+        "e": [
+          "no_store",
+          "no_rows"
+        ],
+        "r": [
+          "market_db"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "plan.store_bars",
+        "label": "plan.StoreBars",
+        "file": "backend/app/plan/bars.py",
+        "a": "codes -> Frames",
+        "e": [
+          "no_snapshot",
+          "no_benchmark"
+        ],
+        "r": [
+          "store.read"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "plan.default_source",
+        "label": "plan.default_source",
+        "file": "backend/app/plan/bars.py",
+        "a": "environment -> BarsSource",
+        "e": [
+          "store_error"
+        ],
+        "r": [
+          "store.read",
+          "study_data"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "plan.plan_payload",
+        "label": "plan.plan_payload",
+        "file": "backend/app/plan/__init__.py",
+        "a": "request + data stamp -> payload",
+        "e": [
+          "compute_error",
+          "cache_error"
+        ],
+        "r": [
+          "plan.store_bars",
+          "computed_cache"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "market.store_history",
+        "label": "market.fetch_history store read",
+        "file": "backend/app/market.py",
+        "a": "ticker/period -> daily rows",
+        "e": [
+          "no_store",
+          "no_rows"
+        ],
+        "r": [
+          "store.read"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "sync.run",
+        "label": "sync_market.py",
+        "file": "backend/scripts/sync_market.py",
+        "a": "schedule -> snapshot + plan",
+        "e": [
+          "lock_busy",
+          "fetch_failed",
+          "repair_failed",
+          "import_failed",
+          "warm_failed"
+        ],
+        "r": [
+          "study_fetch",
+          "study_repair",
+          "store.import",
+          "plan.plan_payload"
+        ],
+        "cardinality": "one"
+      },
+      {
+        "id": "runner.sync_data",
+        "label": "./trading-suite sync-data",
+        "file": "trading-suite.sh",
+        "a": "command -> sync",
+        "e": [
+          "backend_missing",
+          "sync_failed"
+        ],
+        "r": [
+          "backend_venv"
+        ],
+        "cardinality": "one"
+      }
+    ],
+    "edges": [
+      [
+        "config.load",
+        "store.load"
+      ],
+      [
+        "store.load",
+        "session.status"
+      ],
+      [
+        "store.save",
+        "session.adopt_token"
+      ],
+      [
+        "store.save",
+        "session.adopt_cookies"
+      ],
+      [
+        "store.save",
+        "session.adopt_harvest"
+      ],
+      [
+        "token.decode",
+        "session.adopt_token"
+      ],
+      [
+        "token.decode",
+        "cookie.credential"
+      ],
+      [
+        "cookie.parse",
+        "session.adopt_cookies"
+      ],
+      [
+        "cookie.credential",
+        "session.adopt_cookies"
+      ],
+      [
+        "session.ensure",
+        "session.refresh"
+      ],
+      [
+        "session.refresh",
+        "store.save"
+      ],
+      [
+        "session.ensure",
+        "session.request"
+      ],
+      [
+        "session.adopt_token",
+        "session.keepalive"
+      ],
+      [
+        "session.adopt_cookies",
+        "session.keepalive"
+      ],
+      [
+        "session.adopt_harvest",
+        "session.keepalive"
+      ],
+      [
+        "session.keepalive",
+        "session.refresh"
+      ],
+      [
+        "browser.discover",
+        "browser.start"
+      ],
+      [
+        "browser.start",
+        "browser.login"
+      ],
+      [
+        "browser.login",
+        "cdp.call"
+      ],
+      [
+        "cdp.call",
+        "cdp.evaluate"
+      ],
+      [
+        "cdp.call",
+        "cdp.cookies"
+      ],
+      [
+        "cdp.evaluate",
+        "harvest.parse"
+      ],
+      [
+        "cdp.cookies",
+        "harvest.parse"
+      ],
+      [
+        "harvest.parse",
+        "session.adopt_harvest"
+      ],
+      [
+        "session.request",
+        "stockbit.request"
+      ],
+      [
+        "stockbit.request",
+        "stockbit.brokers"
+      ],
+      [
+        "stockbit.request",
+        "stockbit.orderbook"
+      ],
+      [
+        "stockbit.request",
+        "stockbit.watchlist"
+      ],
+      [
+        "stockbit.brokers",
+        "stockbit.snapshot"
+      ],
+      [
+        "stockbit.orderbook",
+        "stockbit.snapshot"
+      ],
+      [
+        "session.status",
+        "api.status"
+      ],
+      [
+        "browser.start",
+        "api.login_start"
+      ],
+      [
+        "browser.cancel",
+        "api.login_poll"
+      ],
+      [
+        "session.adopt_token",
+        "api.adopt_token"
+      ],
+      [
+        "session.adopt_cookies",
+        "api.adopt_cookies"
+      ],
+      [
+        "stockbit.snapshot",
+        "api.snapshot"
+      ],
+      [
+        "stockbit.watchlist",
+        "api.watchlist"
+      ],
+      [
+        "api.router",
+        "api.status"
+      ],
+      [
+        "api.router",
+        "api.login_start"
+      ],
+      [
+        "api.router",
+        "api.login_poll"
+      ],
+      [
+        "api.router",
+        "api.adopt_token"
+      ],
+      [
+        "api.router",
+        "api.adopt_cookies"
+      ],
+      [
+        "api.router",
+        "api.snapshot"
+      ],
+      [
+        "api.router",
+        "api.watchlist"
+      ],
+      [
+        "api.router",
+        "api.cache_clear"
+      ],
+      [
+        "suite.adapter",
+        "suite.delegate"
+      ],
+      [
+        "api.router",
+        "session.logout"
+      ],
+      [
+        "proxy.raw",
+        "proxy.status"
+      ],
+      [
+        "proxy.router",
+        "proxy.status"
+      ],
+      [
+        "proxy.raw",
+        "proxy.login_start"
+      ],
+      [
+        "proxy.router",
+        "proxy.login_start"
+      ],
+      [
+        "proxy.raw",
+        "proxy.login_poll"
+      ],
+      [
+        "proxy.router",
+        "proxy.login_poll"
+      ],
+      [
+        "proxy.raw",
+        "proxy.login_cancel"
+      ],
+      [
+        "proxy.router",
+        "proxy.login_cancel"
+      ],
+      [
+        "proxy.raw",
+        "proxy.session_token"
+      ],
+      [
+        "proxy.router",
+        "proxy.session_token"
+      ],
+      [
+        "proxy.raw",
+        "proxy.session_cookies"
+      ],
+      [
+        "proxy.router",
+        "proxy.session_cookies"
+      ],
+      [
+        "proxy.raw",
+        "proxy.refresh"
+      ],
+      [
+        "proxy.router",
+        "proxy.refresh"
+      ],
+      [
+        "proxy.raw",
+        "proxy.logout"
+      ],
+      [
+        "proxy.router",
+        "proxy.logout"
+      ],
+      [
+        "proxy.raw",
+        "proxy.symbol"
+      ],
+      [
+        "proxy.router",
+        "proxy.symbol"
+      ],
+      [
+        "proxy.raw",
+        "proxy.brokers"
+      ],
+      [
+        "proxy.router",
+        "proxy.brokers"
+      ],
+      [
+        "proxy.raw",
+        "proxy.orderbook"
+      ],
+      [
+        "proxy.router",
+        "proxy.orderbook"
+      ],
+      [
+        "proxy.raw",
+        "proxy.watchlist"
+      ],
+      [
+        "proxy.router",
+        "proxy.watchlist"
+      ],
+      [
+        "proxy.raw",
+        "proxy.cache"
+      ],
+      [
+        "proxy.router",
+        "proxy.cache"
+      ],
+      [
+        "proxy.raw",
+        "proxy.cache_clear"
+      ],
+      [
+        "proxy.router",
+        "proxy.cache_clear"
+      ],
+      [
+        "suite.health",
+        "suite.use_daemon"
+      ],
+      [
+        "suite.use_daemon",
+        "suite.delegate"
+      ],
+      [
+        "suite.adapter",
+        "proxy.raw"
+      ],
+      [
+        "runner.stockbitd",
+        "proxy.raw"
+      ],
+      [
+        "ui.transport_error",
+        "ui.stockbit_api"
+      ],
+      [
+        "ui.stockbit_api",
+        "proxy.router"
+      ],
+      [
+        "ui.stockbit_screen",
+        "ui.stockbit_api"
+      ],
+      [
+        "ui.router",
+        "ui.stockbit_screen"
+      ],
+      [
+        "ui.transport_error",
+        "ui.plan_api"
+      ],
+      [
+        "ui.plan_api",
+        "ui.stockbit_analysis"
+      ],
+      [
+        "ui.stockbit_api",
+        "ui.stockbit_analysis"
+      ],
+      [
+        "ui.stockbit_analysis",
+        "ui.stockbit_screen"
+      ],
+      [
+        "credentials.load",
+        "browser.autofill"
+      ],
+      [
+        "credentials.save",
+        "api.credentials"
+      ],
+      [
+        "api.credentials",
+        "proxy.credentials"
+      ],
+      [
+        "proxy.credentials",
+        "ui.credentials"
+      ],
+      [
+        "ui.credentials",
+        "ui.autologin"
+      ],
+      [
+        "ui.autologin",
+        "proxy.login_start"
+      ],
+      [
+        "ui.autologin",
+        "ui.stockbit_screen"
+      ],
+      [
+        "browser.login",
+        "browser.autofill"
+      ],
+      [
+        "browser.autofill",
+        "cdp.evaluate"
+      ],
+      [
+        "suite.env_credentials",
+        "proxy.credentials"
+      ],
+      [
+        "api.credentials",
+        "credentials.clear"
+      ],
+      [
+        "proxy.credentials",
+        "credentials.clear"
+      ],
+      [
+        "store.import",
+        "store.read"
+      ],
+      [
+        "store.read",
+        "plan.store_bars"
+      ],
+      [
+        "store.read",
+        "market.store_history"
+      ],
+      [
+        "plan.store_bars",
+        "plan.plan_payload"
+      ],
+      [
+        "plan.default_source",
+        "plan.store_bars"
+      ],
+      [
+        "plan.plan_payload",
+        "ui.plan_api"
+      ],
+      [
+        "sync.run",
+        "store.import"
+      ],
+      [
+        "sync.run",
+        "plan.plan_payload"
+      ],
+      [
+        "runner.sync_data",
+        "sync.run"
+      ]
+    ]
+  },
+  "surfaces": [
+    {
+      "id": "connection-panel",
+      "label": "Connection panel",
+      "component": "stockbitd/internal/web/index.html",
+      "c": "Session state, account, access/refresh runway, cookie count, last refresh",
+      "v": [
+        "loading",
+        "unconfigured",
+        "connecting",
+        "awaiting_login",
+        "connected",
+        "reauth_required",
+        "browser_not_found",
+        "no_display",
+        "unsupported_browser",
+        "login_timeout",
+        "login_cancelled",
+        "error"
+      ],
+      "n": [
+        "server_running"
+      ]
+    },
+    {
+      "id": "fallback-forms",
+      "label": "Token and cookie fallback forms",
+      "component": "stockbitd/internal/web/index.html",
+      "c": "Access token, refresh token, Cookie header inputs",
+      "v": [
+        "idle",
+        "saving",
+        "saved",
+        "invalid_token",
+        "invalid_cookie",
+        "not_connected",
+        "error"
+      ],
+      "n": [
+        "server_running",
+        "disconnected"
+      ]
+    },
+    {
+      "id": "data-panel",
+      "label": "Symbol data panel",
+      "component": "stockbitd/internal/web/index.html",
+      "c": "Quote, company info, orderbook imbalance, broker net rows",
+      "v": [
+        "idle",
+        "loading",
+        "empty",
+        "partial",
+        "auth_required",
+        "rate_limited",
+        "upstream_error",
+        "invalid_ticker",
+        "error"
+      ],
+      "n": [
+        "server_running"
+      ]
+    },
+    {
+      "id": "watchlist-panel",
+      "label": "Watchlist panel",
+      "component": "stockbitd/internal/web/index.html",
+      "c": "Personal watchlist groups and items",
+      "v": [
+        "loading",
+        "empty",
+        "auth_required",
+        "upstream_error",
+        "error"
+      ],
+      "n": [
+        "server_running",
+        "connected"
+      ]
+    },
+    {
+      "id": "cache-panel",
+      "label": "Data cache panel",
+      "component": "stockbitd/internal/web/index.html",
+      "c": "Cache entries, keys, hits, TTL; session cookies are separate",
+      "v": [
+        "loading",
+        "empty",
+        "error"
+      ],
+      "n": [
+        "server_running"
+      ]
+    },
+    {
+      "id": "cli-status",
+      "label": "CLI status",
+      "component": "stockbitd/cmd/stockbitd/main.go",
+      "c": "State line or JSON status",
+      "v": [
+        "unconfigured",
+        "connected",
+        "reauth_required",
+        "error"
+      ],
+      "n": [
+        "session_file"
+      ]
+    },
+    {
+      "id": "suite-status",
+      "label": "Trading-suite adapter status",
+      "component": "backend/app/stockbit_daemon.py",
+      "c": "Daemon state for /api/intel/status and Flow health",
+      "v": [
+        "daemon_unavailable",
+        "unconfigured",
+        "connected",
+        "reauth_required",
+        "invalid_response"
+      ],
+      "n": [
+        "STOCKBITD_URL"
+      ]
+    },
+    {
+      "id": "suite-stockbit-connection",
+      "label": "Trading-suite Stockbit connection",
+      "component": "frontend-web/src/routes/Stockbit.tsx",
+      "c": "Session state, account, token runway, cookie count, browser capability",
+      "v": [
+        "loading",
+        "daemon_unavailable",
+        "unconfigured",
+        "connecting",
+        "awaiting_login",
+        "connected",
+        "reauth_required",
+        "browser_not_found",
+        "no_display",
+        "unsupported_browser",
+        "login_timeout",
+        "login_cancelled",
+        "error"
+      ],
+      "n": [
+        "server_running",
+        "daemon_url"
+      ]
+    },
+    {
+      "id": "suite-stockbit-fallback",
+      "label": "Trading-suite token/cookie fallback",
+      "component": "frontend-web/src/routes/Stockbit.tsx",
+      "c": "Access token, refresh token and Cookie header forms",
+      "v": [
+        "idle",
+        "saving",
+        "saved",
+        "invalid_token",
+        "invalid_cookie",
+        "not_connected",
+        "error"
+      ],
+      "n": [
+        "server_running",
+        "unconfigured"
+      ]
+    },
+    {
+      "id": "suite-stockbit-data",
+      "label": "Trading-suite Stockbit data",
+      "component": "frontend-web/src/routes/Stockbit.tsx",
+      "c": "Quote, info, orderbook imbalance, broker rows",
+      "v": [
+        "idle",
+        "loading",
+        "empty",
+        "partial",
+        "auth_required",
+        "rate_limited",
+        "upstream_error",
+        "invalid_ticker",
+        "error"
+      ],
+      "n": [
+        "server_running"
+      ]
+    },
+    {
+      "id": "suite-stockbit-watchlist",
+      "label": "Trading-suite Stockbit watchlist",
+      "component": "frontend-web/src/routes/Stockbit.tsx",
+      "c": "Personal watchlist groups and items",
+      "v": [
+        "loading",
+        "empty",
+        "auth_required",
+        "upstream_error",
+        "error",
+        "idle"
+      ],
+      "n": [
+        "server_running",
+        "connected"
+      ]
+    },
+    {
+      "id": "suite-stockbit-cache",
+      "label": "Trading-suite Stockbit cache",
+      "component": "frontend-web/src/routes/Stockbit.tsx",
+      "c": "Daemon data cache counters and keys",
+      "v": [
+        "loading",
+        "empty",
+        "error",
+        "idle"
+      ],
+      "n": [
+        "server_running"
+      ]
+    },
+    {
+      "id": "runner-stockbitd",
+      "label": "Runner stockbitd lifecycle",
+      "component": "trading-suite.sh",
+      "c": "Start, stop and log the local daemon",
+      "v": [
+        "binary_missing",
+        "go_missing",
+        "port_busy",
+        "start_failed",
+        "started",
+        "already_running",
+        "stopped"
+      ],
+      "n": [
+        "repo"
+      ]
+    },
+    {
+      "id": "suite-stockbit-analysis",
+      "label": "Trading-suite Stockbit analysis and recommendation",
+      "component": "frontend-web/src/routes/Stockbit.tsx",
+      "c": "Plan verdict, name gates, geometry, recommendation, broker-flow context, recommended tonight",
+      "v": [
+        "loading",
+        "idle",
+        "empty",
+        "partial",
+        "plan_unavailable",
+        "error"
+      ],
+      "n": [
+        "server_running",
+        "plan_available"
+      ]
+    },
+    {
+      "id": "suite-stockbit-credentials",
+      "label": "Trading-suite automatic sign-in setup",
+      "component": "frontend-web/src/routes/Stockbit.tsx",
+      "c": "Stockbit email/username and password, saved locally for the daemon to fill the real login form",
+      "v": [
+        "idle",
+        "saving",
+        "saved",
+        "invalid_credentials",
+        "credentials_missing",
+        "error"
+      ],
+      "n": [
+        "server_running",
+        "daemon_url"
+      ]
+    },
+    {
+      "id": "suite-stockbit-autologin",
+      "label": "Trading-suite automatic sign-in progress",
+      "component": "frontend-web/src/routes/Stockbit.tsx",
+      "c": "The daemon fills and submits Stockbit's login form, then waits for the cookie; a verification step is named",
+      "v": [
+        "connecting",
+        "awaiting_login",
+        "verification_required",
+        "invalid_credentials",
+        "login_form_not_found",
+        "login_timeout",
+        "connected",
+        "error"
+      ],
+      "n": [
+        "credentials_saved",
+        "daemon_url"
+      ]
+    },
+    {
+      "id": "data-sync",
+      "label": "weekly data sync command",
+      "component": "backend/scripts/sync_market.py",
+      "c": "Fetched/imported symbols, rows and as-of, plus the persisted plan warm result",
+      "v": [
+        "running",
+        "success",
+        "failed",
+        "lock_busy",
+        "fetch_failed",
+        "repair_failed",
+        "import_failed",
+        "warm_failed"
+      ],
+      "n": [
+        "study_checkout",
+        "backend_venv",
+        "data_dir"
+      ]
+    }
+  ]
+}

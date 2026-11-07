@@ -261,6 +261,15 @@ class StudyBars:
         except (OSError, ValueError, KeyError):
             return None
 
+    def stamp(self) -> str:
+        """What the persisted plan is keyed on: the manifest, not the clock."""
+        try:
+            stat = self.manifest_path.stat()
+            generated = self._manifest().get("generated_at", "")
+            return f"study:{self.root.resolve()}:{stat.st_mtime_ns}:{generated}"
+        except (OSError, ValueError, AttributeError):
+            return f"study:{self.root}"
+
     def load(self, codes: list[str] | None = None) -> Frames:
         manifest = self._manifest()
         entries: dict[str, dict] = manifest.get("tickers", {})
@@ -292,6 +301,60 @@ class StudyBars:
         )
 
 
+# Store/source codes: no_snapshot (no complete import), no_benchmark (the
+# snapshot has no ^JKSE row), store_error (the store raised while choosing the
+# default source).
+class StoreBars:
+    """The normalized SQLite snapshot imported from the study manifest.
+
+    The store is a single file built by `backend/scripts/sync_market.py`.
+    Every frame is the study's adjusted OHLCV; the source string carries the
+    snapshot id so the plan artifact and the UI can name the exact data.
+    """
+
+    def __init__(self) -> None:
+        from app import market_store
+
+        self.store = market_store
+
+    def stamp(self) -> str:
+        return self.store.stamp()
+
+    def load(self, codes: list[str] | None = None) -> Frames:
+        snapshot = self.store.latest()
+        if not snapshot:
+            raise RuntimeError("no complete market snapshot")
+        wanted = list(codes) if codes is not None else None
+        if wanted is not None and BENCHMARK not in wanted:
+            wanted.append(BENCHMARK)
+        raw = self.store.read_bars(wanted)
+        bench = _clean(raw.pop(BENCHMARK, None))
+        if bench is None:
+            raise RuntimeError("the market snapshot has no ^JKSE benchmark")
+        if wanted is not None:
+            raw = {code: frame for code, frame in raw.items() if code in codes}
+        out: dict[str, pd.DataFrame] = {}
+        dropped = 0
+        phantom: set[pd.Timestamp] = set()
+        for code, frame in raw.items():
+            frame = _clean(frame)
+            if frame is None:
+                continue
+            frame, count, bad = _drop_phantom(frame, bench)
+            dropped += count
+            phantom |= bad
+            if len(frame) >= MIN_BARS:
+                out[code] = frame
+        source = f"store:{snapshot['id']}:{snapshot.get('generated_at') or ''}"
+        return Frames(
+            bars=out,
+            benchmark=bench,
+            source=source,
+            phantom_dropped=dropped,
+            phantom_dates=tuple(sorted(d.strftime("%Y-%m-%d") for d in phantom)),
+        )
+
+
 class LiveBars:
     """yfinance through the app's cached `fetch_history`.
 
@@ -303,6 +366,12 @@ class LiveBars:
         self.period = period
         self.workers = workers
 
+    def stamp(self) -> str:
+        # A live screen is only stable within one session date; the cache key
+        # deliberately changes at midnight rather than serving yesterday's
+        # unfinished bar as today's.
+        return f"live:{date.today().isoformat()}"
+
     def load(self, codes: list[str]) -> Frames:
         from concurrent.futures import ThreadPoolExecutor
 
@@ -310,7 +379,9 @@ class LiveBars:
 
         def one(code: str) -> tuple[str, pd.DataFrame | None]:
             try:
-                return code, _clean(pd.DataFrame(fetch_history(code, self.period, "1d")))
+                return code, _clean(
+                    pd.DataFrame(fetch_history(code, self.period, "1d", force=True))
+                )
             except Exception:  # noqa: BLE001 - one bad ticker must not sink the scan
                 return code, None
 
@@ -322,7 +393,9 @@ class LiveBars:
 
         bench = None
         try:
-            bench = _clean(pd.DataFrame(fetch_history(BENCHMARK, self.period, "1d")))
+            bench = _clean(
+                pd.DataFrame(fetch_history(BENCHMARK, self.period, "1d", force=True))
+            )
         except Exception:  # noqa: BLE001
             pass
         return Frames(bars=out, benchmark=bench, source="live:yfinance")
@@ -355,6 +428,13 @@ class MergedBars:
         mask = stamps.map(lambda d: session_is_final(d.date(), self.now))
         refused = int((~mask).sum())
         return frame[mask.to_numpy()], refused
+
+    def stamp(self) -> str:
+        study = getattr(self.study, "stamp", None)
+        live = getattr(self.live, "stamp", None)
+        study_stamp = str(study()) if callable(study) else "study"
+        live_stamp = str(live()) if callable(live) else "live"
+        return f"merged:{study_stamp}+{live_stamp}"
 
     def load(self, codes: list[str] | None = None) -> Frames:
         base = self.study.load(codes)
@@ -436,7 +516,19 @@ class MergedBars:
 
 @lru_cache(maxsize=1)
 def default_source() -> BarsSource:
-    """Prefer the study's data; fall back to live bars when it is absent."""
+    """Prefer the imported store, then the study's CSVs, then live bars.
+
+    The store is the app's own weekly snapshot; the CSVs remain the source of
+    record when the import has not run yet. Live bars are the last resort and
+    the only default that reaches Yahoo.
+    """
+    try:
+        from app import market_store
+
+        if market_store.available():
+            return StoreBars()
+    except Exception:  # noqa: BLE001 - a bad store must not make the app unstartable
+        pass
     study = StudyBars()
     if study.manifest_path.exists():
         return study

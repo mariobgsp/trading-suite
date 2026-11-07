@@ -18,10 +18,13 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+import os
 import threading
 from datetime import date
 
 import pandas as pd
+
+from app import computed_cache
 
 from . import citations as C
 from . import idx as X
@@ -57,6 +60,59 @@ def set_source(source: BarsSource, label: str) -> None:
 
 _active: tuple[BarsSource, str] = (default_source(), "default")
 
+# The persisted plan is the expensive part of startup: the screen is a full
+# universe pass. The key carries the *data* stamp as well as the request, so a
+# weekly refresh naturally produces a new key; the method version is bumped by
+# hand when the rule chain changes.
+# Codes: compute_error (the screen raised), cache_error (the artifact store
+# raised). Both leave the in-memory plan path intact.
+PLAN_CACHE_VERSION = "v1"
+PLAN_CACHE_TTL = int(os.getenv("PLAN_CACHE_TTL_SECONDS", str(8 * 86400)))
+
+
+def _source_stamp(source: BarsSource, label: str) -> str:
+    stamp = getattr(source, "stamp", None)
+    if callable(stamp):
+        try:
+            return str(stamp())
+        except Exception:  # noqa: BLE001 - a failed stamp must not break the plan
+            pass
+    return label
+
+
+def plan_cache_key(as_of: date | None = None, exit_method: str | None = None) -> str:
+    """The identity of one computed plan: data snapshot + request + method."""
+    source, label = _active
+    evidence = M.default_evidence()
+    spec = M.family_spec(evidence.family)
+    exit_name = exit_method or evidence.exit_method or M.DEFAULT_EXIT
+    return computed_cache.make_key(
+        "plan",
+        PLAN_CACHE_VERSION,
+        label,
+        _source_stamp(source, label),
+        as_of.isoformat() if as_of else "current",
+        exit_name,
+        spec.family,
+    )
+
+
+def plan_payload(as_of: date | None = None, exit_method: str | None = None) -> dict:
+    """The plan, persisted by data snapshot so a restart serves it without a screen.
+
+    The cache is not a licence to serve old data: the key changes when the
+    source's stamp changes (a weekly sync), and the old key is ignored. A cache
+    miss computes once; the result is written before returning.
+    """
+    key = plan_cache_key(as_of, exit_method)
+    cached = computed_cache.read(key, PLAN_CACHE_TTL)
+    if cached is not None:
+        payload, _meta = cached
+        return payload
+    payload = plan(as_of, exit_method).as_dict()
+    computed_cache.write(key, payload)
+    return payload
+
 
 def invalidate() -> None:
     """Forget the cached plan so the next call re-reads bars and results.
@@ -69,6 +125,9 @@ def invalidate() -> None:
     M.clear_cache()
     S.clear_history_cache()
     R.clear_cache()
+    # The persisted plan belongs to the old data snapshot; drop it so a manual
+    # refresh is not shadowed by the startup artifact.
+    computed_cache.clear("plan")
 
 
 def _horizon(as_of: date) -> str:

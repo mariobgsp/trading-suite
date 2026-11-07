@@ -15,11 +15,19 @@ import {
 export const API_BASE =
 	import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
+// Codes: http_error — this is the transport's one error shape for a non-2xx
+// response; callers read ApiError.code for the backend's machine-readable reason.
 export class ApiError extends Error {
 	status: number;
-	constructor(status: number, message: string) {
+	/** The machine-readable code the backend/daemon sent, when it did. */
+	code?: string;
+	/** A 409 already_running response carries the live attempt under this. */
+	attempt?: unknown;
+	constructor(status: number, message: string, code?: string, attempt?: unknown) {
 		super(message);
 		this.status = status;
+		this.code = code;
+		this.attempt = attempt;
 	}
 }
 
@@ -30,14 +38,36 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 		cache: "no-store",
 	});
 	if (!res.ok) {
+		// Three error shapes travel through this app: FastAPI's {detail: "..."},
+		// the daemon proxy's {error: {code, message}}, and legacy plain errors.
+		// Keep the code and a 409's attempt so the Stockbit screen can resume.
 		let detail = res.statusText;
+		let code: string | undefined;
+		let attempt: unknown;
 		try {
 			const body = await res.json();
-			detail = body.detail ?? body.error ?? detail;
+			const error = (body as { error?: unknown })?.error;
+			if (typeof error === "string") {
+				detail = error;
+			} else if (error && typeof error === "object") {
+				const typed = error as { code?: unknown; message?: unknown };
+				if (typeof typed.message === "string") detail = typed.message;
+				else detail = JSON.stringify(error);
+				if (typeof typed.code === "string") code = typed.code;
+			} else if (typeof body?.detail === "string") {
+				detail = body.detail;
+			} else if (body?.detail != null) {
+				detail = JSON.stringify(body.detail);
+			}
+			const bodyCode = (body as { code?: unknown })?.code;
+			if (!code && typeof bodyCode === "string") code = bodyCode;
+			const bodyErrorCode = (body as { error_code?: unknown })?.error_code;
+			if (!code && typeof bodyErrorCode === "string") code = bodyErrorCode;
+			attempt = (body as { attempt?: unknown })?.attempt;
 		} catch {
 			/* keep statusText */
 		}
-		throw new ApiError(res.status, String(detail));
+		throw new ApiError(res.status, String(detail), code, attempt);
 	}
 	return res.json() as Promise<T>;
 }

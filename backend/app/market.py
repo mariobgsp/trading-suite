@@ -18,7 +18,7 @@ from typing import Any
 import pandas as pd
 import yfinance as yf
 
-from app import db
+from app import db, market_store
 from app.config import (
     FOREX_CACHE_TTL_SECONDS,
     YFINANCE_CACHE_TTL_SECONDS,
@@ -254,6 +254,18 @@ def fetch_history(
     """Fetch OHLCV history with SWR: stale served instantly, refresh in background."""
     normalized = normalize_ticker(ticker)
     cache_key = f"hist:{normalized}:{period}:{interval}"
+    # The weekly snapshot is the default daily source: no Yahoo call for a
+    # ticker the sync has covered. `force` deliberately skips it, which is what
+    # the explicit "pull today's bars" refresh needs.
+    # Codes: no_store / no_rows fall back to the existing cache and Yahoo;
+    # a broken store must not 500 the route.
+    if interval == "1d" and not force:
+        try:
+            stored = market_store.read_history(normalized, period)
+        except Exception:  # noqa: BLE001 - a broken store must fall back, not 500
+            stored = []
+        if stored:
+            return stored
     if not force:
         # Dead-ticker fast path (yfinance retries cost ~3s each)
         if db.get_fresh(f"neg:{cache_key}", NEGATIVE_CACHE_TTL) is not None:

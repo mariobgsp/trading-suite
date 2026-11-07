@@ -1,0 +1,12 @@
+[Unit]
+Description=Run the trading-suite weekly data sync
+Documentation=file:%h/Projects/trading-suite/README.md
+
+[Timer]
+# Local system time; the expected host zone is Asia/Jakarta.
+OnCalendar=Sat *-*-* 09:00:00
+Persistent=true
+RandomizedDelaySec=15m
+
+[Install]
+WantedBy=timers.target

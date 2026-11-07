@@ -1,0 +1,12 @@
+[Unit]
+Description=Weekly Yahoo data sync and computed plan warm
+Documentation=file:%h/Projects/trading-suite/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/Projects/trading-suite
+ExecStart=%h/Projects/trading-suite/trading-suite sync-data
+TimeoutStartSec=infinity
+Nice=10

@@ -23,17 +23,30 @@ method_card()           # -> the rule chain and its measured proof
 `plan()` is memoised per (source, session, exit, family): a universe pass is not
 free, and the front end asks more than once.
 
+The HTTP path goes through `plan_payload()` instead. It persists the exact
+response under `computed:plan:v1:*`, keyed by the bar source's **data stamp**,
+the requested session and the method family. A restart reads that artifact
+instead of re-running the screen (measured 26s cold, 0.05s warm). The weekly
+`sync_market.py` imports a new snapshot, invalidates the old artifact and warms
+the new one. `PLAN_CACHE_VERSION` is the manual bump when the rule chain changes.
+
 ## The seam
 
-`bars.py` defines where daily bars come from, with two adapters:
+`bars.py` defines where daily bars come from, with three adapters:
 
 | Adapter | What it reads | Used for |
 | --- | --- | --- |
-| `StudyBars` | the study's `data/raw/*.csv` + manifest | production, and any audit |
-| `LiveBars` | yfinance via `app.market.fetch_history` | running against today's bars |
+| `StoreBars` | `backend/data/market.db`, the weekly normalized snapshot | the default once the store exists |
+| `StudyBars` | the study's `data/raw/*.csv` + manifest | the source of record, audits, and fallback before the first sync |
+| `LiveBars` | yfinance via `app.market.fetch_history(..., force=True)` | the explicit Refresh button |
 
-Two adapters make it a real seam rather than indirection: the same rule chain has
-to work on the data the proof was measured on and on data that arrived later.
+The default source prefers the store, then the study CSVs, then live Yahoo. The
+same rule chain works on the snapshot the study verified and on a refreshed
+store; the source string on every plan names which one produced it. A normal
+plan never reaches Yahoo. The weekly sync runs the study's phantom-bar repair
+before the import, so a re-based 5-year window cannot leave rows on dates the
+benchmark did not hold; the plan's `no_phantom_bars` check otherwise refuses
+the whole source.
 
 The `StudyBars` adapter resolves manifest paths against the study root, not the
 process working directory, so a checkout in either place works.
@@ -43,7 +56,8 @@ process working directory, so a checkout in either place works.
 - **`method.py`** — the rule chain, the costs, and the measured evidence. Every
   constant carries the study file and line it came from.
 - **`screen.py`** — the panels, the gates and the exit geometry.
-- **`bars.py`** — the two adapters.
+- **`bars.py`** — the store, study and live adapters, and the default source
+  policy.
 - **`model.py`** — the shapes a caller receives. Dataclasses, so the interface is
   readable without reading the implementation.
 

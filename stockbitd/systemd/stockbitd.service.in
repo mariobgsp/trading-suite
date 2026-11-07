@@ -1,0 +1,19 @@
+[Unit]
+Description=Stockbit session keeper
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=@BIN@ serve
+Restart=on-failure
+RestartSec=5
+Environment=STOCKBITD_ADDR=127.0.0.1:8787
+# The login window needs the graphical session's environment. Import it once
+# per graphical login: systemctl --user import-environment DISPLAY WAYLAND_DISPLAY XDG_RUNTIME_DIR
+PassEnvironment=DISPLAY WAYLAND_DISPLAY XDG_RUNTIME_DIR
+PrivateTmp=yes
+LimitNOFILE=4096
+
+[Install]
+WantedBy=default.target

@@ -17,6 +17,7 @@ from app.routers import (  # pyright: ignore[reportAttributeAccessIssue]
     alerts,
     analysis,
     backtest,
+    case,
     flow,
     intel,
     market,
@@ -26,7 +27,6 @@ from app.routers import (  # pyright: ignore[reportAttributeAccessIssue]
     regime,
     screener,
     sentiment,
-    stockbit,
     summary,
     validator,
 )
@@ -69,38 +69,6 @@ def _warm_bbca_cache() -> None:
             logging.getLogger(__name__).warning("BBCA warm failed: %s", e)
 
     threading.Thread(target=_run, daemon=True).start()
-
-
-def _warm_stockbit_jwt() -> None:
-    """Ensure Stockbit JWT cached on startup (username/password → JWT). Survivable."""
-    import threading
-
-    def _run() -> None:
-        try:
-            from app import stockbit_daemon as daemon
-
-            if daemon.use_daemon():
-                adopted = daemon.adopt_env_credentials()
-                if adopted.get("adopted"):
-                    logging.getLogger(__name__).info("Stockbit: the daemon adopted the .env sign-in")
-                elif adopted.get("reason") and "not set" not in str(adopted.get("reason")):
-                    logging.getLogger(__name__).info("Stockbit daemon sign-in: %s", adopted.get("reason"))
-
-            from app.stockbit import load_jwt, stockbit_status
-
-            # The daemon wins when it is healthy; otherwise the legacy JWT path.
-            jwt = load_jwt()
-            st = stockbit_status()
-            if st.get("available"):
-                logging.getLogger(__name__).info("Stockbit ready: %s h left", st.get("hours_left"))
-            elif jwt:
-                logging.getLogger(__name__).info("Stockbit legacy JWT loaded")
-            else:
-                logging.getLogger(__name__).info("Stockbit not connected: %s", st.get("reason"))
-        except Exception as e:  # noqa: BLE001
-            logging.getLogger(__name__).warning("Stockbit warm failed: %s", e)
-
-    threading.Thread(target=_run, daemon=True, name="warm-stockbit").start()
 
 
 def _warm_overview() -> None:
@@ -146,7 +114,9 @@ def _warm_universe_history() -> None:
                 logging.getLogger(__name__).warning("universe warm fetch failed: %s", exc)
                 return
             warm_universe(tickers, period="2y", interval="1d", workers=8)
-            logging.getLogger(__name__).info("universe history warm scheduled (%d tickers)", len(tickers))
+            logging.getLogger(__name__).info(
+                "universe history warm scheduled (%d tickers)", len(tickers)
+            )
         except Exception as exc:  # noqa: BLE001
             logging.getLogger(__name__).warning("universe warm init failed: %s", exc)
 
@@ -160,7 +130,6 @@ app = FastAPI(
     version="0.1.0",
     on_startup=[
         _warm_bbca_cache,
-        _warm_stockbit_jwt,
         _warm_universe_history,
         _warm_overview,
     ],
@@ -176,6 +145,7 @@ app.add_middleware(
 
 for router in (
     plan.router,
+    case.router,
     flow.router,
     overview.router,
     analysis.router,
@@ -187,7 +157,6 @@ for router in (
     screener.router,
     validator.router,
     sentiment.router,
-    stockbit.router,
     regime.router,
     summary.router,
 ):

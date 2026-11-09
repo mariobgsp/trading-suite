@@ -217,6 +217,21 @@ p {
 	border-radius: var(--radius-control);
 }
 
+/* Invest-case flow graph: criteria in column 1, one arm each, one rail, one
+ * verdict. The rail is the verdict cell's left border, so nothing is drawn
+ * twice and every arm lands on it. */
+.case-graph {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) 14px 104px;
+	column-gap: 0;
+	row-gap: 5px;
+}
+@media (min-width: 640px) {
+	.case-graph {
+		grid-template-columns: minmax(0, 1fr) 18px 128px;
+	}
+}
+
 /* Responsive table surface — horizontal scroll on narrow, stable gutter */
 .table-scroll {
 	overflow-x: auto;

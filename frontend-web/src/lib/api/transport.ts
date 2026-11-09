@@ -39,8 +39,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 	});
 	if (!res.ok) {
 		// Three error shapes travel through this app: FastAPI's {detail: "..."},
-		// the daemon proxy's {error: {code, message}}, and legacy plain errors.
-		// Keep the code and a 409's attempt so the Stockbit screen can resume.
+		// a daemon proxy's {error: {code, message}}, and legacy plain errors.
+		// Keep the code and a 409's attempt so a caller can resume.
 		let detail = res.statusText;
 		let code: string | undefined;
 		let attempt: unknown;

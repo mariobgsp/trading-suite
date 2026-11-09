@@ -194,55 +194,115 @@ _QUERIES = [
 ]
 
 
+def _google_items(query: str) -> list[dict[str, Any]]:
+    """One Google News RSS query, parsed into the feed's item shape."""
+    from dateutil import parser as date_parser
+
+    encoded = query.replace(" ", "%20").replace('"', "%22")
+    url = f"https://news.google.com/rss/search?q={encoded}&hl=id&gl=ID&ceid=ID:id"
+    out: list[dict[str, Any]] = []
+    try:
+        feed = feedparser.parse(url)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("google news query failed: %s", exc)
+        return out
+    if not feed.entries:
+        return out
+    for entry in feed.entries:
+        title = clean_text(entry.title)
+        if len(title) < 10 or "<" in title:
+            continue
+        cat = analyze_category(title)
+        tags = extract_tags(title)
+        source = entry.source.title if "source" in entry else "News"
+        try:
+            dt = date_parser.parse(entry.published)
+        except Exception:  # noqa: BLE001
+            dt = datetime.now(UTC)
+        sentiment = _analyze_sentiment(title)
+        out.append(
+            {
+                "date": dt.isoformat(),
+                "date_str": dt.strftime("%d %b %H:%M"),
+                "source": source,
+                "title": title,
+                "link": entry.link,
+                "category": cat["category"],
+                "label": cat["label"],
+                "color": cat["color"],
+                "tags": tags,
+                **sentiment,
+            }
+        )
+    return out
+
+
+def _named_by(item: dict[str, Any], code: str, name: str) -> bool:
+    """A headline counts only when it names the ticker or the company.
+
+    Google News treats a quoted term loosely; without this filter the feed
+    returns the session's market wrap and calls it the stock's news.
+    """
+    title = str(item.get("title") or "").lower()
+    if re.search(rf"\b{re.escape(code.lower())}\b", title):
+        return True
+    cleaned = _clean_company_name(name)
+    return bool(len(cleaned) >= 5 and cleaned in title)
+
+
+def _clean_company_name(name: str) -> str:
+    """Lower-case the issuer name without its legal suffixes for matching."""
+    text = clean_text(name).lower()
+    text = re.sub(r"\b(pt|tbk|persero|perseroan|terbuka)\b", " ", text)
+    text = re.sub(r"[^a-z0-9 ]+", " ", text)
+    return " ".join(text.split())
+
+
+def fetch_ticker_news(ticker: str, name: str = "", force: bool = False) -> dict[str, Any]:
+    """Headlines that name one issuer, cached briefly.
+
+    The query is the ticker (and the company name when known) plus the four
+    finance desks the market feed already trusts. An empty result is a real
+    answer, not a fabricated list; a failed query says so.
+    """
+    code = ticker.upper().strip()
+    cache_key = f"sentiment:ticker:{code}"
+    if not force:
+        cached = db.get_fresh(cache_key, CACHE_TTL)
+        if cached is not None:
+            return cached
+
+    aliases = f'"{code}"'
+    if name and name.upper() != code:
+        aliases += f' OR "{name}"'
+    query = (
+        f"({aliases}) (saham OR emiten) "
+        "(site:kontan.co.id OR site:bisnis.com OR site:cnbcindonesia.com OR site:investor.id) "
+        "when:30d"
+    )
+    items = _google_items(query)
+    items = [item for item in items if _named_by(item, code, name)]
+    items.sort(key=lambda item: item["date"], reverse=True)
+    payload = {
+        "available": True,
+        "ticker": code,
+        "count": len(items),
+        "items": items[:12],
+        "warnings": [] if items else ["no headlines named this ticker in the last 30 days"],
+    }
+    if items:
+        db.set(cache_key, payload)
+    return payload
+
+
 def _fetch_google_news() -> list[dict[str, Any]]:
     """Fetch the 4 Google News queries IN PARALLEL (was 4-8s serial, now ~2s)."""
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
-    from dateutil import parser as date_parser
-
-    def _fetch_one(q: str) -> list[dict[str, Any]]:
-        encoded = q.replace(" ", "%20").replace('"', "%22")
-        url = f"https://news.google.com/rss/search?q={encoded}&hl=id&gl=ID&ceid=ID:id"
-        out: list[dict[str, Any]] = []
-        try:
-            feed = feedparser.parse(url)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("google news query failed: %s", exc)
-            return out
-        if not feed.entries:
-            return out
-        for entry in feed.entries:
-            title = clean_text(entry.title)
-            if len(title) < 10 or "<" in title:
-                continue
-            cat = analyze_category(title)
-            tags = extract_tags(title)
-            source = entry.source.title if "source" in entry else "News"
-            try:
-                dt = date_parser.parse(entry.published)
-            except Exception:  # noqa: BLE001
-                dt = datetime.now(UTC)
-            sentiment = _analyze_sentiment(title)
-            out.append(
-                {
-                    "date": dt.isoformat(),
-                    "date_str": dt.strftime("%d %b %H:%M"),
-                    "source": source,
-                    "title": title,
-                    "link": entry.link,
-                    "category": cat["category"],
-                    "label": cat["label"],
-                    "color": cat["color"],
-                    "tags": tags,
-                    **sentiment,
-                }
-            )
-        return out
-
     all_news: list[dict[str, Any]] = []
     seen_urls: set[str] = set()
     with ThreadPoolExecutor(max_workers=min(4, len(_QUERIES))) as pool:
-        futures = [pool.submit(_fetch_one, q) for q in _QUERIES]
+        futures = [pool.submit(_google_items, q) for q in _QUERIES]
         for fut in as_completed(futures):
             for item in fut.result():
                 if item["link"] in seen_urls:
@@ -296,7 +356,13 @@ def fetch_sentiment_news(force: bool = False) -> dict[str, Any]:
 
     # No cache yet: kick off background fetch and return degraded instantly.
     _spawn_refresh(cache_key, lambda: _refresh_news(cache_key))
-    return {"generated_at": db.utcnow_iso(), "count": 0, "items": [], "degraded": True, "refreshing": True}
+    return {
+        "generated_at": db.utcnow_iso(),
+        "count": 0,
+        "items": [],
+        "degraded": True,
+        "refreshing": True,
+    }
 
 
 def _refresh_news(cache_key: str) -> None:

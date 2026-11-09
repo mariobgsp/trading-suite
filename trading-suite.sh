@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# trading-suite.sh — one-command runner for the lean desk (7 routes)
+# trading-suite.sh — one-command runner for the lean desk (6 routes)
 # Usage:
-#   ./trading-suite.sh run        # stockbitd :8787 + backend :8000 + frontend :5173
+#   ./trading-suite.sh run        # backend :8000 + frontend :5173
 #   ./trading-suite.sh dev        # alias for run
-#   ./trading-suite.sh build      # production build (vite build + tsc + stockbitd)
-#   ./trading-suite.sh start      # production start (vite preview + uvicorn + stockbitd)
+#   ./trading-suite.sh build      # production build (vite build + tsc)
+#   ./trading-suite.sh start      # production start (vite preview + uvicorn)
 #   ./trading-suite.sh stop       # kill dev servers started by run
 #   ./trading-suite.sh logs       # tail background logs
-#   ./trading-suite.sh verify     # backend tests + frontend typecheck + go test -short
+#   ./trading-suite.sh verify     # backend tests + frontend typecheck
 #   ./trading-suite.sh sync-data  # weekly Yahoo fetch -> local store -> warm plan
 #   ./trading-suite.sh clean      # remove build + prune cache
 
@@ -24,9 +24,6 @@ die()  { printf "\033[31m[error]\033[0m %s\n" "$*"; exit 1; }
 
 FRONTEND="$ROOT/frontend-web"
 FRONTEND_PORT="${FRONTEND_PORT:-5173}"
-STOCKBITD_DIR="$ROOT/stockbitd"
-STOCKBITD_BIN="$STOCKBITD_DIR/bin/stockbitd"
-STOCKBITD_URL="${STOCKBITD_URL:-http://127.0.0.1:8787}"
 
 ensure_backend_venv() {
   # Codes for the sync command: backend_missing, sync_failed.
@@ -44,44 +41,9 @@ ensure_frontend_deps() {
   fi
 }
 
-# Manage only the default local companion. A custom STOCKBITD_URL belongs to
-# the operator, and an explicit empty value documents "legacy JWT, no daemon".
-ensure_stockbitd() {
-  case "$STOCKBITD_URL" in
-    "") info "stockbitd: disabled by an empty STOCKBITD_URL"; return 0 ;;
-    http://127.0.0.1:8787|http://localhost:8787) ;;
-    *) info "stockbitd: using $STOCKBITD_URL (not managed by this runner)"; return 0 ;;
-  esac
-  if curl -fsS -m 1 "http://127.0.0.1:8787/api/health" >/dev/null 2>&1; then
-    info "stockbitd already_running on :8787"
-    return 0
-  fi
-  if [[ ! -x "$STOCKBITD_BIN" ]]; then
-    if command -v go >/dev/null 2>&1 && [[ -d "$STOCKBITD_DIR" ]]; then
-      info "building stockbitd (binary_missing)…"
-      (cd "$STOCKBITD_DIR" && go build -o bin/stockbitd ./cmd/stockbitd) || {
-        warn "stockbitd build failed — the Stockbit screen will show daemon_unavailable"
-        return 0
-      }
-    else
-      warn "stockbitd go_missing / binary_missing — the Stockbit screen will show daemon_unavailable"
-      return 0
-    fi
-  fi
-  info "starting stockbitd on :8787 (started; log: $PID_DIR/stockbitd.log)…"
-  nohup "$STOCKBITD_BIN" serve --addr "127.0.0.1:8787" > "$PID_DIR/stockbitd.log" 2>&1 & echo $! > "$PID_DIR/stockbitd.pid"
-  sleep 1
-  if kill -0 "$(cat "$PID_DIR/stockbitd.pid")" 2>/dev/null; then
-    info "stockbitd up → http://127.0.0.1:8787"
-  else
-    warn "stockbitd start_failed (port_busy or an error) — see $PID_DIR/stockbitd.log"
-  fi
-}
-
 cmd_run() {
   ensure_backend_venv
   ensure_frontend_deps
-  ensure_stockbitd
   info "starting backend :8000 and frontend :$FRONTEND_PORT (logs: $PID_DIR)..."
   # backend
   nohup "$BACKEND/.venv/bin/python" -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload --app-dir "$BACKEND" \
@@ -106,7 +68,7 @@ cmd_run() {
 }
 
 cmd_stop() {
-  for name in backend frontend stockbitd; do
+  for name in backend frontend; do
     if [[ -f "$PID_DIR/$name.pid" ]]; then
       pid=$(cat "$PID_DIR/$name.pid")
       if kill -0 "$pid" 2>/dev/null; then kill "$pid" && info "stopped $name ($pid)"; else warn "$name not running"; fi
@@ -118,8 +80,6 @@ cmd_stop() {
   pkill -f "uvicorn app.main:app" 2>/dev/null && info "killed stray uvicorn" || true
   pkill -f "bin/vite dev" 2>/dev/null && info "killed stray vite" || true
   pkill -f "bin/vite preview" 2>/dev/null && info "killed stray vite preview" || true
-  # stockbitd is stopped through its pid file: a broad pkill here can match the
-  # command line of the caller that invoked this script.
 }
 
 cmd_logs() {
@@ -128,16 +88,10 @@ cmd_logs() {
 
 cmd_build() {
   ensure_frontend_deps
-  if command -v go >/dev/null 2>&1 && [[ -d "$STOCKBITD_DIR" ]]; then
-    info "stockbitd build..."
-    (cd "$STOCKBITD_DIR" && go build -o bin/stockbitd ./cmd/stockbitd) || die "stockbitd build failed"
-  else
-    warn "Go not available — skipping the stockbitd build"
-  fi
   info "frontend typecheck + build..."
   (cd "$FRONTEND" && npm run build) || die "frontend build failed"
   info "backend tests..."
-  (cd backend && STOCKBITD_URL= .venv/bin/python -m pytest -q) || die "backend tests failed"
+  (cd backend && .venv/bin/python -m pytest -q) || die "backend tests failed"
   info "backend typecheck..."
   (cd backend && .venv/bin/pyright --version >/dev/null 2>&1 && .venv/bin/pyright . || warn "pyright not installed — skip")
   info "build ok"
@@ -146,7 +100,6 @@ cmd_build() {
 cmd_start() {
   ensure_backend_venv
   ensure_frontend_deps
-  ensure_stockbitd
   info "production start — backend :8000 (no reload) + frontend :$FRONTEND_PORT"
   nohup "$BACKEND/.venv/bin/python" -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --app-dir "$BACKEND" > "$PID_DIR/backend.log" 2>&1 & echo $! > "$PID_DIR/backend.pid"
   (cd "$FRONTEND" && nohup npm run preview --silent -- --port "$FRONTEND_PORT" > "$PID_DIR/frontend.log" 2>&1 & echo $! > "$PID_DIR/frontend.pid")
@@ -155,7 +108,7 @@ cmd_start() {
 }
 
 cmd_clean() {
-  rm -rf "$FRONTEND/dist" "$FRONTEND/node_modules/.vite" "$STOCKBITD_DIR/bin"
+  rm -rf "$FRONTEND/dist" "$FRONTEND/node_modules/.vite"
   info "pruned frontend build + vite caches"
   if [[ -f "$BACKEND/data/cache.db" ]]; then
     info "cache at $BACKEND/data/cache.db kept (delete manually to reset)"
@@ -188,24 +141,16 @@ cmd_verify() {
   fi
   # Both checks run even when the first fails: a failing test is exactly when the
   # typecheck is worth having, and stopping at the first error hides it.
-  local backend_status=0 frontend_status=0 stockbitd_status=0
+  local backend_status=0 frontend_status=0
   info "backend tests (rule chain, cited figures, sizing, verdict, refresh)…"
-  # Empty URL keeps the suite tests deterministic even when the runner has a
-  # live stockbitd on the default port; the adapter/proxy tests set their own.
-  (cd "$BACKEND" && STOCKBITD_URL= .venv/bin/python -m pytest tests -q) || backend_status=$?
+  (cd "$BACKEND" && .venv/bin/python -m pytest tests -q) || backend_status=$?
   info "frontend typecheck…"
   (cd "$FRONTEND" && npx --no-install tsc --noEmit) || frontend_status=$?
-  if command -v go >/dev/null 2>&1 && [[ -d "$STOCKBITD_DIR" ]]; then
-    info "stockbitd tests (short; the CDP smoke test needs a browser)…"
-    (cd "$STOCKBITD_DIR" && go test -short ./...) || stockbitd_status=$?
-  else
-    warn "Go not available — skipping the stockbitd tests"
-  fi
-  if [[ "$backend_status" -eq 0 && "$frontend_status" -eq 0 && "$stockbitd_status" -eq 0 ]]; then
+  if [[ "$backend_status" -eq 0 && "$frontend_status" -eq 0 ]]; then
     info "all clean"
     return 0
   fi
-  warn "verify: backend=$([[ "$backend_status" -eq 0 ]] && echo pass || echo "fail (see above)") · frontend=$([[ "$frontend_status" -eq 0 ]] && echo pass || echo "fail (see above)") · stockbitd=$([[ "$stockbitd_status" -eq 0 ]] && echo pass || echo "fail (see above)")"
+  warn "verify: backend=$([[ "$backend_status" -eq 0 ]] && echo pass || echo "fail (see above)") · frontend=$([[ "$frontend_status" -eq 0 ]] && echo pass || echo "fail (see above)")"
   return 1
 }
 

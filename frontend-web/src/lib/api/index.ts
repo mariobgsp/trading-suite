@@ -8,5 +8,4 @@ export * from "./format";
 export * from "./plan";
 export * from "./flow";
 export * from "./overview";
-export * from "./stockbit";
 export * from "./types-history";

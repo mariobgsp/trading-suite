@@ -28,6 +28,7 @@ import {
 import { usePlanRefreshSignal } from "@/lib/refresh";
 import { ChangeBadge } from "@/components/ui";
 import FlowChart from "@/components/FlowChart";
+import InvestCase from "@/components/InvestCase";
 import { Page } from "./Tonight";
 
 const FLOW_TTL = 120_000;
@@ -291,6 +292,9 @@ export default function Flow() {
 					)}
 				</section>
 			</div>
+
+			{/* The two validity questions, asked only once a name is selected. */}
+			{selected && <InvestCase ticker={selected} />}
 		</Page>
 	);
 }

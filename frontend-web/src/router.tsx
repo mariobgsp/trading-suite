@@ -15,15 +15,13 @@ import Method from "@/routes/Method";
 import Screener from "@/routes/Screener";
 import Flow from "@/routes/Flow";
 import Market from "@/routes/Market";
-import Stockbit from "@/routes/Stockbit";
 
 /**
- * Seven screens, and that is the whole navigation.
+ * Six screens, and that is the whole navigation.
  *
  *   Tonight  - what to buy, or why not to
  *   Screener - every name, ranked by how near it is to being buyable
- *   Flow     - bandarmology-style cards and a transparent flow proxy
- *   Stockbit - one login, the maintained cookie jar, and the data it unlocks
+ *   Flow     - bandarmology-style cards, a transparent flow proxy, and the invest case
  *   Market   - the daily breadth, stress and rotation dashboard
  *   Method   - the rules and the measured proof
  *   Name     - one name, priced as a trade, with its chart
@@ -45,7 +43,6 @@ const NAV = [
 	{ to: "/", label: "Tonight" },
 	{ to: "/screener", label: "Screener" },
 	{ to: "/flow", label: "Flow" },
-	{ to: "/stockbit", label: "Stockbit" },
 	{ to: "/market", label: "Market" },
 	{ to: "/method", label: "Method" },
 ] as const;
@@ -164,12 +161,6 @@ const flowRoute = createRoute({
 	component: Flow,
 });
 
-const stockbitRoute = createRoute({
-	getParentRoute: () => rootRoute,
-	path: "/stockbit",
-	component: Stockbit,
-});
-
 const marketRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "/market",
@@ -201,6 +192,7 @@ const RETIRED = [
 	"announcements",
 	"foreignflow",
 	"brokerintel",
+	"stockbit",
 	"validator",
 	"suspended",
 	"konglo",
@@ -223,7 +215,6 @@ export const router = createRouter({
 		indexRoute,
 		screenerRoute,
 		flowRoute,
-		stockbitRoute,
 		marketRoute,
 		methodRoute,
 		nameRoute,

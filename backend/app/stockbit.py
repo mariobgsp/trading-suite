@@ -23,7 +23,6 @@ import requests
 from requests.exceptions import HTTPError
 
 from app import db
-from app import stockbit_daemon as daemon
 
 try:
     from dotenv import load_dotenv
@@ -114,11 +113,6 @@ def _write_jwt_file(path: Path, jwt: str, exp: int | None) -> None:
 
 
 def save_jwt(jwt: str) -> None:
-    if daemon.use_daemon():
-        result = daemon.adopt_token(jwt)
-        if result.get("error") or not result.get("available"):
-            raise RuntimeError(str(result.get("error") or "the stockbitd session was not accepted"))
-        return
     exp = _decode_exp(jwt)
     for p in {_PERSISTENT_FILE, CACHE_FILE, _LEGACY_FILE}:
         _write_jwt_file(p, jwt, exp)
@@ -267,17 +261,12 @@ def load_jwt() -> str | None:
     return None
 
 
-# The daemon adapter can return daemon_unavailable or invalid_response; the
-# legacy path keeps its old not_connected/reauth_required-shaped payloads.
+# The legacy path keeps its old not_connected/reauth_required-shaped payloads.
 def stockbit_available() -> bool:
-    if daemon.use_daemon():
-        return daemon.available()
     return load_jwt() is not None
 
 
 def stockbit_status() -> dict[str, Any]:
-    if daemon.use_daemon():
-        return daemon.status()
     jwt = load_jwt()
     if not jwt:
         return {"available": False, "reason": "no JWT — set STOCKBIT_JWT_TOKEN or login with browser Turnstile (POST /api/intel/stockbit/login)"}
@@ -327,8 +316,6 @@ def fetch_orderbook(ticker: str) -> dict[str, Any]:
 
 def orderbook_snapshot(ticker: str, force: bool = False) -> dict[str, Any]:
     ticker = ticker.upper().strip()
-    if daemon.use_daemon():
-        return daemon.orderbook_snapshot(ticker, force)
     cache_key = f"stockbit:ob:{ticker}"
     if not force:
         cached = db.get_fresh(cache_key, 60)
@@ -406,8 +393,6 @@ def broker_summary(ticker: str, date: str | None = None, force: bool = False) ->
     ticker = ticker.upper().strip()
     if not date:
         date = datetime.now(UTC).strftime("%Y-%m-%d")
-    if daemon.use_daemon():
-        return daemon.broker_summary(ticker, date, force)
     cache_key = f"stockbit:broker:{ticker}:{date}"
     if not force:
         cached = db.get_fresh(cache_key, BROKER_TTL)
@@ -739,7 +724,8 @@ def stockbit_lpm_intensity(ticker: str, days: int = 60, force: bool = False) -> 
     intensity_series = [_clean(value) for value in intensity.tolist()]
     warnings = list(meta.get("warnings") or [])
     warnings.append("legacy endpoint now returns the causal Flow proxy, not the old formula")
-    if float(frame["High"].sub(frame["Low"]).abs().sum()) == 0.0:
+    spread = frame["High"].sub(frame["Low"]).abs().sum()
+    if float(spread) == 0.0:  # pyright: ignore[reportArgumentType]
         warnings.append("OHLCV high/low unavailable; the CMF term is zero")
     payload = {
         "ticker": ticker,

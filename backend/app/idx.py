@@ -25,8 +25,8 @@ flow instead.
 from __future__ import annotations
 
 import logging
-import re
 import math
+import re
 import threading
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -356,7 +356,11 @@ def foreign_flow(ticker: str, force: bool = False) -> dict[str, Any]:
         stale = db.get(cache_key)
         if stale is not None:
             return stale
-        return {"ticker": ticker, "available": True, "error": f"{ticker} not in today's IDX summary"}
+        return {
+            "ticker": ticker,
+            "available": True,
+            "error": f"{ticker} not in today's IDX summary",
+        }
     return result
 
 
@@ -728,17 +732,30 @@ def _ownership_diff(
 # ─── Announcements ────────────────────────────────────────────────────────────
 
 
-def announcements(limit: int = 30, force: bool = False) -> dict[str, Any]:
-    """Official IDX announcements with attachment PDF links — via Cache seam."""
-    cache_key = f"intel:announcements:{limit}"
+def announcements(
+    limit: int = 30,
+    force: bool = False,
+    ticker: str | None = None,
+    days: int = 45,
+) -> dict[str, Any]:
+    """Official IDX announcements with attachment PDF links — via Cache seam.
+
+    `ticker` narrows the feed to one issuer (four-letter codes only); `days`
+    widens the window for a per-issuer KI history. The market-wide call keeps
+    its old shape and cache key namespace.
+    """
+    code = (ticker or "").upper().strip()
+    if code and not _IDX_TICKER_RE.fullmatch(code):
+        code = ""
+    cache_key = f"intel:announcements:{limit}:{code or 'market'}:{days}"
 
     def _fetcher() -> dict[str, Any] | None:
         date_to = datetime.now(UTC).date()
-        date_from = date_to - timedelta(days=45)
+        date_from = date_to - timedelta(days=days)
         j = _get_json(
             "/ListedCompany/GetAnnouncement",
             {
-                "kodeEmiten": "",
+                "kodeEmiten": code,
                 "indexFrom": 0,
                 "pageSize": max(limit, 10),
                 "dateFrom": date_from.strftime("%Y%m%d"),
@@ -764,9 +781,11 @@ def announcements(limit: int = 30, force: bool = False) -> dict[str, Any]:
             )
         if not items:
             return None  # don't cache empty — let stale survive
+        items.sort(key=lambda item: item["date"], reverse=True)
         return {
             "available": True,
             "count": len(items),
+            "ticker": code or None,
             "as_of": datetime.now(UTC).isoformat(),
             "items": items,
         }

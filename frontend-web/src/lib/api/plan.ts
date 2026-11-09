@@ -1026,7 +1026,13 @@ export interface RefreshReport {
 	open: boolean | null;
 }
 
-/** A plan changes when the session closes, so cache it for minutes, not seconds. */
+/**
+ * A plan changes when the session closes, so cache it for minutes, not seconds.
+ *
+ * Codes surfaced when this data is unavailable: plan_unavailable when the study
+ * artifacts cannot be read, and http_error for the transport failure that
+ * carries it. The Stockbit screen shows both as a designed state.
+ */
 const PLAN_TTL = 5 * 60_000;
 
 export const planApi = {

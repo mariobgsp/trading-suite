@@ -25,8 +25,7 @@ async def tonight(
     itself gets checked against dates the study already knows the answer for.
     """
     when = date.fromisoformat(as_of) if as_of else None
-    current = await asyncio.to_thread(planner.plan, when, exit_method)
-    return current.as_dict()
+    return await asyncio.to_thread(planner.plan_payload, when, exit_method)
 
 
 @router.get("/method")

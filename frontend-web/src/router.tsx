@@ -15,13 +15,15 @@ import Method from "@/routes/Method";
 import Screener from "@/routes/Screener";
 import Flow from "@/routes/Flow";
 import Market from "@/routes/Market";
+import Stockbit from "@/routes/Stockbit";
 
 /**
- * Six screens, and that is the whole navigation.
+ * Seven screens, and that is the whole navigation.
  *
  *   Tonight  - what to buy, or why not to
  *   Screener - every name, ranked by how near it is to being buyable
  *   Flow     - bandarmology-style cards and a transparent flow proxy
+ *   Stockbit - one login, the maintained cookie jar, and the data it unlocks
  *   Market   - the daily breadth, stress and rotation dashboard
  *   Method   - the rules and the measured proof
  *   Name     - one name, priced as a trade, with its chart
@@ -43,6 +45,7 @@ const NAV = [
 	{ to: "/", label: "Tonight" },
 	{ to: "/screener", label: "Screener" },
 	{ to: "/flow", label: "Flow" },
+	{ to: "/stockbit", label: "Stockbit" },
 	{ to: "/market", label: "Market" },
 	{ to: "/method", label: "Method" },
 ] as const;
@@ -110,6 +113,8 @@ function RootComponent() {
 	);
 }
 
+// Codes: not_found — the root notFoundComponent is the designed 404; the
+// retired-tool routes redirect instead of landing here.
 const rootRoute = createRootRoute({
 	component: RootComponent,
 	notFoundComponent: () => (
@@ -157,6 +162,12 @@ const flowRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "/flow",
 	component: Flow,
+});
+
+const stockbitRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: "/stockbit",
+	component: Stockbit,
 });
 
 const marketRoute = createRoute({
@@ -212,6 +223,7 @@ export const router = createRouter({
 		indexRoute,
 		screenerRoute,
 		flowRoute,
+		stockbitRoute,
 		marketRoute,
 		methodRoute,
 		nameRoute,

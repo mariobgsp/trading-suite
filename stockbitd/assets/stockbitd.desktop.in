@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Stockbit
+Comment=Stockbit session keeper and data panel
+Exec=@BIN@ serve --open
+Icon=stockbitd
+Terminal=false
+Categories=Office;Finance;
+Keywords=stockbit;idx;saham;trading;cookie;session;
+StartupNotify=false

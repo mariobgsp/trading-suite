@@ -26,6 +26,7 @@ from app.routers import (  # pyright: ignore[reportAttributeAccessIssue]
     regime,
     screener,
     sentiment,
+    stockbit,
     summary,
     validator,
 )
@@ -76,15 +77,26 @@ def _warm_stockbit_jwt() -> None:
 
     def _run() -> None:
         try:
+            from app import stockbit_daemon as daemon
+
+            if daemon.use_daemon():
+                adopted = daemon.adopt_env_credentials()
+                if adopted.get("adopted"):
+                    logging.getLogger(__name__).info("Stockbit: the daemon adopted the .env sign-in")
+                elif adopted.get("reason") and "not set" not in str(adopted.get("reason")):
+                    logging.getLogger(__name__).info("Stockbit daemon sign-in: %s", adopted.get("reason"))
+
             from app.stockbit import load_jwt, stockbit_status
 
-            # Trigger auto-login via .env username/password if no valid JWT
+            # The daemon wins when it is healthy; otherwise the legacy JWT path.
             jwt = load_jwt()
             st = stockbit_status()
-            if jwt and st.get("available"):
-                logging.getLogger(__name__).info("Stockbit JWT ready: %s h left", st.get("hours_left"))
-            elif not st.get("available"):
-                logging.getLogger(__name__).info("Stockbit JWT not ready: %s (set STOCKBIT_USERNAME/PASSWORD or STOCKBIT_JWT_TOKEN in .env)", st.get("reason"))
+            if st.get("available"):
+                logging.getLogger(__name__).info("Stockbit ready: %s h left", st.get("hours_left"))
+            elif jwt:
+                logging.getLogger(__name__).info("Stockbit legacy JWT loaded")
+            else:
+                logging.getLogger(__name__).info("Stockbit not connected: %s", st.get("reason"))
         except Exception as e:  # noqa: BLE001
             logging.getLogger(__name__).warning("Stockbit warm failed: %s", e)
 
@@ -175,6 +187,7 @@ for router in (
     screener.router,
     validator.router,
     sentiment.router,
+    stockbit.router,
     regime.router,
     summary.router,
 ):

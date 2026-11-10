@@ -181,6 +181,7 @@ def load_inputs(now: datetime | None = None) -> dict[str, Any]:
                 "sector": str(row.get("sector") or ""),
                 "industry": str(row.get("industry") or ""),
                 "market_cap": _num(row.get("market_cap")),
+                "volume": _num(row.get("volume")),
                 "price": price,
                 "change_pct": change_pct,
                 "closes": closes,

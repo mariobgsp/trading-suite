@@ -89,6 +89,79 @@ export interface RotationBlock {
 	reason?: string;
 }
 
+/* ── v2 blocks: movers, sector day, index contribution, benchmark tail ───── */
+
+export interface MoverRow {
+	ticker: string;
+	name: string;
+	price: number | null;
+	change_pct: number | null;
+	value: number | null;
+}
+
+export interface MoversBlock {
+	available: boolean;
+	reason: string | null;
+	gainers: MoverRow[];
+	losers: MoverRow[];
+	most_active: MoverRow[];
+	value_note?: string;
+}
+
+export interface SectorDayRow {
+	sector: string;
+	members: number;
+	avg_change_pct: number | null;
+	up: number;
+	down: number;
+	flat: number;
+	best: { ticker: string; change_pct: number } | null;
+	worst: { ticker: string; change_pct: number } | null;
+}
+
+export interface SectorDayBlock {
+	available: boolean;
+	reason: string | null;
+	sectors: SectorDayRow[];
+}
+
+export interface ContributionRow {
+	ticker: string;
+	weight_pct: number | null;
+	change_pct: number | null;
+	contribution_pct: number | null;
+}
+
+export interface IndexContribution {
+	available: boolean;
+	reason: string | null;
+	top: ContributionRow[];
+	bottom: ContributionRow[];
+	calibration?: "calibrated" | "uncalibrated" | "no_index_change" | null;
+	model_change_pct: number | null;
+	actual_change_pct: number | null;
+	factor: number | null;
+	n_used: number;
+}
+
+export interface BenchmarkTailPoint {
+	date: string;
+	close: number | null;
+}
+
+export interface BenchmarkTail {
+	available: boolean;
+	reason: string | null;
+	points: BenchmarkTailPoint[];
+	as_of: string | null;
+}
+
+export interface IndexQuote {
+	name: string | null;
+	close: number | null;
+	change_pct: number | null;
+}
+
 export interface OverviewCacheMeta {
 	hit: boolean;
 	fresh: boolean;
@@ -135,6 +208,12 @@ export interface OverviewSnapshot {
 	sectors: RotationBlock;
 	conglomerates: RotationBlock;
 	industries: RotationBlock;
+	/** v2 blocks — one fault degrades its own section, never the page. */
+	movers?: MoversBlock;
+	sector_day?: SectorDayBlock;
+	index_contribution?: IndexContribution;
+	benchmark_tail?: BenchmarkTail;
+	indices?: IndexQuote[];
 	warnings: string[];
 	built_at: string;
 	formula_version: number;

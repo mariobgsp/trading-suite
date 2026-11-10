@@ -221,6 +221,7 @@ def run_backtest(
     trades: list[dict[str, Any]] = []
     equity: list[dict[str, Any]] = []
     cash = initial_capital
+    bars_held = 0
     holding = False
     entry_price = 0.0
     entry_date = None
@@ -283,6 +284,7 @@ def run_backtest(
                 shares = 0
                 highest_price = 0.0
 
+        bars_held += 1 if holding else 0
         equity_value = cash + (shares * close if holding else 0)
         equity.append({"date": _idx_date(df.index[i]), "value": round(equity_value, 0)})
 
@@ -304,7 +306,7 @@ def run_backtest(
             }
         )
 
-    stats = _compute_stats(trades, equity, initial_capital, df, strategy)
+    stats = _compute_stats(trades, equity, initial_capital, df, strategy, bars_held)
     return {"trades": trades, "equity": equity, "stats": stats}
 
 
@@ -314,6 +316,7 @@ def _compute_stats(
     initial_capital: float,
     df: pd.DataFrame,
     strategy: str,
+    bars_held: int = 0,
 ) -> dict[str, Any]:
     wins = [t for t in trades if t["profit_pct"] > 0]
     losses = [t for t in trades if t["profit_pct"] <= 0]
@@ -362,6 +365,7 @@ def _compute_stats(
         "annualized_return_pct": round(annualized, 2),
         "max_drawdown_pct": round(max_dd * 100, 2),
         "final_value": round(final_value, 0),
+        "time_in_market_pct": round((bars_held / len(df)) * 100, 1) if len(df) else 0.0,
         "buyhold_return_pct": round(buyhold_ret, 2),
         "profit_factor": round(
             sum(t["profit_pct"] for t in wins) / abs(sum(t["profit_pct"] for t in losses)), 2
@@ -434,4 +438,222 @@ def pattern_backtests(ticker: str, force: bool = False) -> dict[str, Any]:
         "bars": len(history),
         "fee_note": fee_note(),
         "strategies": strategies,
+    }
+
+
+
+# ── compare-all: every strategy on one target, versus the index ──────────────
+
+BENCHMARK_TICKER = "^JKSE"
+
+STRATEGY_LABELS = {
+    "tsmom": "TSMOM 12 bln",
+    "momentum": "MACD cross + RSI bounce",
+    "meanreversion": "Mean reversion Stoch/RSI",
+    "buyhold": "Buy & hold (target)",
+    "pullback": "Pullback within uptrend",
+    "breakout": "Breakout 20-bar high",
+    "mildmover": "Volatility compression",
+    "golden_cross": "Golden cross SMA 20/50",
+    "cross_3_5": "Cross EMA 3/5",
+    "cross_9_21": "Cross EMA 9/21",
+}
+
+STRATEGY_KIN = {
+    "tsmom": "trend",
+    "momentum": "trend",
+    "golden_cross": "trend",
+    "breakout": "trend",
+    "pullback": "pullback",
+    "mildmover": "volatility",
+    "meanreversion": "reversal",
+    "cross_3_5": "scalp",
+    "cross_9_21": "scalp",
+    "buyhold": "baseline",
+}
+
+
+def _hold_curve(history: list[dict[str, Any]], capital: float, dates: list[str] | None = None):
+    """
+    Capital grown by the target's own closes; optional date alignment.
+
+    The optional dates list restricts the curve to the sessions the strategies
+    actually traded: buy-and-hold measured over a different listing span is a
+    different investment, not a comparison.
+    """
+    closes: dict[str, float] = {}
+    for record in history:
+        close = _f(record.get("Close") or record.get("close"))
+        day = record.get("date")
+        if close <= 0 or day is None:
+            continue
+        date_str = _idx_date(day)
+        if date_str not in closes:
+            closes[date_str] = close
+    if not closes:
+        return None, None
+    ordered = sorted(closes.items())
+    if dates:
+        wanted = set(dates)
+        ordered = [(day, close) for day, close in ordered if day in wanted]
+        if not ordered:
+            return None, None
+    base = ordered[0][1]
+    curve = [
+        {"date": day, "value": round(capital * close / base, 2)} for day, close in ordered
+    ]
+    total = (ordered[-1][1] / base - 1.0) * 100.0
+    return curve, round(total, 2)
+
+
+def _normalize_curve(equity: list[dict[str, Any]] | None):
+    """Strategy equity rescaled so the first realised bar is the base (100)."""
+    if not equity:
+        return None
+    finite = [e for e in equity if _f(e.get("value")) > 0]
+    if len(finite) < 2:
+        return None
+    base = _f(finite[0]["value"])
+    return [
+        {"date": e["date"], "value": round(_f(e["value"]) / base * 100.0, 2)}
+        for e in finite
+    ]
+
+
+def compare_all(
+    history: list[dict[str, Any]],
+    capital: float = 10_000_000.0,
+    bench_history: list[dict[str, Any]] | None = None,
+    start_idx: int | None = None,
+) -> dict[str, Any]:
+    """
+    Every strategy in STRATEGIES on one target, versus its own buy-and-hold.
+
+    A benchmark history, when given, additionally supplies the index
+    buy-and-hold so the table can report alpha against IHSG and not only
+    against the target itself. Strategy failures are per-row values, never
+    request failures: one division by zero must not cost the whole table.
+    ``start_idx`` trims the simulated span for every method at once — curves
+    that span different windows are not comparable.
+    """
+    rows: list[dict[str, Any]] = []
+    dates: list[str] = []
+
+    for strategy in STRATEGIES:
+        if strategy == "buyhold":
+            # Synthesized below from the hold curve: the engine's generic
+            # stop/trailing rules would mangle a keep-forever book.
+            continue
+        # One window for every method: the fetch may be a longer TSMOM-warmup
+        # span, so each strategy simulates only the requested tail while
+        # signals still read the full series (start_idx semantics).
+        start = start_idx
+        try:
+            out = run_backtest(history, strategy, capital, start_idx=start)
+            stats = out.get("stats") or {}
+            if "total_return_pct" not in stats:
+                rows.append(
+                    {
+                        "strategy": strategy,
+                        "label": STRATEGY_LABELS.get(strategy, strategy),
+                        "kin": STRATEGY_KIN.get(strategy, ""),
+                        "error": out.get("error") or "no stats",
+                    }
+                )
+                continue
+            curve = _normalize_curve(out.get("equity"))
+            dates = [point["date"] for point in curve] if curve else dates
+            wf = walk_forward(history, strategy, capital)
+            rows.append(
+                {
+                    "strategy": strategy,
+                    "label": STRATEGY_LABELS.get(strategy, strategy),
+                    "kin": STRATEGY_KIN.get(strategy, ""),
+                    "stats": stats,
+                    "walk_forward": wf,
+                    "curve": curve,
+                    "time_in_market_pct": stats.get("time_in_market_pct"),
+                }
+            )
+        except Exception as exc:  # noqa: BLE001 - one bad strategy cannot kill the table
+            rows.append(
+                {
+                    "strategy": strategy,
+                    "label": STRATEGY_LABELS.get(strategy, strategy),
+                    "kin": STRATEGY_KIN.get(strategy, ""),
+                    "error": str(exc)[:200],
+                }
+            )
+
+    target_curve, target_total = _hold_curve(history, capital, dates or None)
+    bench_curve, bench_total = (
+        _hold_curve(bench_history, capital, dates or None) if bench_history else (None, None)
+    )
+
+    # The baseline's own row, measured off the hold curve instead of the
+    # engine: one order, no stop, mark-to-market through every session.
+    if target_curve and target_total is not None:
+        values = [point["value"] for point in target_curve]
+        peak = values[0]
+        max_dd = 0.0
+        for value in values:
+            peak = max(peak, value)
+            if peak > 0:
+                max_dd = min(max_dd, (value - peak) / peak)
+        years = max(len(values) / 252.0, 1e-9)
+        cagr = (
+            ((1.0 + target_total / 100.0) ** (1.0 / years) - 1.0) * 100.0
+            if target_total > -100.0
+            else -100.0
+        )
+        rows.append(
+            {
+                "strategy": "buyhold",
+                "label": STRATEGY_LABELS["buyhold"],
+                "kin": STRATEGY_KIN["buyhold"],
+                "stats": {
+                    "strategy": "buyhold",
+                    "total_trades": 1,
+                    "wins": 1 if target_total > 0 else 0,
+                    "losses": 1 if target_total <= 0 else 0,
+                    "win_rate": 100.0 if target_total > 0 else 0.0,
+                    "avg_win_pct": target_total if target_total > 0 else 0.0,
+                    "avg_loss_pct": target_total if target_total <= 0 else 0.0,
+                    "total_return_pct": round(target_total, 2),
+                    "annualized_return_pct": round(cagr, 2),
+                    "max_drawdown_pct": round(max_dd * 100.0, 2),
+                    "final_value": values[-1],
+                    "time_in_market_pct": 100.0,
+                    "buyhold_return_pct": round(target_total, 2),
+                    "profit_factor": None,
+                    "fees_pct": fee_note(),
+                },
+                "walk_forward": None,
+                # The curve joins the chart in base-100 units like every other
+                # series; the stats above keep the capital-priced totals.
+                "curve": [
+                    {"date": point["date"], "value": round(value / values[0] * 100.0, 2)}
+                    for point, value in zip(target_curve, values)
+                ],
+                "time_in_market_pct": 100.0,
+                "alpha_vs_index_pct": None,
+            }
+        )
+
+    for row in rows:
+        alpha = None
+        # Alpha prices against the index when its history came back, and
+        # against the target's own buy-and-hold otherwise (for an ^JKSE run
+        # the two are the same comparison).
+        basis = bench_total if bench_total is not None else target_total
+        if "stats" in row and basis is not None and row["strategy"] != "buyhold":
+            alpha = round((row["stats"].get("total_return_pct") or 0.0) - basis, 2)
+        row["alpha_vs_index_pct"] = alpha
+
+    return {
+        "strategies": rows,
+        "hold_target": {"curve": target_curve, "total_pct": target_total},
+        "hold_index": {"curve": bench_curve, "total_pct": bench_total},
+        "fees": {"fee_rate": FEE_RATE, "slippage_rate": SLIPPAGE_RATE, "note": fee_note()},
+        "capital": capital,
     }

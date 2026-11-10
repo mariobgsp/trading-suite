@@ -17,7 +17,7 @@ from app.market import (
     fetch_quote,
     fetch_quotes,
 )
-from app.movers import sector_performance, top_movers
+from app.movers import fetch_universe, sector_performance, top_movers
 
 router = APIRouter(prefix="/api/market", tags=["market"])
 
@@ -101,3 +101,123 @@ async def forex(force: bool = False) -> dict[str, Any]:
 @router.get("/cache/stats")
 async def cache_stats() -> dict[str, Any]:
     return db.stats()
+
+
+@router.get("/profile/{ticker}")
+async def profile(ticker: str, force: bool = False) -> dict[str, Any]:
+    """One name's identity card: identity labels from the scan, live quote on top.
+
+    The Deep Dive tab opens on this. Every field is nullable on purpose: a typo
+    or a dead upstream must render the page's own missing-name state, never a 500.
+    """
+    return await asyncio.to_thread(_profile, ticker.strip().upper(), force)
+
+
+def _profile(code: str, force: bool) -> dict[str, Any]:
+    scan: dict[str, dict[str, Any]] = {}
+    try:
+        scan = {row["symbol"]: row for row in fetch_universe(force)}
+    except Exception:  # noqa: BLE001 - the scan is one source among two
+        pass
+    row = scan.get(code) or {}
+
+    quote: dict[str, Any] = {}
+    try:
+        fetched = fetch_quote(code, force) or {}
+        if not fetched.get("error"):
+            quote = fetched
+    except Exception:  # noqa: BLE001 - quote failure degrades to scan fields
+        pass
+
+    price = quote.get("price") or row.get("price")
+    change_percent = quote.get("change_percent")
+    if change_percent is None and row.get("change_percent") is not None:
+        change_percent = row["change_percent"]
+    return {
+        "ticker": code,
+        "found": bool(row or quote.get("price")),
+        "symbol_yf": quote.get("symbol") if quote else None,
+        "name": row.get("name") or quote.get("long_name") or quote.get("short_name") or None,
+        "sector": row.get("sector") or None,
+        "industry": row.get("industry") or None,
+        "market_cap": row.get("market_cap"),
+        "volume": _pick_number(quote.get("volume"), row.get("volume")),
+        "price": price,
+        "change": quote.get("change") or row.get("change"),
+        "change_percent": change_percent,
+        "prev_close": quote.get("previous_close"),
+        "quote_live": bool(quote.get("price")),
+    }
+
+
+def _pick_number(first: Any, second: Any) -> float | None:
+    try:
+        value = float(first)
+        if value == value and value != 0:
+            return value
+    except (TypeError, ValueError):
+        pass
+    try:
+        value = float(second)
+        return value if value == value else None
+    except (TypeError, ValueError):
+        return None
+
+
+@router.get("/sector-members")
+async def sector_members(
+    sector: str = Query(...),
+    field: str = Query("sector"),
+    limit: int = Query(40),
+    force: bool = Query(False),
+) -> dict[str, Any]:
+    """One group's constituents from the cached scan, ranked by the day's move.
+
+    The Markets tab expands a sector (or industry) row with this. `field`
+    selects which grouping column to filter on; `limit` keeps the payload
+    bounded — the panel says so instead of silently truncating.
+    """
+    field_key = "industry" if field == "industry" else "sector"
+    return await asyncio.to_thread(_sector_members, sector.strip(), field_key, max(1, min(limit, 80)), force)
+
+
+def _sector_members(sector_name: str, field: str, limit: int, force: bool) -> dict[str, Any]:
+    scan: list[dict[str, Any]] = []
+    try:
+        scan = fetch_universe(force)
+    except Exception:  # noqa: BLE001 - absence of the scan is a designed state
+        scan = []
+    wanted = sector_name.strip().casefold()
+    members = [
+        row for row in scan
+        if (row.get(field) or "").strip().casefold() == wanted
+        and row.get("price") is not None
+        and row.get("change_percent") is not None
+    ]
+    members.sort(key=lambda r: r["change_percent"], reverse=True)
+    up = sum(1 for r in members if r["change_percent"] > 0)
+    down = sum(1 for r in members if r["change_percent"] < 0)
+    avg = sum(r["change_percent"] for r in members) / len(members) if members else None
+    return {
+        "sector": sector_name,
+        "field": field,
+        "available": bool(members),
+        "reason": None if members else "no members of this group in the current scan",
+        "count": len(members),
+        "shown": min(len(members), limit),
+        "avg_change_pct": round(avg, 2) if avg is not None else None,
+        "up": up,
+        "down": down,
+        "flat": len(members) - up - down,
+        "members": [
+            {
+                "ticker": row["symbol"],
+                "name": row.get("name") or row["symbol"],
+                "price": row.get("price"),
+                "change_percent": row.get("change_percent"),
+                "market_cap": row.get("market_cap"),
+                "value": (row.get("price") or 0.0) * (row.get("volume") or 0.0) or None,
+            }
+            for row in members[:limit]
+        ],
+    }

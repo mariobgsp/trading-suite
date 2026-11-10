@@ -136,21 +136,50 @@ def _node() -> str:
 def _chromium_binary() -> Any:
     import pathlib
 
+    # Newest revision first; the two fixed paths below kept only because old
+    # hosts may carry browsers without a revision directory naming scheme.
+    home = pathlib.Path.home()
+    pw_cache = home / ".cache" / "ms-playwright"
+    if pw_cache.is_dir():
+        def _rev(path: pathlib.Path) -> int:
+            digits = "".join(ch for ch in path.name if ch.isdigit())
+            return int(digits) if digits else 0
+
+        found = sorted(pw_cache.glob("chromium-*/chrome-linux64/chrome"), key=_rev, reverse=True)
+        for chrome in found:
+            if chrome.exists():
+                return chrome
     for rev in ("chromium-1234", "chromium-1228"):
-        p = pathlib.Path.home() / ".cache" / "ms-playwright" / rev / "chrome-linux64" / "chrome"
+        p = home / ".cache" / "ms-playwright" / rev / "chrome-linux64" / "chrome"
         if p.exists():
             return p
     return pathlib.Path("/nonexistent")
 
 
 def _pw_core_path() -> Any:
-    """Resolve playwright-core from the pi agent install (or any node_modules)."""
+    """Resolve playwright-core anywhere sane on this host.
+
+    Order: the explicit env override, the repo's vendored copy (installed
+    alongside the backend so nothing depends on another tool's cache), the
+    historical agent installs, then any npx cache that happens to carry it.
+    """
+    import os
     import pathlib
 
-    candidates = [
-        pathlib.Path.home() / ".pi/agent/npm/node_modules/playwright-core/index.js",
-        pathlib.Path.home() / ".hermes/agent/npm/node_modules/playwright-core/index.js",
+    home = pathlib.Path.home()
+    repo = pathlib.Path(__file__).resolve().parents[1]  # backend/, not the repo root
+    candidates: list[pathlib.Path] = []
+    env_core = os.getenv("IDX_PW_CORE")
+    if env_core:
+        candidates.append(pathlib.Path(env_core))
+    candidates.append(repo / "vendor" / "node_modules" / "playwright-core" / "index.js")
+    candidates += [
+        home / ".pi/agent/npm/node_modules/playwright-core/index.js",
+        home / ".hermes/agent/npm/node_modules/playwright-core/index.js",
     ]
+    npx = home / ".npm" / "_npx"
+    if npx.is_dir():
+        candidates += sorted(npx.glob("*/node_modules/playwright-core/index.js"))
     return next((p for p in candidates if p.exists()), None)
 
 
@@ -176,7 +205,7 @@ const { chromium } = require(process.env.PW_CORE);
   const browser = await chromium.launch({
     headless: true,
     executablePath: process.env.PW_CHROMIUM,
-    args: ['--no-sandbox','--disable-gpu','--disable-dev-shm-usage'],
+    args: ['--no-sandbox','--disable-gpu','--disable-dev-shm-usage','--disable-blink-features=AutomationControlled'],
   });
   try {
     const ctx = await browser.newContext({
@@ -184,15 +213,45 @@ const { chromium } = require(process.env.PW_CORE);
       viewport: { width: 1440, height: 900 },
     });
     const page = await ctx.newPage();
-    await page.goto(process.env.PW_BASE + '/', { waitUntil: 'domcontentloaded', timeout: 45000 });
-    await page.waitForTimeout(4000);
-    const result = await page.evaluate(async (u) => {
-      const r = await fetch(u, {
+    // Cloudflare needs to see as close to a real browser as a headless run
+    // gets: hide the automation flag before any site script runs.
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+    });
+    let cleared = false;
+    for (let attempt = 0; attempt < 2 && !cleared; attempt += 1) {
+      await page.goto(process.env.PW_BASE + '/', { waitUntil: 'domcontentloaded', timeout: 45000 });
+      // The clearance token arrives only after the challenge JS settles; poll
+      // for the page leaving the interstitial instead of sleeping blind.
+      for (let wait = 0; wait < 30 && !cleared; wait += 1) {
+        await page.waitForTimeout(1000);
+        cleared = await page.evaluate(() => {
+          const title = (document.title || '').toLowerCase();
+          const body = (document.body && document.body.innerText) || '';
+          return title.indexOf('just a moment') === -1 && body.indexOf('Verify you are human') === -1;
+        });
+      }
+      if (!cleared) {
+        try {
+          await page.reload({ waitUntil: 'domcontentloaded', timeout: 45000 });
+        } catch (e) { /* keep the loop honest: fall through to fetch anyway */ }
+      }
+    }
+    // Two passes: the fetch may still be interstitial right after clearance.
+    const fetchOnce = async (u) => page.evaluate(async (target) => {
+      const r = await fetch(target, {
         headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json, text/plain, */*' },
       });
       const t = await r.text();
-      return { status: r.status, text: t };
-    }, process.env.PW_URL);
+      const challenge = t.indexOf('Just a moment') !== -1 || r.status === 403 || r.status === 503;
+      return { status: r.status, text: t, challenge };
+    }, u);
+    let result = await fetchOnce(process.env.PW_URL);
+    if (result.challenge) {
+      await page.waitForTimeout(3000);
+      result = await fetchOnce(process.env.PW_URL);
+    }
+    delete result.challenge;
     console.log(JSON.stringify(result));
   } finally {
     await browser.close();

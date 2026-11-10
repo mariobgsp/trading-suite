@@ -8,6 +8,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 
+from app import backtest as backtest_module
 from app.backtest import STRATEGIES, run_backtest, walk_forward
 from app.market import fetch_history
 
@@ -26,6 +27,73 @@ _TSMOM_FETCH = {"3mo": "5y", "6mo": "5y", "1y": "5y", "2y": "5y", "5y": "10y", "
 @router.get("/strategies")
 async def strategies() -> dict[str, Any]:
     return {"strategies": list(STRATEGIES)}
+
+
+# ── compare-all: the Backtest tab's engine call ──────────────────────────────
+
+@router.get("/compare")
+async def compare(
+    ticker: str = Query("^JKSE"),
+    period: str = Query("2y"),
+    capital: float = Query(10_000_000.0),
+    force: bool = Query(False),
+) -> dict[str, Any]:
+    """Run every strategy on one target and price them against the index.
+
+    The benchmark stays ^JKSE wherever the target itself is something else, so
+    the table always answers "did I beat the market or only my own stock?".
+    Cached in the computed store: ten simulations plus ten walk-forward pairs on
+    one shared history are cheap, but the fetches are not.
+    """
+    if period not in _ALLOWED_PERIODS:
+        raise HTTPException(status_code=400, detail=f"invalid period '{period}'")
+    if not math.isfinite(capital) or capital <= 0:
+        raise HTTPException(status_code=400, detail="capital must be > 0")
+    code = ticker.strip().upper()
+    if not code:
+        raise HTTPException(status_code=400, detail="ticker is required")
+
+    from app import computed_cache
+
+    cache_key = f"computed:backtest:v4:{code}:{period}:{int(capital)}"
+    if not force:
+        cached = computed_cache.read(cache_key, 6 * 3600)
+        if cached is not None:
+            result, meta = cached
+            result["cache"] = meta.as_dict()
+            return result
+
+    # TSMOM needs a 12-month lookback before the window; everything else runs
+    # on exactly the requested span, per the router's own TSMOM contract above.
+    history = await asyncio.to_thread(
+        fetch_history, code, _TSMOM_FETCH.get(period, period), "1d", force
+    )
+    if not history:
+        raise HTTPException(status_code=404, detail=f"no history for {code}")
+    start_idx = None
+    fetched_days = _PERIOD_DAYS.get(period)
+    if fetched_days is not None:
+        start_idx = max(len(history) - fetched_days, 0) or None
+
+    bench_history = None
+    if code != backtest_module.BENCHMARK_TICKER:
+        bench_history = await asyncio.to_thread(
+            fetch_history, backtest_module.BENCHMARK_TICKER, _TSMOM_FETCH.get(period, period), "1d", force
+        )
+
+    result = await asyncio.to_thread(
+        backtest_module.compare_all, history, capital, bench_history, start_idx
+    )
+    result.update(
+        {
+            "ticker": code,
+            "period": period,
+            "bars": len(history) - (start_idx or 0),
+            "index": backtest_module.BENCHMARK_TICKER if bench_history else None,
+        }
+    )
+    computed_cache.write(cache_key, result)
+    return result
 
 
 @router.get("/{ticker}")

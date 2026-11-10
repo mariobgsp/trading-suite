@@ -64,3 +64,8 @@ video/
 
 # local scratch: study summaries and one-off verification scripts
 .scratch/
+# vendored thin client for the idx browser bridge (documented in the README)
+backend/vendor/
+
+# generated screenshots of the desk
+screenshots/

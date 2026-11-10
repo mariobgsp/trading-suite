@@ -148,7 +148,7 @@ def _obtain_recaptcha_via_browser() -> str | None:
     import subprocess, json, shutil
     node = shutil.which("node") or "node"
     script = """
-const { chromium } = require(require('child_process').execSync('find ' + (process.env.HOME || '/home/mariobgsp') + '/.pi -name "playwright-core" -type d 2>/dev/null | head -1').toString().trim() + '/index.js' || 'playwright-core');
+const { chromium } = require(process.env.PW_CORE || 'playwright-core');
 (async () => {
   const browser = await chromium.launch({ headless: false });
   const ctx = await browser.newContext();
@@ -167,7 +167,10 @@ const { chromium } = require(require('child_process').execSync('find ' + (proces
 })().catch(e=>{ console.error(String(e)); process.exit(2); });
 """
     try:
-        proc = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=140)
+        from app.idx import _pw_core_path as resolve_core
+
+        env = {**os.environ, "PW_CORE": str(resolve_core() or "")}
+        proc = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=140, env=env)
         if proc.returncode == 0:
             for line in proc.stdout.splitlines():
                 try:

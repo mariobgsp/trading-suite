@@ -21,17 +21,35 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from app import computed_cache, db
-from app.overview import gauge, rotation, summary, universe
+from app.overview import gauge, moves, rotation, summary, universe
 from app.plan.bars import session_is_final
 
 log = logging.getLogger(__name__)
 
-FORMULA_VERSION = 1
-CACHE_VERSION = "v1"
+FORMULA_VERSION = 2
+CACHE_VERSION = "v2"
 SNAPSHOT_TTL = int(os.getenv("OVERVIEW_CACHE_TTL", "900"))
 PREFIX = f"computed:overview:{CACHE_VERSION}"
 LATEST_KEY = f"{PREFIX}:latest"
 STATUS_KEY = f"{PREFIX}:status"
+
+
+def _indices() -> list[dict[str, Any]]:
+    """IHSG-family quotes beside the hero. Failure is a warning, not a state."""
+    try:
+        from app.market import fetch_indices
+
+        return [
+            {
+                "name": row.get("name"),
+                "close": row.get("price") or row.get("close"),
+                "change_pct": row.get("change_percent"),
+            }
+            for row in fetch_indices()[:6]
+        ]
+    except Exception as exc:  # noqa: BLE001 - a dead quote feed must not fail the build
+        log.warning("overview index quotes failed: %s", exc)
+        return []
 
 
 def _snapshot_key(session: str) -> str:
@@ -168,6 +186,8 @@ def _run(refresh: bool) -> None:
         stress = gauge.build(market)
         _set_status(phase="rotation", message="building sector and group rotations")
         rotations = rotation.build_all(inputs)
+        _set_status(phase="moves", message="building movers and index contributions")
+        move_blocks = moves.build(inputs, market)
         session = str(inputs.get("as_of") or current_session().isoformat())
         snapshot = {
             "as_of": session,
@@ -180,6 +200,11 @@ def _run(refresh: bool) -> None:
             "sectors": rotations["sectors"],
             "conglomerates": rotations["conglomerates"],
             "industries": rotations["industries"],
+            "movers": move_blocks["movers"],
+            "sector_day": move_blocks["sector_day"],
+            "index_contribution": move_blocks["index_contribution"],
+            "benchmark_tail": move_blocks["benchmark_tail"],
+            "indices": _indices(),
             "warnings": list(inputs.get("warnings") or []),
             "built_at": _now_iso(),
             "formula_version": FORMULA_VERSION,

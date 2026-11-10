@@ -8,7 +8,7 @@
 ```
 ┌──────────────────────┐   /api/plan*   ┌────────────────────┐   ┌──────────────────────┐
 │ Vite + React SPA     │ ─────────────▶ │ FastAPI  :8000     │──▶│ study results (CSV)  │
-│ :5173  (6 screens)   │ ◀───────────── │ app/plan/*         │   │ + daily bars + live  │
+│ :5173  (3 tabs)      │ ◀───────────── │ app/plan/*         │   │ + daily bars + live  │
 └──────────────────────┘   SWR cache    └─────────┬──────────┘   │   tail (yfinance)    │
                                                  │ SQLite WAL   └──────────────────────┘
                                           ┌──────▼───────┐
@@ -45,16 +45,23 @@ your browser resolves `localhost` to IPv6 and the backend is IPv4, start the
 frontend with `VITE_API_URL=http://127.0.0.1:8000` and open `http://127.0.0.1:5173`.
 </details>
 
-## The six screens
+## The three tabs
+
+| Tab | Route | The question it answers |
+| --- | --- | --- |
+| **Markets** | `/` (alias `/market`) | Apa yang terjadi di pasar hari ini: IHSG with sparkline, market symmetry (advance/decline, extremes, above-MA50), the day's top gainers / losers / most active, **who moved the index** — a cap-weight proxy decomposition of the IHSG day change, rescaled by a published factor to the actual index move — plus the daily sector table, weekly rotation, the stress gauge, and the plan's verdict strip |
+| **Deep Dive** | `/deep/{ticker}` | Layak trade secara fundamental? dan secara teknikal? — two separate counted verdicts: the invest case's fundamental pillar (criteria against written bands, share structure, stake trend) and the method's condition chain (each gate with its value and run lengths, and the priced entry/target/stop when the name is buyable), plus the chart with levels, a 52-week range bar, KI filings, ticker news, and the flow-proxy research rail |
+| **Backtest** | `/backtest` | Semua metode pada satu target, diadu dengan indeks: every strategy from `app/backtest.py` (MACD/RSI, Stoch reversal, golden cross, EMA crosses, TSMOM, breakout, pullback, volatility compression) simulated over one window through the same fee + slippage model, an equity-curve chart normalised to 100, stats with CAGR / max drawdown / alpha vs the index / time-in-market and a per-strategy walk-forward flag — with the walk-forward study's own corrected headline, the haircuts, and the five-year replay tiers beside it |
+
+### The plan screens (secondary nav)
 
 | Route | The question it answers |
 | --- | --- |
-| `/` **Tonight** | Should I buy anything, and if so what exactly? The verdict, the order ticket for each name, the watchlist, and the measured case for standing down |
+| `/plan` | Should I buy anything tonight, and if so what exactly? The verdict, the order ticket for each name, the watchlist, and the measured case for standing down |
 | `/screener` | Every name, ranked by how near it is to being buyable. No buy signals, on purpose |
-| `/flow` | A bandarmology-style research panel: technical cards and a **transparent flow-pressure proxy**, plus an invest case for the selected name (fundamental and technical validity, share structure and ownership trend, IDX KI filings, ticker news). Not the vendor LPM, and never a plan input |
-| `/market` | The daily market dashboard: breadth, our stress gauge, and weekly sector, conglomerate and industry rotation |
+| `/flow` | Bandarmology-style cards for a bounded universe: technicals and a **transparent flow-pressure proxy**. Not the vendor LPM, and never a plan input |
 | `/method` | The rule chain, the result, the horizons that were measured and refused, the costs, and every citation |
-| `/name/$ticker` | One name: each condition with its value and how long it has held, the run-up to the signal, the levels, the ticket, the chart |
+
 
 The Flow panel is deliberately outside the method. Its score is built from Chaikin
 Money Flow plus the current IDX foreign-flow print (and optional Stockbit broker
@@ -263,7 +270,10 @@ sync warms it after every import. Bump `PLAN_CACHE_VERSION` in
 | `GET /api/flow/health` | source availability, cache stats and the proxy disclaimer |
 | `GET /api/flow/cache` | Flow cache keys, path, TTLs and DB size |
 | `POST /api/flow/cache/clear` | delete only `flow:v2:*` cache entries |
-| `GET /api/overview` | cached daily dashboard snapshot; 202 with build progress when the first snapshot is still being built |
+| `GET /api/backtest/{ticker}` | one strategy's backtest: trades, equity, stats and a first-half/second-half OOS guard |
+| `GET /api/backtest/compare` | every strategy on one target vs its buy-and-hold and vs IHSG: stats, base-100 curves, walk-forward flags; cached v4, `force=1` recomputes |
+| `GET /api/market/profile/{ticker}` | identity labels from the scan + live quote; every field nullable |
+| `GET /api/overview` | cached daily dashboard snapshot (v2: breadth, gauge, rotation, movers, sector day, index contribution, benchmark tail, indices); 202 with build progress when the first snapshot is still being built |
 | `GET /api/overview/status` | build phase, timing, coverage and errors |
 | `POST /api/overview/refresh` | start/reuse the single-flight dashboard build |
 | `GET /api/overview/cache` | overview cache keys, path, bytes and last build |
@@ -283,12 +293,12 @@ the cached TradingView universe.
 
 | Path | What it is |
 | --- | --- |
-| `frontend-web/src/routes/{Tonight,Screener,Flow,Market,Method,Name}.tsx` | the six screens |
-| `frontend-web/src/components/{plan,regimes,FlowChart,MarketChart,market,RefreshButton,ThemeToggle,InvestCase}.tsx` | shared vocabulary, the regime ledger, charts, the dashboard, refresh, the invest case |
+| `frontend-web/src/routes/{MarketsHome,Deep,Backtest,Tonight,Screener,Flow,Method}.tsx` | the three tabs plus the plan screens |
+| `frontend-web/src/components/{plan,regimes,deep,FlowChart,MarketChart,market,RefreshButton,ThemeToggle,InvestCase}.tsx` | shared vocabulary, the regime ledger, charts, the dashboard, deep-dive panels, refresh, theme, the invest case |
 | `frontend-web/src/lib/{api/plan.ts,api/flow.ts,api/overview.ts,api/case.ts,refresh.ts,cache.ts,theme.ts}` | types + SWR client + the re-read signal |
 | `backend/app/plan/` | the nightly method: `screen`, `method`, `model`, `verdict`, `refresh`, `idx`, `citations`, `bars`, `regimes` |
 | `backend/app/flow/` | the research proxy: `technicals`, `lpm`, `sources`, `cards`, `series`, `validate` |
-| `backend/app/overview/` | the cache-first dashboard: `universe`, `summary`, `gauge`, `rotation`, `snapshot` |
+| `backend/app/overview/` | the cache-first dashboard: `universe`, `summary`, `gauge`, `rotation`, `moves` (movers, sector day, IHSG contribution, benchmark tail), `snapshot` |
 | `backend/app/computed_cache.py` | the shared versioned SQLite cache for computed payloads, including the persisted plan |
 | `backend/app/market_store.py` | the normalized SQLite daily-bar store imported from the study snapshot |
 | `backend/scripts/sync_market.py` | the weekly fetch → import → plan-warm job |
@@ -313,6 +323,7 @@ tiers, the size rule, the verdict machine and what it still cannot claim.
 | `CORS_ORIGINS` | allowed browser origins (defaults include `:3000`, `:5173` and `:4173`) |
 | `YFINANCE_CACHE_TTL`, `YFINANCE_HISTORY_CACHE_TTL`, `FOREX_CACHE_TTL` | feed cache lifetimes |
 | `STOCKBIT_JWT_TOKEN` | optional Stockbit JWT for Flow's explicit broker detail and the legacy `/api/intel/stockbit/*` reads; without it those paths report unavailable. There is no browser companion |
+| `IDX_PW_CORE` | optional explicit path to a playwright-core `index.js`; the index browser bridge resolves the vendored copy in `backend/vendor/node_modules` first, then the agent installs and npx caches |
 | `STOCKBIT_USERNAME` / `STOCKBIT_PASSWORD` | read only by the legacy `/api/intel/stockbit/login`; no screen needs them |
 | `FLOW_VENDOR_CSV` | optional licensed `date,ticker,lpm` CSV for a vendor-parity report; nothing is scraped |
 | `FLOW_CACHE_TTL` / `FLOW_CACHE_TTL_VALIDATE` / `FLOW_CACHE_STALE_DAYS` | Flow cache freshness (300s), validation freshness (3600s), stale retention (7 days) |

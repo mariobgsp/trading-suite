@@ -8,4 +8,6 @@ export * from "./format";
 export * from "./plan";
 export * from "./flow";
 export * from "./overview";
+export * from "./backtest";
+export * from "./market";
 export * from "./types-history";

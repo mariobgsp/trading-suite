@@ -16,6 +16,7 @@ import Flow from "@/routes/Flow";
 import MarketsHome from "@/routes/MarketsHome";
 import Deep from "@/routes/Deep";
 import Backtest from "@/routes/Backtest";
+import Paper from "@/routes/Paper";
 
 /**
  * Three tabs are the product; the measured screens stay one secondary link
@@ -49,6 +50,7 @@ const PRIMARY_TABS = [
 
 const SECONDARY_TABS = [
 	{ to: "/plan", label: "Plan" },
+	{ to: "/paper", label: "Paper" },
 	{ to: "/screener", label: "Screener" },
 	{ to: "/method", label: "Method" },
 	{ to: "/flow", label: "Flow" },
@@ -244,6 +246,13 @@ const screenerRoute = createRoute({
 	component: Screener,
 });
 
+/* The book the app plays by itself: the plan's signals, filled by the sync. */
+const paperRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: "/paper",
+	component: Paper,
+});
+
 const flowRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "/flow",
@@ -296,6 +305,7 @@ export const router = createRouter({
 		deepTickerRoute,
 		backtestRoute,
 		planRoute,
+		paperRoute,
 		screenerRoute,
 		flowRoute,
 		methodRoute,

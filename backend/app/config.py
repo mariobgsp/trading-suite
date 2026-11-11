@@ -29,6 +29,12 @@ YFINANCE_CACHE_TTL_SECONDS = _env_int("YFINANCE_CACHE_TTL", 3600)
 YFINANCE_HISTORY_CACHE_TTL_SECONDS = _env_int("YFINANCE_HISTORY_CACHE_TTL", 43200)  # 12h
 FOREX_CACHE_TTL_SECONDS = _env_int("FOREX_CACHE_TTL", 3600)
 
+# ─── Paper book ──────────────────────────────────────────────────────────────
+# The simulated book follows the plan's own signals; nobody places these orders.
+PAPER_CAPITAL_IDR = _env_int("PAPER_CAPITAL_IDR", 5_000_000)
+PAPER_MAX_POSITIONS = _env_int("PAPER_MAX_POSITIONS", 5)
+PAPER_MAX_HEAT_PCT = _env_int("PAPER_MAX_HEAT_PCT", 6)
+
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
 

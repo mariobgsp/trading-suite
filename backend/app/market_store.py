@@ -33,9 +33,10 @@ import json
 import os
 import sqlite3
 import threading
-from datetime import date, datetime, timedelta, timezone
+from collections.abc import Iterable
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 import pandas as pd
 
@@ -85,10 +86,10 @@ _write_lock = threading.Lock()
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
-def _connect(db_path: Path | None = None) -> sqlite3.Connection:
+def _connect(db_path: Path | str | None = None) -> sqlite3.Connection:
     path = Path(db_path) if db_path else MARKET_DB
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(path), timeout=30)
@@ -138,7 +139,7 @@ def _read_csv(path: Path) -> pd.DataFrame | None:
     )
     out = out.dropna(subset=["date", "close"])
     out = out[out["close"] > 0]
-    out = out.drop_duplicates("date").sort_values("date")
+    out = out.drop_duplicates(subset="date").sort_values("date")
     if out.empty:
         return None
     return out
@@ -177,7 +178,7 @@ def import_study(
                 "INSERT INTO snapshots (source, generated_at, started_at, status) VALUES (?, ?, ?, 'running')",
                 (source, generated_at, started),
             )
-            snapshot_id = int(cursor.lastrowid)
+            snapshot_id = int(cursor.lastrowid or 0)
             conn.execute("DELETE FROM bars")
             conn.execute("DELETE FROM issues WHERE snapshot_id = ?", (snapshot_id,))
 
@@ -196,19 +197,22 @@ def import_study(
                 if frame is None:
                     issues.append((snapshot_id, ticker, "no usable rows"))
                     continue
+                # Positional access: a DataFrame row is a plain tuple here, which
+                # both the interpreter and the type checker understand. Attribute
+                # access (`row.open`) works at runtime but types as unknown.
                 records = [
                     (
                         ticker,
-                        row.date.strftime("%Y-%m-%d"),
+                        row[0].strftime("%Y-%m-%d"),
                         yahoo_symbol(ticker),
-                        float(row.open) if pd.notna(row.open) else None,
-                        float(row.high) if pd.notna(row.high) else None,
-                        float(row.low) if pd.notna(row.low) else None,
-                        float(row.close),
-                        float(row.adj_close) if pd.notna(row.adj_close) else None,
-                        int(row.volume) if pd.notna(row.volume) else 0,
+                        float(row[1]) if pd.notna(row[1]) else None,
+                        float(row[2]) if pd.notna(row[2]) else None,
+                        float(row[3]) if pd.notna(row[3]) else None,
+                        float(row[4]),
+                        float(row[5]) if pd.notna(row[5]) else None,
+                        int(row[6]) if pd.notna(row[6]) else 0,
                     )
-                    for row in frame.itertuples(index=False)
+                    for row in frame.itertuples(index=False, name=None)
                 ]
                 conn.executemany(
                     "INSERT OR REPLACE INTO bars "

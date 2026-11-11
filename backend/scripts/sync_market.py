@@ -36,8 +36,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app import market_store  # noqa: E402
-from app.config import DATA_DIR  # noqa: E402
+from app import market_store
+from app.config import DATA_DIR
 
 LOCK_PATH = DATA_DIR / "market-sync.lock"
 
@@ -121,6 +121,16 @@ def _warm_plan() -> dict:
     }
 
 
+def _paper_line(step: dict[str, object]) -> str:
+    """One line a timer log can be read from: orders, fills, watermark."""
+    orders = step.get("orders")
+    settle = step.get("settle")
+    created = len(orders["created"]) if isinstance(orders, dict) and orders.get("created") else 0
+    fills = len(settle["fills"]) if isinstance(settle, dict) and settle.get("fills") else 0
+    through = settle.get("settled_through") if isinstance(settle, dict) else None
+    return f"paper book: {created} order(s), {fills} fill(s), settled through {through}"
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     study_root = args.study_root.expanduser().resolve()
@@ -179,6 +189,21 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"plan warm failed: {exc}", file=sys.stderr)
                 return 1
 
+        # The paper book runs here and nowhere else: orders come from the plan
+        # just warmed, settlement fills them at the session open that arrived in
+        # this snapshot. A failure is reported but does not fail the sync - the
+        # bars are good even when the book cannot book them.
+        try:
+            from app import paper  # local: the sync must still import bars without pandas
+
+            step = paper.step()
+            result["paper"] = step
+            paper_line = _paper_line(step)
+        except Exception as exc:  # noqa: BLE001 - a paper failure is not a data failure
+            paper_line = ""
+            result["paper_error"] = str(exc)
+            print(f"paper book failed: {exc}", file=sys.stderr)
+
         result["ok"] = True
         result["state"] = "success"
         result["seconds"] = round(time.time() - started, 1)
@@ -191,6 +216,8 @@ def main(argv: list[str] | None = None) -> int:
             )
             if result.get("plan"):
                 print(f"plan warm: {result['plan']['seconds']}s")
+            if paper_line:
+                print(paper_line)
         return 0
     except subprocess.CalledProcessError as exc:
         result["state"] = "fetch_failed"

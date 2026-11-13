@@ -16,19 +16,25 @@ lookup sit behind the seam.
 
 ```python
 plan()                  # -> Plan: regime, candidates, watchlist, evidence
+scan_payload()          # -> every tradable name, with its measured filters
 detail("BBCA")          # -> one name, every gate's measured value
 method_card()           # -> the rule chain and its measured proof
 ```
 
 `plan()` is memoised per (source, session, exit, family): a universe pass is not
-free, and the front end asks more than once.
+free, and the front end asks more than once. `scan_payload()` runs the same
+`_score_universe()` pass and persists one compact row per name, so the scanner
+and the plan cannot describe different conditions.
 
 The HTTP path goes through `plan_payload()` instead. It persists the exact
-response under `computed:plan:v1:*`, keyed by the bar source's **data stamp**,
+response under `computed:plan:v2:*`, keyed by the bar source's **data stamp**,
 the requested session and the method family. A restart reads that artifact
-instead of re-running the screen (measured 26s cold, 0.05s warm). The weekly
-`sync_market.py` imports a new snapshot, invalidates the old artifact and warms
-the new one. `PLAN_CACHE_VERSION` is the manual bump when the rule chain changes.
+instead of re-running the screen (measured 26s cold, 0.05s warm). The scanner
+uses the same shape under `computed:scan:v2:*`; its key also carries the
+universe floor and frozen-price cut, so changing either cannot serve an old
+universe. The weekly `sync_market.py` imports a new snapshot, invalidates both
+artifacts and warms the new one. `PLAN_CACHE_VERSION` and
+`SCAN_CACHE_VERSION` are the manual bumps when the rule chain changes.
 
 ## The seam
 

@@ -250,6 +250,29 @@ def cache_stats() -> dict[str, Any]:
 
 
 def clear_cache() -> int:
+    """Drop the persisted snapshot and the in-memory job state.
+
+    The tests use this between cases. A previous build thread must not make the
+    next case look like it is already running, so stop tracking it and give it a
+    short grace period to finish before the next start.
+    """
+    global _THREAD
+    with _LOCK:
+        thread = _THREAD
+    if thread is not None and thread.is_alive():
+        thread.join(timeout=2.0)
+    with _LOCK:
+        _THREAD = None
+        _STATE.update(
+            state="idle",
+            phase=None,
+            message=None,
+            started_at=None,
+            finished_at=None,
+            seconds=None,
+            error=None,
+            session=None,
+        )
     removed = computed_cache.clear("overview")
     db.delete(LATEST_KEY)
     db.delete(STATUS_KEY)

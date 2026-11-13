@@ -552,9 +552,9 @@ def deployment() -> dict[str, object]:
     # the five-year replay - has the pooled book at -80.52%. Both numbers are in
     # the same study; presenting either alone is the error.
     loo = [
-        _f(r, "oos_pct")
+        value
         for r in robust
-        if r.get("test") == "fold_loo" and _f(r, "oos_pct") is not None
+        if r.get("test") == "fold_loo" and (value := _f(r, "oos_pct")) is not None
     ]
     chained = None
     per_year = None
@@ -694,14 +694,14 @@ def _quarterly() -> dict[str, object]:
 
     # The study's bar is 80%. The quarterly win rate is compared against it, and
     # being below it is the single most important thing this screen can say.
-    win = _f(pick, "win_rate") if pick else None
+    win = _f(pick or {}, "win_rate") if pick else None
     return {
         "available": bool(pick),
         "pick_win_rate": (win * 100.0) if win is not None else None,
-        "pick_avg_ret_pct": _f(pick, "avg_ret_pct"),
-        "pick_total_return_pct": _f(pick, "total_return_pct"),
-        "pick_max_dd_pct": _f(pick, "max_dd_pct"),
-        "pick_taken": int(_f(pick, "taken") or 0) if pick else None,
+        "pick_avg_ret_pct": _f(pick or {}, "avg_ret_pct"),
+        "pick_total_return_pct": _f(pick or {}, "total_return_pct"),
+        "pick_max_dd_pct": _f(pick or {}, "max_dd_pct"),
+        "pick_taken": int(_f(pick or {}, "taken") or 0) if pick else None,
         "windows_total": len(analysis),
         "windows_traded": len(traded),
         "windows_lost_money": lost,
@@ -807,16 +807,16 @@ def _survivorship() -> dict[str, object]:
     return {
         "available": bool(detail),
         "cell": preferred,
-        "baseline_win_rate": _f(base, "win_rate"),
-        "baseline_avg_pct": _f(base, "avg_ret"),
-        "baseline_trades": _f(base, "n"),
+        "baseline_win_rate": _f(base or {}, "win_rate"),
+        "baseline_avg_pct": _f(base or {}, "avg_ret"),
+        "baseline_trades": _f(base or {}, "n"),
         # Named for what it is: the universe rebuilt without the names that died.
         # On the shipped screen cell this is the difference between +2.09% and
         # -0.59% per trade - the single most useful number in this file.
-        "worst_drop_names": _f(stressed, "tickers"),
+        "worst_drop_names": _f(stressed or {}, "tickers"),
         "worst_drop_share_pct": 20,
-        "worst_drop_win_rate": _f(stressed, "win_rate"),
-        "worst_drop_avg_pct": _f(stressed, "avg_ret"),
+        "worst_drop_win_rate": _f(stressed or {}, "win_rate"),
+        "worst_drop_avg_pct": _f(stressed or {}, "avg_ret"),
         "curve": detail,
         "source": [str(SURVIVORSHIP_CSV)],
         "note": (
@@ -881,10 +881,10 @@ def _rows(path: Path) -> list[dict[str, str]]:
         return []
 
 
-def _find(rows: list[dict[str, str]], case: str, **want: str) -> dict[str, object] | None:
+def _find(rows: list[dict[str, str]], case: str, **want: str) -> dict[str, str] | None:
     for row in rows:
         if all(row.get(k) == v for k, v in want.items()):
-            return {k: row.get(k) for k in row}
+            return dict(row)
     return None
 
 

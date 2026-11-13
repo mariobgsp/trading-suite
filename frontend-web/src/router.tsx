@@ -11,49 +11,33 @@ import RefreshButton from "@/components/RefreshButton";
 import ThemeToggle from "@/components/ThemeToggle";
 import Tonight from "@/routes/Tonight";
 import Method from "@/routes/Method";
-import Screener from "@/routes/Screener";
+import Scanner from "@/routes/Scanner";
 import Flow from "@/routes/Flow";
-import MarketsHome from "@/routes/MarketsHome";
 import Deep from "@/routes/Deep";
 import Backtest from "@/routes/Backtest";
 import Paper from "@/routes/Paper";
 
 /**
- * Three tabs are the product; the measured screens stay one secondary link
- * away, because they still answer questions the tabs do not.
+ * The scanner is the product. Deep Dive answers one name; Backtest is the
+ * evidence drawer. Method, Plan, Paper and Flow stay reachable by URL but are
+ * deliberately out of the header: a scanner should not compete with five
+ * secondary screens for attention.
  *
- *   Markets    - what the market did today: IHSG, breadth, movers, index
- *                contribution, sectors, stress - one snapshot, one screen
- *   Deep Dive  - one stock: the fundamental verdict and the technical verdict,
- *                side by side, never merged; chart, levels, research rail
- *   Backtest   - every strategy we have on one target, priced against the
- *                index, beside the walk-forward study's own measured numbers
- *
- *   Plan       - tonight's verdict and tickets (the former front page)
- *   Screener   - every name, ranked by how near it is to being buyable
- *   Method     - the rule chain and every citation
- *   Flow       - the multi-name research cards (the per-name work moved into
- *                the Deep Dive's research rail)
+ *   Scanner    - every tradable name, with the same conditions the plan runs
+ *   Deep Dive  - one stock: the fundamental verdict and the technical verdict
+ *   Backtest   - every strategy on one target, priced against the index
  */
 
-const TITLE = "Markets - IDX daily desk";
+const TITLE = "Scanner - IDX daily desk";
 const DESCRIPTION =
-	"The IDX market at a glance: IHSG, breadth, who moved the index, sector " +
-	"rotation - then one-stock fundamentals and technicals, and every strategy " +
+	"Every tradable IDX name on one scanner, with the study's measured conditions " +
+	"on each row, then one-stock fundamentals and technicals, and every strategy " +
 	"backtested against the index. Research, not investment advice.";
 
 const PRIMARY_TABS = [
-	{ to: "/", label: "Markets" },
+	{ to: "/", label: "Scanner" },
 	{ to: "/deep", label: "Deep Dive" },
 	{ to: "/backtest", label: "Backtest" },
-] as const;
-
-const SECONDARY_TABS = [
-	{ to: "/plan", label: "Plan" },
-	{ to: "/paper", label: "Paper" },
-	{ to: "/screener", label: "Screener" },
-	{ to: "/method", label: "Method" },
-	{ to: "/flow", label: "Flow" },
 ] as const;
 
 function RootComponent() {
@@ -118,24 +102,6 @@ function RootComponent() {
 							</Link>
 						))}
 					</nav>
-					<nav
-						aria-label="Secondary screens"
-						className="hidden items-center gap-4 sm:flex"
-					>
-						{SECONDARY_TABS.map(({ to, label }) => (
-							<Link
-								key={to}
-								to={to}
-								inactiveProps={{
-									className: "text-[var(--text-ghost)]",
-								}}
-								activeProps={{ className: "text-[var(--text)]" }}
-								className="font-mono text-[11px] transition-colors hover:text-[var(--text)]"
-							>
-								{label}
-							</Link>
-						))}
-					</nav>
 				</div>
 			</header>
 			<main id="main">
@@ -189,16 +155,16 @@ function to(where: string | { to: string }) {
 	};
 }
 
-const marketsRoute = createRoute({
+const scannerRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "/",
-	component: MarketsHome,
+	component: Scanner,
 });
 
 const marketAliasRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "/market",
-	component: MarketsHome,
+	beforeLoad: to("/"),
 });
 
 const deepIndexRoute = createRoute({
@@ -243,7 +209,7 @@ const methodRoute = createRoute({
 const screenerRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "/screener",
-	component: Screener,
+	beforeLoad: to("/"),
 });
 
 /* The book the app plays by itself: the plan's signals, filled by the sync. */
@@ -299,7 +265,7 @@ const retiredRoutes = RETIRED.flatMap((path) => [
 
 export const router = createRouter({
 	routeTree: rootRoute.addChildren([
-		marketsRoute,
+		scannerRoute,
 		marketAliasRoute,
 		deepIndexRoute,
 		deepTickerRoute,

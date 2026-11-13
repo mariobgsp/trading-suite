@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import sys
+from typing import Any, cast
 
 import pandas as pd
 import pytest
@@ -45,9 +46,9 @@ def study():
     """The study's own modules, imported under its name."""
     if str(STUDY_SRC) not in sys.path:
         sys.path.insert(0, str(STUDY_SRC))
-    import indicators  # noqa: PLC0415
-    import strategies  # noqa: PLC0415
-    from universe import load_ticker  # noqa: PLC0415
+    import indicators  # type: ignore[reportMissingImports]
+    import strategies  # type: ignore[reportMissingImports]
+    from universe import load_ticker  # type: ignore[reportMissingImports]
 
     return strategies, indicators, load_ticker
 
@@ -142,6 +143,8 @@ def test_relative_strength_matches_the_study(frames, manifest, study, as_of):
         window = df[df["date"] <= as_of]
         if window["date"].iloc[-1] != as_of or len(window) < 121:
             continue
+        if not S.tradable(window)[0]:
+            continue
         panel[code] = pd.Series(
             (window["close"] / window["close"].shift(120) - 1.0).to_numpy(),
             index=pd.to_datetime(window["date"]),
@@ -193,7 +196,7 @@ def test_gate_chain_matches_study_signals(frames, manifest, study, as_of):
 
         theirs = bool(strategies.signals(f, study_spec)["entries"][-1])
 
-        record = S._evaluate(
+        record: dict[str, Any] | None = S._evaluate(
             code, frames.bars[code], as_of, rs_ours, breadth_ours, bench_state, spec
         )
         if record is None:
@@ -228,7 +231,7 @@ def test_screener_ranks_the_universe_by_proximity(frames):
     """
     from app.plan import plan
 
-    ranked = plan().ranked
+    ranked: list[dict[str, Any]] = [cast(dict[str, Any], row) for row in plan().ranked]
     assert ranked, "the screener returned nothing to rank"
 
     for row in ranked:
@@ -248,6 +251,42 @@ def test_screener_ranks_the_universe_by_proximity(frames):
         for r in ranked
     ]
     assert keys == sorted(keys, reverse=True), "rows are not in ranked order"
+
+
+def test_scanner_rows_use_the_plan_chain(frames, as_of):
+    """The scanner cannot describe a condition the plan does not apply.
+
+    Membership is computed by the backend, not by the client. This pins the two
+    load-bearing sets: the full chain equals the plan's candidates, and the
+    setup flag equals all three stock-level gates. It also pins the evidence
+    contract: a condition filter is never allowed to carry a win rate.
+    """
+    from app.plan import plan, scan_payload
+
+    current = plan()
+    payload = scan_payload()
+    rows = {str(row["ticker"]): row for row in payload["rows"]}
+
+    assert len(rows) > 100, f"only {len(rows)} scanner rows"
+    assert {ticker for ticker, row in rows.items() if "tier1" in row["screens"]} == {
+        candidate.ticker for candidate in current.candidates
+    }
+    if current.regime.band == "capitulation":
+        assert {ticker for ticker, row in rows.items() if "capitulation" in row["screens"]} >= {
+            item.ticker for item in current.capitulation_watch
+        }
+
+    for row in rows.values():
+        assert row["turnover_idr"] is None or row["turnover_idr"] >= S.MIN_TURNOVER_IDR
+        conditions = row["conditions"]
+        assert isinstance(conditions, dict)
+        assert ("tier1_setup" in row["screens"]) == all(conditions.values())
+
+    for screen in payload["screens"]:
+        if screen["kind"] in ("condition", "setup"):
+            assert screen["measured"] is None, f"{screen['key']} must not carry a win rate"
+        if screen["kind"] in ("strategy", "watch"):
+            assert screen["measured"] is not None, f"{screen['key']} is missing its evidence"
 
 
 def test_market_gate_cannot_drive_the_ranking():
@@ -286,13 +325,23 @@ def _record(blocked_key: str, blocked_passed: bool, blocked_value: float) -> dic
     ):
         if key == blocked_key:
             gates[key] = Gate(
-                key=key, label=key, passed=blocked_passed, value=blocked_value,
-                threshold=0.0, unit="", text="",
+                key=key,
+                label=key,
+                passed=blocked_passed,
+                value=blocked_value,
+                threshold=0.0,
+                unit="",
+                text="",
             )
         else:
             gates[key] = Gate(
-                key=key, label=key, passed=True, value=1.0, threshold=0.0,
-                unit="", text="",
+                key=key,
+                label=key,
+                passed=True,
+                value=1.0,
+                threshold=0.0,
+                unit="",
+                text="",
             )
     return {
         "ticker": "TEST",
@@ -323,7 +372,7 @@ def test_robustness_is_read_not_asserted():
         ("survivorship", M.SURVIVORSHIP_CSV),
         ("multiple_testing", M.MULTIPLE_TESTING_CSV),
     ):
-        block = r[key]
+        block = cast(dict[str, Any], r[key])
         if not block.get("available"):
             continue
         assert path.exists(), f"{key} claims to be available but {path} is gone"
@@ -331,7 +380,7 @@ def test_robustness_is_read_not_asserted():
 
     # The quarterly pass is the one that can contradict the headline, so its
     # comparison must be made against the bar, not hardcoded to a verdict.
-    q = r["quarterly"]
+    q = cast(dict[str, Any], r["quarterly"])
     if q.get("available") and q.get("pick_win_rate") is not None:
         expected = q["pick_win_rate"] / 100.0 < M.TARGET_WIN_RATE
         assert q["below_bar"] is expected, (
@@ -347,8 +396,8 @@ def test_robustness_is_read_not_asserted():
     # now pairwise. Getting this backwards would quietly turn an upper bound into
     # an expected return, which is the single most consequential thing this
     # module could do wrong.
-    s = r["survivorship"]
-    curve = s.get("curve", []) if s.get("available") else []
+    s = cast(dict[str, Any], r["survivorship"])
+    curve = cast(list[dict[str, Any]], s.get("curve", [])) if s.get("available") else []
     by_bound = {c["bound"]: c for c in curve if c.get("bound")}
     if "full" in by_bound:
         full = by_bound["full"]
@@ -421,7 +470,7 @@ def test_every_family_spec_matches_its_study_signals(frames, manifest, study, as
             f["breadth"] = breadth_ours
             theirs = bool(strategies.signals(f, study_spec)["entries"][-1])
 
-            record = S._evaluate(
+            record: dict[str, Any] | None = S._evaluate(
                 code, frames.bars[code], as_of, rs_ours, breadth_ours, bench_state, spec
             )
             if record is None:
@@ -441,6 +490,7 @@ def test_every_family_spec_matches_its_study_signals(frames, manifest, study, as
         assert checked > 50, f"{name}: only {checked} names comparable"
         assert not mismatches, f"{name} disagrees with the study:\n" + "\n".join(mismatches[:12])
 
+
 def test_the_holdout_travels_with_every_plan(frames):
     """The retraction must not be quietly removable.
 
@@ -451,7 +501,7 @@ def test_the_holdout_travels_with_every_plan(frames):
     winner count has to be whatever the study's artifact says, including when
     that number is unflattering.
     """
-    import app.plan as build  # noqa: PLC0415
+    import app.plan as build
 
     result = build.plan()
     holdout = result.holdout
@@ -474,7 +524,7 @@ def test_shipped_config_is_measured_not_asserted():
     exactly the error docs/22 corrects, so `shipped_config()` returns a span and
     this test refuses a single-number version.
     """
-    shipped = M.shipped_config()
+    shipped = cast(dict[str, Any] | None, M.shipped_config())
     assert shipped, "the app runs rules it has no measurement for"
     assert shipped.get("rows_matched", 0) >= 1
     assert "search_win_rate_lo" in shipped and "search_win_rate_hi" in shipped, (
@@ -515,11 +565,9 @@ def test_phantom_bars_are_refused_before_screening():
     because the bug was in the *fetcher*: a re-fetch reintroduces those rows
     silently, and nothing else in the suite would notice.
     """
-    from app.plan.bars import _drop_phantom  # noqa: PLC0415
+    from app.plan.bars import _drop_phantom
 
-    calendar = pd.DataFrame(
-        {"date": pd.to_datetime(["2026-05-13", "2026-05-18", "2026-05-19"])}
-    )
+    calendar = pd.DataFrame({"date": pd.to_datetime(["2026-05-13", "2026-05-18", "2026-05-19"])})
 
     # A holiday bar: off-calendar and no volume. This is the artefact.
     phantom = pd.DataFrame(
@@ -560,12 +608,14 @@ def test_the_exchange_calendar_drives_the_next_session():
     index did not, one of them a public holiday present in all 886 files. The app
     used to say "next weekday" and had no calendar at all.
     """
-    from datetime import date as _date  # noqa: PLC0415
+    from datetime import date as _date
 
-    from app.plan.screen import next_session, next_session_basis  # noqa: PLC0415
+    from app.plan.screen import next_session, next_session_basis
 
     # 2026-05-14 and 05-15 are excluded, exactly as the study found them.
-    calendar = [pd.Timestamp(d) for d in ("2026-05-13", "2026-05-18", "2026-05-19")]
+    calendar = cast(
+        list[pd.Timestamp], [pd.Timestamp(d) for d in ("2026-05-13", "2026-05-18", "2026-05-19")]
+    )
 
     assert next_session(_date(2026, 5, 13), calendar) == _date(2026, 5, 18)
     assert next_session_basis(_date(2026, 5, 13), calendar) == "exchange_calendar"
@@ -581,7 +631,7 @@ def test_the_exchange_calendar_drives_the_next_session():
 
 def test_the_plan_reports_which_calendar_it_used():
     """The basis has to reach the payload, or the distinction is invisible."""
-    import app.plan as build  # noqa: PLC0415
+    import app.plan as build
 
     coverage = build.plan().coverage
     assert "phantom_bars_dropped" in coverage, "the plan does not report phantom-bar refusals"

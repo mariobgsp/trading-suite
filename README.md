@@ -1,19 +1,19 @@
-# Trading Suite — the nightly IDX plan
+# Trading Suite — the IDX scanner
 
-> One question, answered once a session: **which Indonesian stocks should I buy at
-> the next open, and why?** Six screens, a FastAPI backend, and a rule chain
-> re-transcribed from a walk-forward study — with the study's own artifacts as
-> the evidence, and "no trade" as a first-class answer.
+> One question, answered every session: **which Indonesian stocks are near the
+> measured setup, and which are on the watchlist?** A scanner, a FastAPI backend,
+> and a rule chain re-transcribed from a walk-forward study — with the study's own
+> artifacts as the evidence, and "no trade" as a first-class answer.
 
 ```
-┌──────────────────────┐   /api/plan*   ┌────────────────────┐   ┌──────────────────────┐
-│ Vite + React SPA     │ ─────────────▶ │ FastAPI  :8000     │──▶│ study results (CSV)  │
-│ :5173  (3 tabs)      │ ◀───────────── │ app/plan/*         │   │ + daily bars + live  │
-└──────────────────────┘   SWR cache    └─────────┬──────────┘   │   tail (yfinance)    │
-                                                 │ SQLite WAL   └──────────────────────┘
-                                          ┌──────▼───────┐
-                                          │ cache.db     │
-                                          └──────────────┘
+┌──────────────────────┐  /api/scanner + /api/plan  ┌────────────────────┐   ┌──────────────────────┐
+│ Vite + React SPA     │ ──────────────────────────▶ │ FastAPI  :8000     │──▶│ study results (CSV)  │
+│ :5173  (3 tabs)      │ ◀────────────────────────── │ app/plan/*         │   │ + daily bars + live  │
+└──────────────────────┘   SWR cache                └─────────┬──────────┘   │   tail (yfinance)    │
+                                                              │ SQLite WAL   └──────────────────────┘
+                                                       ┌──────▼───────┐
+                                                       │ cache.db     │
+                                                       └──────────────┘
 ```
 
 ## Quick start
@@ -26,8 +26,9 @@ chmod +x ./trading-suite
 ./trading-suite logs      # tail -f /tmp/trading-suite/*.log
 ```
 
-The backend needs the study checkout (see [Data](#data)) before `plan` can answer
-anything; the first request reads ~887 ticker files and takes a few seconds.
+The backend needs the study checkout (see [Data](#data)) before the scanner can
+answer anything; the first request reads ~887 ticker files and takes a few
+seconds to half a minute, then the persisted payload answers from cache.
 
 <details>
 <summary>Raw commands, if you prefer not to use the runner</summary>
@@ -49,18 +50,22 @@ frontend with `VITE_API_URL=http://127.0.0.1:8000` and open `http://127.0.0.1:51
 
 | Tab | Route | The question it answers |
 | --- | --- | --- |
-| **Markets** | `/` (alias `/market`) | Apa yang terjadi di pasar hari ini: IHSG with sparkline, market symmetry (advance/decline, extremes, above-MA50), the day's top gainers / losers / most active, **who moved the index** — a cap-weight proxy decomposition of the IHSG day change, rescaled by a published factor to the actual index move — plus the daily sector table, weekly rotation, the stress gauge, and the plan's verdict strip |
+| **Scanner** | `/` | Setiap saham tradable di universe studi, di satu tabel. Tiap baris membawa kondisi yang sama dengan plan: breakout 40 sesi, momentum top 10%, volatilitas tenang. Filter `Tier 1`, `setup`, `breakout`, `momentum`, `quiet`, dan `capitulation watch`; hanya Tier 1 yang membawa hasil terukur. Klik satu ticker untuk Deep Dive |
 | **Deep Dive** | `/deep/{ticker}` | Layak trade secara fundamental? dan secara teknikal? — two separate counted verdicts: the invest case's fundamental pillar (criteria against written bands, share structure, stake trend) and the method's condition chain (each gate with its value and run lengths, and the priced entry/target/stop when the name is buyable), plus the chart with levels, a 52-week range bar, KI filings, ticker news, and the flow-proxy research rail |
 | **Backtest** | `/backtest` | Semua metode pada satu target, diadu dengan indeks: every strategy from `app/backtest.py` (MACD/RSI, Stoch reversal, golden cross, EMA crosses, TSMOM, breakout, pullback, volatility compression) simulated over one window through the same fee + slippage model, an equity-curve chart normalised to 100, stats with CAGR / max drawdown / alpha vs the index / time-in-market and a per-strategy walk-forward flag — with the walk-forward study's own corrected headline, the haircuts, and the five-year replay tiers beside it |
 
-### The plan screens (secondary nav)
+### Hidden routes
+
+The old screens remain reachable by URL but are out of the header:
 
 | Route | The question it answers |
 | --- | --- |
 | `/plan` | Should I buy anything tonight, and if so what exactly? The verdict, the order ticket for each name, the watchlist, and the measured case for standing down |
-| `/screener` | Every name, ranked by how near it is to being buyable. No buy signals, on purpose |
+| `/paper` | The book the app fills by itself from the plan's signals |
 | `/flow` | Bandarmology-style cards for a bounded universe: technicals and a **transparent flow-pressure proxy**. Not the vendor LPM, and never a plan input |
 | `/method` | The rule chain, the result, the horizons that were measured and refused, the costs, and every citation |
+
+`/screener` and `/market` redirect to `/`: the scanner replaces both.
 
 
 The Flow panel is deliberately outside the method. Its score is built from Chaikin
@@ -154,7 +159,7 @@ the decision is made:
 | Tonight, under the band | the band's measured 5-session drift, aggregated from the study's 262k-session diagnostic (+2.11% capitulation, about 0 sideways, +0.63% trending) |
 | Tonight, in the capitulation band | the tier-3 watch: the names the study's `cap_bounce` rule would flag, with the sweep, the clean-universe re-measurement and the quarterly stress that refused it |
 | Method, "The three regimes" | the per-regime holdout ledger, the frozen replays and their stress, the tier table, the flow census and the exit census |
-| Screener | the same measured drift, and the capitulation watchers when the band is one |
+| Scanner | the same measured drift, and the capitulation watchers when the band is one |
 
 The study's answer, which the app carries rather than argues with: **nothing in the
 bearish, sideways or institutional regimes clears the bar.** 0 of 1,060 bearish and
@@ -238,10 +243,12 @@ takes minutes; later ones are incremental.
 **Caching.** The research surfaces persist computed payloads in the same SQLite
 WAL cache as the market data (`backend/data/cache/cache.db`). Flow keys are
 `flow:v2:*`; Market uses `computed:overview:v1:*`; the plan uses
-`computed:plan:v1:*`, keyed by the store snapshot, the requested session and the
-method family. A warm plan is ~0.05s against the measured 26s cold screen; the
-sync warms it after every import. Bump `PLAN_CACHE_VERSION` in
-`backend/app/plan/__init__.py` when the rule chain changes.
+`computed:plan:v2:*`, keyed by the store snapshot, the requested session and the
+method family. The scanner uses `computed:scan:v2:*` with the universe floor and
+frozen cut in the key. A warm plan is ~0.05s against the measured 26s cold
+screen; the sync warms it after every import. Bump `PLAN_CACHE_VERSION` or
+`SCAN_CACHE_VERSION` in `backend/app/plan/__init__.py` when the rule chain or
+universe changes.
 
 - **Flow**: cards, series and validation reports are keyed by their exact inputs
   and served for `FLOW_CACHE_TTL` seconds (default 300). Stale entries are kept
@@ -259,6 +266,7 @@ sync warms it after every import. Bump `PLAN_CACHE_VERSION` in
 
 | Endpoint | Notes |
 | --- | --- |
+| `GET /api/scanner` | every tradable name at one session: compact gate rows, the measured filter registry, universe counts and the index-context reading. `?as_of=` replays an earlier session |
 | `GET /api/plan` | the session's verdict, candidates, watchlist, ranked universe, evidence, IDX tables. `?as_of=` replays an earlier session, `?exit_method=` switches among measured exits |
 | `GET /api/plan/method` | rule definitions, the corrected row, the ladder, the horizon list, citations, robustness |
 | `GET /api/plan/{ticker}` | one name: gates with run lengths, the why-now run-up, levels, a sized geometry |
@@ -284,7 +292,7 @@ sync warms it after every import. Bump `PLAN_CACHE_VERSION` in
 The older groups (`/api/market/*`, `/api/intel/*`, `/api/screener/*`,
 `/api/validator/*`, `/api/regime/*`, `/api/portfolio/*`, `/api/backtest/*`,
 `/api/summary/*`, `/api/alerts/*`, `/api/sentiment/*`, `/api/analysis/*`) are still
-mounted in `backend/app/main.py` for the legacy surfaces; the plan screens do
+mounted in `backend/app/main.py` for the legacy surfaces; the scanner and plan do
 not use them. Flow uses `/api/flow/*` plus the existing market history endpoint
 for its candles. Market uses `/api/overview/*` only; it reads study history and
 the cached TradingView universe.
@@ -293,7 +301,7 @@ the cached TradingView universe.
 
 | Path | What it is |
 | --- | --- |
-| `frontend-web/src/routes/{MarketsHome,Deep,Backtest,Tonight,Screener,Flow,Method}.tsx` | the three tabs plus the plan screens |
+| `frontend-web/src/routes/{MarketsHome,Deep,Backtest,Tonight,Scanner,Flow,Method}.tsx` | the three tabs plus the hidden screens |
 | `frontend-web/src/components/{plan,regimes,deep,FlowChart,MarketChart,market,RefreshButton,ThemeToggle,InvestCase}.tsx` | shared vocabulary, the regime ledger, charts, the dashboard, deep-dive panels, refresh, theme, the invest case |
 | `frontend-web/src/lib/{api/plan.ts,api/flow.ts,api/overview.ts,api/case.ts,refresh.ts,cache.ts,theme.ts}` | types + SWR client + the re-read signal |
 | `backend/app/plan/` | the nightly method: `screen`, `method`, `model`, `verdict`, `refresh`, `idx`, `citations`, `bars`, `regimes` |

@@ -18,11 +18,13 @@ exactly, including the details that a rewrite usually gets wrong:
 
 from __future__ import annotations
 
+import statistics
 import threading
 import time
+from collections import Counter
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, timedelta
-from typing import Iterable
 
 import numpy as np
 import pandas as pd
@@ -33,10 +35,12 @@ from .bars import Frames
 from .model import (
     Candidate,
     CapitulationItem,
+    Evidence,
     Gate,
     GateHistory,
     GateKey,
     Geometry,
+    Holdout,
     Reason,
     ReasonPoint,
     Regime,
@@ -61,6 +65,9 @@ MIN_TURNOVER_IDR = 250_000_000.0
 # of the price. See `idx.economic_floor_note()`.
 MIN_PRICE_IDR = 50.0
 TURNOVER_WINDOW = 60
+# A name parked at zero volume for this many consecutive sessions is not
+# trading, even if its last close still looks like a price.
+ZERO_VOLUME_RUN = 20
 # When a ticket's real round trip runs above the study's own cost model, the
 # ticket says so. The threshold is deliberately 0.0 rather than a tolerance:
 # the study's model already carries 0.10% of slippage, so anything above it is a
@@ -230,11 +237,15 @@ def _merge_benchmark(frame: pd.DataFrame, bench: pd.DataFrame | None) -> pd.Data
 def tradable(window: pd.DataFrame) -> tuple[bool, str]:
     """Can this name actually be bought at size today?
 
-    Three screens the study settled on, in the order that fails fastest:
+    Five screens the study settled on, in the order that fails fastest:
 
       * enough history to have a 40-session high worth breaking;
       * a price someone could actually trade — the study's floor, not a
         guess, since a sub-50 IDR name is a different instrument;
+      * median value traded over the study's 60-session window. The shipped
+        screen's universe floor is 250M IDR a day; without it the app screens
+        names the measured result never covered;
+      * not parked at zero volume for the last 20 sessions;
       * a series that is *moving*. A close unchanged on half its sessions is a
         halted or unquoted name, and every signal on it is un-fillable.
     """
@@ -243,6 +254,13 @@ def tradable(window: pd.DataFrame) -> tuple[bool, str]:
     close = window["close"]
     if not np.isfinite(close.iloc[-1]) or float(close.iloc[-1]) < MIN_PRICE_IDR:
         return False, f"below {MIN_PRICE_IDR:,.0f} IDR"
+    turnover = _median_turnover(window)
+    if turnover is None or turnover < MIN_TURNOVER_IDR:
+        return False, f"under {MIN_TURNOVER_IDR / 1e6:,.0f}M IDR a day"
+    if "volume" in window.columns and len(window) >= ZERO_VOLUME_RUN:
+        tail = window["volume"].tail(ZERO_VOLUME_RUN).fillna(0)
+        if int((tail <= 0).sum()) >= ZERO_VOLUME_RUN:
+            return False, "no volume for 20 sessions"
     frozen = float((close.diff().abs() < 1e-9).mean())
     if frozen >= MAX_FROZEN_FRACTION:
         return False, "price frozen — not trading"
@@ -264,6 +282,11 @@ def _relative_strength(bars: dict[str, pd.DataFrame], as_of: pd.Timestamp) -> di
     for code, frame in bars.items():
         window = frame[frame["date"] <= as_of]
         if len(window) < M.RS_LOOKBACK + 1 or window["date"].iloc[-1] != as_of:
+            continue
+        # The study ranks momentum across the tradable set, not every row that
+        # happens to have 121 closes. A sub-50 or frozen name in the panel moves
+        # the percentile of the names that are actually buyable.
+        if not tradable(window)[0]:
             continue
         past = float(window["close"].iloc[-(M.RS_LOOKBACK + 1)])
         now = float(window["close"].iloc[-1])
@@ -367,9 +390,7 @@ def _reason(
     for when in panel.dates:
         bench = _benchmark_state(benchmark, when)
         breadth = panel.breadth.get(when, 0.0)
-        record = _evaluate(
-            code, frame, when, panel.rs.get(when, {}), breadth, bench, spec
-        )
+        record = _evaluate(code, frame, when, panel.rs.get(when, {}), breadth, bench, spec)
         gates = record["gates"] if record else {}
         for gate_key in ("breakout", "breadth", "relative_strength", "quiet_vol"):
             runs.setdefault(gate_key, []).append(
@@ -381,9 +402,7 @@ def _reason(
                 close=float(record["close"]) if record else None,
                 gates_passed=sum(1 for g in gates.values() if g.passed),
                 gates_total=len(gates) if gates else 6,
-                breakout_pct=(
-                    round(float(record["breakout_pct"]), 2) if record else None
-                ),
+                breakout_pct=(round(float(record["breakout_pct"]), 2) if record else None),
                 vol20=round(float(record["vol20"]), 2) if record else None,
                 rs_rating=(
                     round(float(record["rs_rating"]), 1)
@@ -407,9 +426,7 @@ def _reason(
         for key, (length, start) in held.items()
     }
     breakout_held, breakout_start = held.get("breakout", (0, None))
-    breakout_date = (
-        panel.dates[breakout_start].date() if breakout_start is not None else None
-    )
+    breakout_date = panel.dates[breakout_start].date() if breakout_start is not None else None
 
     reason = Reason(
         signal_session=session.date(),
@@ -486,9 +503,7 @@ def reason_for(
     frame = frames.bars.get(code)
     if frame is None:
         return None
-    panel = panel_history(
-        frames.source, frames.bars, frames.sessions(), session
-    )
+    panel = panel_history(frames.source, frames.bars, frames.sessions(), session)
     bench = _benchmark_state(frames.benchmark, session)
     breadth = panel.breadth.get(session, 0.0)
     record = _evaluate(code, frame, session, panel.rs.get(session, {}), breadth, bench, spec)
@@ -565,7 +580,7 @@ def _history_for_candidates(
     return enriched, panel
 
 
-def _breadth(bars: dict[str, pd.DataFrame], as_of: pd.Timestamp) -> tuple[float, float]:
+def _breadth(bars: dict[str, pd.DataFrame], as_of: pd.Timestamp) -> tuple[float, int]:
     """(share above own 200-day average, tradable names) on the as-of session.
 
     Counted over the *tradable* set, not everything with a bar. Including frozen
@@ -662,9 +677,7 @@ def _evaluate(
             f"{high_n:,.0f} ({breakout_pct:+.2f}%)."
         )
     else:
-        breakout_text = (
-            f"Still {abs(breakout_pct):.2f}% under its {M.DONCHIAN_N}-session high of {high_n:,.0f}."
-        )
+        breakout_text = f"Still {abs(breakout_pct):.2f}% under its {M.DONCHIAN_N}-session high of {high_n:,.0f}."
 
     gates: dict[GateKey, Gate] = {
         "breakout": Gate(
@@ -795,9 +808,7 @@ def _geometry(
     # the rule that was measured; the ticket states the rounding either way.
     target = idx.round_to_tick(entry * (1.0 + target_pct / 100.0), "down")
     stop = idx.round_to_tick(entry * (1.0 - stop_pct / 100.0), "down")
-    friction = idx.friction_round_trip(
-        entry, spread_ticks=spread_ticks, study_model_pct=cost_pct
-    )
+    friction = idx.friction_round_trip(entry, spread_ticks=spread_ticks, study_model_pct=cost_pct)
 
     study_size, _study_participation, why = study_position(turnover_idr)
     cap_shares = int(study_size // (entry * M.LOT_SIZE)) * M.LOT_SIZE if study_size else 0
@@ -898,9 +909,7 @@ def size_ticket(
     plan uses, so the two cannot disagree.
     """
     exit_name = exit_method or M.DEFAULT_EXIT
-    geometry = _geometry(
-        price, exit_name, median_turnover_60, risk_budget_idr, spread_ticks
-    )
+    geometry = _geometry(price, exit_name, median_turnover_60, risk_budget_idr, spread_ticks)
     return {
         "price": price,
         "exit_method": exit_name,
@@ -926,7 +935,11 @@ def _score(record: dict[str, object]) -> float:
         + min(gap, 10.0) * 2.0
         + (rating - M.RS_PERCENTILE_MIN) * 0.5
         + (20.0 if gates["quiet_vol"].passed else 0.0)
-        + (20.0 if gates["weekly_trend"].passed and gates["weekly_trend"].value is not None else 0.0)
+        + (
+            20.0
+            if gates["weekly_trend"].passed and gates["weekly_trend"].value is not None
+            else 0.0
+        )
     )
 
 
@@ -1080,6 +1093,29 @@ def _cap_conditions(window: pd.DataFrame, close: float) -> dict[str, object] | N
     }
 
 
+def _score_universe(
+    frames: Frames, as_of: pd.Timestamp, spec: M.FamilySpec
+) -> tuple[Regime, list[dict[str, object]]]:
+    """Run the gate chain once over every name, and nothing else.
+
+    `screen()` used to interleave this loop with candidate construction. The
+    scanner needs the same records without the plan's candidate history, so the
+    pass lives here and both callers use it. One implementation, one set of
+    gates: a scanner row cannot describe a condition the plan does not apply.
+    """
+    bench = _benchmark_state(frames.benchmark, as_of)
+    breadth, universe = _breadth(frames.bars, as_of)
+    rs = _relative_strength(frames.bars, as_of)
+    regime = _regime(breadth, universe, bench, frames.bars, as_of)
+
+    scored: list[dict[str, object]] = []
+    for code, frame in frames.bars.items():
+        record = _evaluate(code, frame, as_of, rs, breadth, bench, spec)
+        if record is not None:
+            scored.append(record)
+    return regime, scored
+
+
 def screen(
     frames: Frames,
     as_of: pd.Timestamp,
@@ -1092,55 +1128,46 @@ def screen(
     Returns the regime, the names that cleared it, the near misses, and the full
     universe ranked by how near it is to clearing it.
     """
-    bench = _benchmark_state(frames.benchmark, as_of)
-    breadth, universe = _breadth(frames.bars, as_of)
-    rs = _relative_strength(frames.bars, as_of)
-
-    regime = _regime(breadth, universe, bench, frames.bars, as_of)
+    regime, scored = _score_universe(frames, as_of, spec)
+    breadth = regime.breadth
 
     candidates: list[Candidate] = []
-    scored: list[dict[str, object]] = []
-    for code, frame in frames.bars.items():
-        record = _evaluate(code, frame, as_of, rs, breadth, bench, spec)
-        if record is None:
+    for record in scored:
+        if not record["passed"]:
             continue
-        scored.append(record)
-        if record["passed"]:
-            candidates.append(
-                Candidate(
-                    ticker=code,
-                    name=None,
-                    close=float(record["close"]),
-                    change_pct=float(record["change_pct"] or 0.0),
-                    as_of=as_of.date(),
-                    gates=tuple(record["gates"].values()),  # type: ignore[union-attr]
-                    geometry=_geometry(
-                        float(record["close"]),
-                        exit_method,
-                        turnover_idr=(
-                            float(record["turnover_idr"])  # type: ignore[arg-type]
-                            if record.get("turnover_idr") is not None
-                            else None
-                        ),
-                    ),
-                    rs_rating=float(record["rs_rating"]),
-                    breadth=breadth,
-                    breakout_pct=float(record["breakout_pct"]),
-                    vol20=float(record["vol20"]),
-                    vol20_median=float(record["vol20_median"]),
+        candidates.append(
+            Candidate(
+                ticker=str(record["ticker"]),
+                name=None,
+                close=float(record["close"]),  # type: ignore[arg-type]
+                change_pct=float(record["change_pct"] or 0.0),  # type: ignore[arg-type]
+                as_of=as_of.date(),
+                gates=tuple(record["gates"].values()),  # type: ignore[union-attr]
+                geometry=_geometry(
+                    float(record["close"]),  # type: ignore[arg-type]
+                    exit_method,
                     turnover_idr=(
                         float(record["turnover_idr"])  # type: ignore[arg-type]
                         if record.get("turnover_idr") is not None
                         else None
                     ),
-                    score=_score(record),
-                )
+                ),
+                rs_rating=float(record["rs_rating"]),  # type: ignore[arg-type]
+                breadth=breadth,
+                breakout_pct=float(record["breakout_pct"]),  # type: ignore[arg-type]
+                vol20=float(record["vol20"]),  # type: ignore[arg-type]
+                vol20_median=float(record["vol20_median"]),  # type: ignore[arg-type]
+                turnover_idr=(
+                    float(record["turnover_idr"])  # type: ignore[arg-type]
+                    if record.get("turnover_idr") is not None
+                    else None
+                ),
+                score=_score(record),
             )
+        )
 
     candidates.sort(key=lambda c: -c.score)
-    candidates, panel = _history_for_candidates(
-        frames, as_of, spec, exit_method, candidates
-    )
+    candidates, panel = _history_for_candidates(frames, as_of, spec, exit_method, candidates)
     if panel is not None:
         for record in scored:
             record["panel_seconds"] = panel.seconds
@@ -1150,6 +1177,305 @@ def screen(
         _watchlist(scored, as_of, regime),
         ladder(scored, spec, limit=ladder_limit),
     )
+
+
+def scan_rows(
+    scored: list[dict[str, object]],
+    spec: M.FamilySpec,
+    cap_codes: set[str] | frozenset[str] = frozenset(),
+) -> list[dict[str, object]]:
+    """One compact row per tradable name, with the screens it belongs to.
+
+    The row is deliberately the same gate chain the plan runs: the three
+    stock-level gates are read from `record["gates"]`, `tier1` is
+    `record["passed"]` (so it includes breadth and any gate the family needs),
+    and `capitulation` is the caller's cap-watch set. Nothing is re-derived.
+    """
+    rows: list[dict[str, object]] = []
+    for record in scored:
+        gates: dict[GateKey, Gate] = record["gates"]  # type: ignore[assignment]
+        conditions = {key: bool(gates[key].passed) for key in _NAME_LEVEL}
+        passed = sum(1 for ok in conditions.values() if ok)
+        screens = [key for key in ("breakout", "relative_strength", "quiet_vol") if conditions[key]]
+        if passed == 3:
+            screens.append("tier1_setup")
+        if record["passed"]:
+            screens.append("tier1")
+        ticker = str(record["ticker"])
+        if ticker in cap_codes:
+            screens.append("capitulation")
+        rows.append(
+            {
+                "ticker": ticker,
+                "close": float(record["close"]),  # type: ignore[arg-type]
+                "change_pct": float(record["change_pct"] or 0.0),  # type: ignore[arg-type]
+                "turnover_idr": (
+                    float(record["turnover_idr"])  # type: ignore[arg-type]
+                    if record.get("turnover_idr") is not None
+                    else None
+                ),
+                "breakout_pct": round(float(record["breakout_pct"]), 2),  # type: ignore[arg-type]
+                "rs_rating": round(float(record["rs_rating"]), 1),  # type: ignore[arg-type]
+                "vol20": round(float(record["vol20"]), 2),  # type: ignore[arg-type]
+                "vol20_threshold": round(float(gates["quiet_vol"].threshold or 0.0), 2),
+                "conditions_passed": passed,
+                "conditions": conditions,
+                "screens": screens,
+            }
+        )
+    rows.sort(
+        key=lambda row: (int(row["conditions_passed"]), float(row["rs_rating"])),
+        reverse=True,
+    )
+    return rows
+
+
+def _tier1_evidence(evidence: Evidence | None, holdout: Holdout | None) -> dict[str, object] | None:
+    """The measured chain, with the holdout beside it. Never invented here."""
+    if evidence is None or not evidence.measured:
+        return None
+    measured: dict[str, object] = {
+        "win_rate": evidence.win_rate,
+        "avg_ret_pct": evidence.avg_ret_pct,
+        "trades": evidence.oos_trades,
+        "source": evidence.source,
+        "caveat": evidence.caveat,
+    }
+    if holdout is not None:
+        measured["holdout_win_rate"] = holdout.best_holdout_win_rate
+        measured["holdout_avg_ret_pct"] = holdout.best_holdout_avg_ret_pct
+    return measured
+
+
+def _cap_evidence(cap_evidence: dict[str, object] | None) -> dict[str, object] | None:
+    """The tier-3 watch's own refusals, flattened for the filter panel."""
+    if not cap_evidence:
+        return None
+    sweep = cap_evidence.get("sweep") or {}
+    illiquid = sweep.get("illiquid") or {} if isinstance(sweep, dict) else {}
+    clean = cap_evidence.get("clean_universe") or {}
+    semi = cap_evidence.get("semi_annual") or {}
+    return {
+        "sweep_win_rate": illiquid.get("t3_win_rate") if isinstance(illiquid, dict) else None,
+        "sweep_avg_ret_pct": illiquid.get("t3_avg_ret_pct") if isinstance(illiquid, dict) else None,
+        "sweep_trades": illiquid.get("t3_n") if isinstance(illiquid, dict) else None,
+        "clean_win_rate": clean.get("win_rate") if isinstance(clean, dict) else None,
+        "clean_avg_ret_pct": clean.get("avg_ret_pct") if isinstance(clean, dict) else None,
+        "semi_win_rate": semi.get("win_rate") if isinstance(semi, dict) else None,
+        "semi_avg_ret_pct": semi.get("avg_ret_pct") if isinstance(semi, dict) else None,
+        "why": cap_evidence.get("why"),
+    }
+
+
+def screen_registry(
+    regime: Regime,
+    rows: list[dict[str, object]],
+    evidence: Evidence | None = None,
+    holdout: Holdout | None = None,
+    cap_evidence: dict[str, object] | None = None,
+) -> list[dict[str, object]]:
+    """The filter definitions, with their provenance attached.
+
+    `kind` is load-bearing: only `strategy` and `watch` may carry a measured
+    result. A condition of the chain is not a strategy, and the UI must not
+    present it as one.
+    """
+    counts = Counter(key for row in rows for key in row["screens"])  # type: ignore[union-attr]
+    tier1_measured = _tier1_evidence(evidence, holdout)
+    cap_measured = _cap_evidence(cap_evidence)
+    return [
+        {
+            "key": "tier1",
+            "label": "Tier 1 — full chain",
+            "kind": "strategy",
+            "active": bool(regime.breadth_open),
+            "count": counts["tier1"],
+            "requires": ["breakout", "relative_strength", "quiet_vol", "breadth"],
+            "definition": (
+                "close above the prior 40-session high; momentum in the top decile; "
+                "own 20-day volatility in its lowest 40%; market breadth at or above 60%"
+            ),
+            "note": (
+                "The study's measured result applies only while the market gate is open. "
+                "When it is shut this filter is empty, and the setup filter is watch-only."
+            ),
+            "measured": tier1_measured,
+        },
+        {
+            "key": "tier1_setup",
+            "label": "Tier 1 — setup",
+            "kind": "setup",
+            "active": True,
+            "count": counts["tier1_setup"],
+            "requires": ["breakout", "relative_strength", "quiet_vol"],
+            "definition": (
+                "The three stock-level conditions: a 40-session breakout, top-decile "
+                "120-session momentum, and own volatility in its lowest 40%."
+            ),
+            "note": (
+                "The market gate is separate. These are the names that would qualify "
+                "if breadth opened; with breadth shut they are watch-only and carry no "
+                "measured win rate of their own."
+            ),
+            "measured": None,
+        },
+        {
+            "key": "capitulation",
+            "label": "Capitulation watch",
+            "kind": "watch",
+            "active": regime.band == "capitulation",
+            "count": counts["capitulation"],
+            "requires": ["breadth", "rsi2", "ret5", "dist_200", "atr14"],
+            "definition": (
+                "breadth under 25%; RSI(2) at or below 30; a 5-session return at or "
+                "below -5%; 5-30% below the 200-day average; the flush stabilising; "
+                "ATR(14) at least 2% of price"
+            ),
+            "note": (
+                "Watch only. Every sweep cell failed the study's 80%/+5% bar, and the "
+                "tier broke on quarterly windows and under the survivorship haircut."
+            ),
+            "measured": cap_measured,
+        },
+        {
+            "key": "breakout",
+            "label": "40-session breakout",
+            "kind": "condition",
+            "active": True,
+            "count": counts["breakout"],
+            "requires": ["breakout"],
+            "definition": (
+                "Close above the highest close of the prior 40 sessions, excluding "
+                "today. A gap more than 15% above that high is skipped."
+            ),
+            "note": "Part of the measured chain. Not a standalone strategy; no win rate.",
+            "measured": None,
+        },
+        {
+            "key": "relative_strength",
+            "label": "Momentum top 10%",
+            "kind": "condition",
+            "active": True,
+            "count": counts["relative_strength"],
+            "requires": ["relative_strength"],
+            "definition": "Percentile of 120-session momentum at or above 90 across the tradable universe.",
+            "note": "Part of the measured chain. Not a standalone strategy; no win rate.",
+            "measured": None,
+        },
+        {
+            "key": "quiet_vol",
+            "label": "Quiet volatility",
+            "kind": "condition",
+            "active": True,
+            "count": counts["quiet_vol"],
+            "requires": ["quiet_vol"],
+            "definition": (
+                "20-session realised volatility at or below its own 40th percentile "
+                "over the trailing 120 sessions, and at least 0.05%."
+            ),
+            "note": "Part of the measured chain. Not a standalone strategy; no win rate.",
+            "measured": None,
+        },
+    ]
+
+
+def index_context(
+    frames: Frames, as_of: pd.Timestamp, codes: Iterable[str]
+) -> dict[str, object] | None:
+    """How much of the tape is actually moving with the index.
+
+    The scanner does not gate on IHSG, so it says out loud what the index is
+    worth: a median correlation over the last 120 common sessions, the same
+    reading excluding days the index moved more than 2%, the last 20 sessions,
+    and the year-to-date spread between the median stock and the index. Returns
+    None when the benchmark or enough history is missing.
+    """
+    bench = frames.benchmark
+    if bench is None or bench.empty:
+        return None
+    b = bench[bench["date"] <= as_of].tail(121)
+    if len(b) < 61:
+        return None
+    bdates = [pd.Timestamp(d) for d in b["date"]]
+    bclose = [float(c) for c in b["close"]]
+    bret = {bdates[i]: bclose[i] / bclose[i - 1] - 1.0 for i in range(1, len(bdates))}
+    if not bret:
+        return None
+
+    ytd_start = pd.Timestamp(year=as_of.year, month=1, day=1)
+    before = bench[bench["date"] < ytd_start]
+    if before.empty:
+        return None
+    index_ytd = float(bclose[-1]) / float(before["close"].iloc[-1]) - 1.0
+
+    corrs: list[float] = []
+    corrs_ex: list[float] = []
+    corrs_20: list[float] = []
+    stock_ytd: list[float] = []
+    for code in codes:
+        frame = frames.bars.get(code)
+        if frame is None:
+            continue
+        w = frame[frame["date"] <= as_of].tail(121)
+        if len(w) < 61:
+            continue
+        dates = [pd.Timestamp(d) for d in w["date"]]
+        closes = [float(c) for c in w["close"]]
+        rets = {dates[i]: closes[i] / closes[i - 1] - 1.0 for i in range(1, len(dates))}
+        common = [d for d in dates[1:] if d in rets and d in bret][-120:]
+        if len(common) < 40:
+            continue
+        xs = [rets[d] for d in common]
+        ys = [bret[d] for d in common]
+        try:
+            value = statistics.correlation(xs, ys)
+        except (ValueError, statistics.StatisticsError):
+            value = None
+        if value is not None:
+            corrs.append(value)
+            ex = [d for d in common if abs(bret[d]) <= 0.02]
+            if len(ex) >= 20:
+                try:
+                    corrs_ex.append(
+                        statistics.correlation([rets[d] for d in ex], [bret[d] for d in ex])
+                    )
+                except (ValueError, statistics.StatisticsError):
+                    pass
+            last20 = common[-20:]
+            if len(last20) >= 10:
+                try:
+                    corrs_20.append(
+                        statistics.correlation([rets[d] for d in last20], [bret[d] for d in last20])
+                    )
+                except (ValueError, statistics.StatisticsError):
+                    pass
+        prior = frame[frame["date"] < ytd_start]
+        if not prior.empty and closes[-1] > 0:
+            stock_ytd.append(closes[-1] / float(prior["close"].iloc[-1]) - 1.0)
+
+    if not corrs:
+        return None
+
+    def median(values: list[float]) -> float | None:
+        return round(statistics.median(values), 3) if values else None
+
+    return {
+        "window": 120,
+        "n": len(corrs),
+        "corr_median": median(corrs),
+        "corr_ex_big_median": median(corrs_ex),
+        "corr_20_median": median(corrs_20),
+        "big_move_pct": 2.0,
+        "ytd_index_pct": round(index_ytd * 100.0, 1),
+        "ytd_stock_median_pct": (
+            round(statistics.median(stock_ytd) * 100.0, 1) if stock_ytd else None
+        ),
+        "share_beating_index": (
+            round(sum(1 for value in stock_ytd if value > index_ytd) / len(stock_ytd), 3)
+            if stock_ytd
+            else None
+        ),
+    }
 
 
 def _breadth_median(bars: dict[str, pd.DataFrame], as_of: pd.Timestamp) -> float:

@@ -7,42 +7,39 @@ skinparam RoundCorner 6
 skinparam ArrowColor #475569
 skinparam ArrowThickness 1.2
 
-title Screener SSE — Suspended Filter Backend-Only
+title Scanner — one universe pass, measured filters
 
 actor User
-participant "ScreenerPage" as FE
-participant "FastAPI /scan/stream" as API
-participant "run_universe_scan" as Scan
-participant "suspended_stocks()" as Susp
+participant "ScannerPage" as FE
+participant "FastAPI /api/scanner" as API
+participant "plan.scan_payload" as Payload
+participant "screen._score_universe" as Screen
 database "cache.db" as Cache
-participant "ThreadPool 8" as Pool
-participant "yfinance" as YF
+participant "bars adapter" as Bars
 
-User -> FE : Start scan behavior limit 30
-FE -> API : EventSource GET /scan/stream
-API --> FE : event info total:30
-API -> Scan : run_universe_scan tickers[:30]
-activate Scan
-Scan -> Susp : suspended_stocks()
-Susp -> Cache : cache.serve intel:suspension
-Cache --> Susp : Remarks X rows
-Susp --> Scan : suspended_set
-note right of Scan
- Backend-only no FE filter
- Tagged == suspended X
- Filter BEFORE ThreadPool
-end note
-Scan -> Pool : submit per ticker filtered
-loop as_completed
-  Pool -> YF : fetch_history 2y
-  YF --> Pool : history or error
-  Pool -> Pool : analyze scoring
-  Pool --> Scan : result
-  Scan --> API : SSE ticker event
-  API --> FE : event ticker
+User -> FE : Open /
+FE -> API : GET /api/scanner
+API -> Payload : scan_payload(as_of)
+Payload -> Cache : read computed:scan:v1:*
+alt warm
+  Cache --> Payload : persisted payload
+else cold
+  Payload -> Bars : load frames
+  Bars --> Payload : Frames + benchmark
+  Payload -> Screen : _score_universe(frames, session, spec)
+  Screen -> Screen : one _evaluate per name
+  Screen --> Payload : regime + scored[]
+  Payload -> Payload : scan_rows + screen_registry + index_context
+  Payload -> Cache : write computed:scan:v1:*
 end
-Scan --> API : results sorted
-API --> FE : event done
-FE --> User : table STRONG BUY first
-deactivate Scan
+Payload --> API : rows, screens, evidence, index context
+API --> FE : JSON
+FE --> User : table, filters, counts
+
+note right of Screen
+ The same gate chain as /api/plan.
+ Tier 1 = record["passed"]
+ Conditions = breakout, RS, quiet
+ Capitulation = cap_watch set
+end note
 @enduml

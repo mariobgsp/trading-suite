@@ -12,8 +12,8 @@ from a background job and persists the derived payload.
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime, time
-from typing import Any
+from datetime import date, datetime, time, timedelta
+from typing import Any, cast
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -39,11 +39,11 @@ def _num(value: Any) -> float | None:
 def _series(frame: pd.DataFrame | None, column: str) -> pd.Series:
     if frame is None or frame.empty or column not in frame:
         return pd.Series(dtype=float)
-    index = pd.to_datetime(frame["date"], errors="coerce")
-    values = pd.to_numeric(frame[column], errors="coerce")
-    out = pd.Series(values.to_numpy(), index=index)
-    out = out[~out.index.isna()]
-    out = out[~out.index.duplicated(keep="last")].sort_index()
+    index = cast(pd.DatetimeIndex, pd.to_datetime(frame["date"], errors="coerce"))
+    values = cast(pd.Series, pd.to_numeric(frame[column], errors="coerce"))
+    out = cast(pd.Series, pd.Series(values.to_numpy(), index=index))
+    out = cast(pd.Series, out[~out.index.isna()])
+    out = cast(pd.Series, out[~out.index.duplicated(keep="last")]).sort_index()
     return out.dropna()
 
 
@@ -51,7 +51,8 @@ def _last_date(frame: pd.DataFrame | None) -> date | None:
     if frame is None or frame.empty:
         return None
     try:
-        return pd.Timestamp(frame["date"].iloc[-1]).date()
+        stamp = pd.Timestamp(frame["date"].iloc[-1])
+        return None if pd.isna(stamp) else cast(date, stamp.date())
     except (ValueError, TypeError, IndexError):
         return None
 
@@ -63,11 +64,11 @@ def current_session(now: datetime | None = None) -> date:
     if today.weekday() >= 5:
         # Weekend: walk back to Friday. The study calendar refines this when it
         # is available, but this keeps the label honest before the build.
-        return today - pd.Timedelta(days=today.weekday() - 4).to_pytimedelta()
-    return today if session_is_final(today, moment) else today - pd.Timedelta(days=1).to_pytimedelta()
+        return today - timedelta(days=today.weekday() - 4)
+    return today if session_is_final(today, moment) else today - timedelta(days=1)
 
 
-def _benchmark_quote() -> dict[str, float] | None:
+def _benchmark_quote() -> dict[str, float | None] | None:
     try:
         from app.market import fetch_quote
 
@@ -86,14 +87,15 @@ def _benchmark_series(
     frames: Any,
     append_current: bool,
     print_date: date,
-    quote: dict[str, float] | None,
+    quote: dict[str, float | None] | None,
 ) -> pd.Series:
     series = _series(getattr(frames, "benchmark", None), "close")
     if append_current and quote and quote.get("close") is not None:
-        series = pd.concat(
-            [series, pd.Series({pd.Timestamp(print_date): quote["close"]})]
+        series = cast(
+            pd.Series,
+            pd.concat([series, pd.Series({pd.Timestamp(print_date): quote["close"]})]),
         )
-        series = series[~series.index.duplicated(keep="last")].sort_index()
+        series = cast(pd.Series, series[~series.index.duplicated(keep="last")]).sort_index()
     return series
 
 
@@ -127,7 +129,7 @@ def load_inputs(now: datetime | None = None) -> dict[str, Any]:
     today = moment.date()
     last_session = today
     while last_session.weekday() >= 5 or not session_is_final(last_session, moment):
-        last_session -= pd.Timedelta(days=1).to_pytimedelta()
+        last_session -= timedelta(days=1)
     after_close = today.weekday() < 5 and session_is_final(today, moment)
     weekend = today.weekday() >= 5
     use_print = bool(universe) and (after_close or weekend)
@@ -170,8 +172,8 @@ def load_inputs(now: datetime | None = None) -> dict[str, Any]:
             change_pct = float((closes.iloc[-1] / closes.iloc[-2] - 1.0) * 100.0)
         if use_print and append_history and price is not None:
             stamp = pd.Timestamp(print_date)
-            closes = pd.concat([closes, pd.Series({stamp: price})])
-            closes = closes[~closes.index.duplicated(keep="last")].sort_index()
+            closes = cast(pd.Series, pd.concat([closes, pd.Series({stamp: price})]))
+            closes = cast(pd.Series, closes[~closes.index.duplicated(keep="last")]).sort_index()
             # Current high/low are not in the scan; compare the print against the
             # historical extremes instead of inventing a bar.
         joined.append(

@@ -1,8 +1,9 @@
-"""Tonight's plan: which IDX names to buy next session, and why.
+"""Tonight's plan, and the scanner that shows its universe.
 
-The interface is three functions:
+The interface is four functions:
 
     plan()        the nightly answer - regime, candidates, watchlist, evidence
+    scan_payload() every tradable name, with the screens it belongs to
     detail(code)  one name, with every gate's measured value and its geometry
     method_card() the rule chain and the measured proof, for the Method page
 
@@ -21,6 +22,7 @@ import logging
 import os
 import threading
 from datetime import date
+from typing import cast
 
 import pandas as pd
 
@@ -66,8 +68,9 @@ _active: tuple[BarsSource, str] = (default_source(), "default")
 # hand when the rule chain changes.
 # Codes: compute_error (the screen raised), cache_error (the artifact store
 # raised). Both leave the in-memory plan path intact.
-PLAN_CACHE_VERSION = "v1"
+PLAN_CACHE_VERSION = "v2"
 PLAN_CACHE_TTL = int(os.getenv("PLAN_CACHE_TTL_SECONDS", str(8 * 86400)))
+SCAN_CACHE_VERSION = "v2"
 
 
 def _source_stamp(source: BarsSource, label: str) -> str:
@@ -94,6 +97,8 @@ def plan_cache_key(as_of: date | None = None, exit_method: str | None = None) ->
         as_of.isoformat() if as_of else "current",
         exit_name,
         spec.family,
+        f"{S.MIN_TURNOVER_IDR:.0f}",
+        f"{S.MAX_FROZEN_FRACTION:.2f}",
     )
 
 
@@ -128,6 +133,102 @@ def invalidate() -> None:
     # The persisted plan belongs to the old data snapshot; drop it so a manual
     # refresh is not shadowed by the startup artifact.
     computed_cache.clear("plan")
+    computed_cache.clear("scan")
+
+
+def scan_cache_key(as_of: date | None = None) -> str:
+    """The identity of one scanner payload: data snapshot, session, universe."""
+    source, label = _active
+    evidence = M.default_evidence()
+    spec = M.family_spec(evidence.family)
+    return computed_cache.make_key(
+        "scan",
+        SCAN_CACHE_VERSION,
+        label,
+        _source_stamp(source, label),
+        as_of.isoformat() if as_of else "current",
+        spec.family,
+        f"{S.MIN_TURNOVER_IDR:.0f}",
+        f"{S.MAX_FROZEN_FRACTION:.2f}",
+    )
+
+
+def scan_payload(as_of: date | None = None) -> dict:
+    """Every tradable name at one session, with the measured filters.
+
+    Persisted like the plan: the universe pass is not free, and the scanner is
+    the first page a reader opens. The cache key carries the data stamp and the
+    universe thresholds, so a weekly sync or a floor change is not shadowed by
+    an old artifact.
+    """
+    key = scan_cache_key(as_of)
+    cached = computed_cache.read(key, PLAN_CACHE_TTL)
+    if cached is not None:
+        payload, _meta = cached
+        return payload
+    payload = _scan(as_of)
+    computed_cache.write(key, payload)
+    return payload
+
+
+def _scan(as_of: date | None = None) -> dict:
+    """Compute one scanner payload from the same bars and chain as the plan."""
+    source, label = _active
+    evidence = M.default_evidence()
+    spec = M.family_spec(evidence.family)
+    frames = _load(source, label)
+    session = frames.as_of()
+    if session is None or pd.isna(session):
+        raise RuntimeError(f"no benchmark bars available from {label}")
+    session = cast(pd.Timestamp, session)
+    if as_of is not None and pd.Timestamp(as_of) < session:
+        session = cast(pd.Timestamp, pd.Timestamp(as_of))
+
+    regime, scored = S._score_universe(frames, session, spec)
+    regime = dataclasses.replace(regime, measured_drift=R.band_drift(regime.band))
+
+    cap_items = (
+        S.cap_watch(frames, session, regime.breadth, limit=len(frames.bars))
+        if regime.band == "capitulation"
+        else ()
+    )
+    cap_codes = {item.ticker for item in cap_items}
+    rows = S.scan_rows(scored, spec, cap_codes)
+    screens = S.screen_registry(
+        regime,
+        rows,
+        M.corrected_evidence(),
+        M.holdout(),
+        R.capitulation_evidence() if regime.band == "capitulation" else None,
+    )
+    context = S.index_context(frames, session, [str(row["ticker"]) for row in rows])
+
+    return {
+        "as_of": session.date().isoformat(),
+        "session_label": session.date().strftime("%a %d %b %Y"),
+        "next_session": S.next_session(session.date(), frames.sessions()).isoformat(),
+        "source": frames.source,
+        "regime": regime.as_dict(),
+        "universe": {
+            "codes": len(frames.bars),
+            "tradable": len(scored),
+            "excluded": len(frames.bars) - len(scored),
+            "on_session": frames.coverage_on(session),
+            "min_turnover_idr": S.MIN_TURNOVER_IDR,
+            "min_price_idr": S.MIN_PRICE_IDR,
+            "frozen_max_fraction": S.MAX_FROZEN_FRACTION,
+        },
+        "thresholds": {
+            "rs": spec.rs_min,
+            "breadth": spec.breadth,
+            "cap_breadth": M.BREADTH_CAPITULATION,
+            "quiet_quantile": 0.40,
+            "max_breakout_pct": S.MAX_BREAKOUT_PCT,
+        },
+        "index_context": context,
+        "screens": screens,
+        "rows": rows,
+    }
 
 
 def _horizon(as_of: date) -> str:
@@ -156,10 +257,11 @@ def plan(as_of: date | None = None, exit_method: str | None = None) -> Plan:
         raise
 
     session = frames.as_of()
-    if session is None:
+    if session is None or pd.isna(session):
         raise RuntimeError(f"no benchmark bars available from {label}")
+    session = cast(pd.Timestamp, session)
     if as_of is not None and pd.Timestamp(as_of) < session:
-        session = pd.Timestamp(as_of)
+        session = cast(pd.Timestamp, pd.Timestamp(as_of))
 
     key = (label, session.date().isoformat(), exit_name, spec.family)
     with _lock:
@@ -357,7 +459,11 @@ def detail(ticker: str) -> dict[str, object]:
             S._geometry(
                 close,
                 current.evidence.exit_method or M.DEFAULT_EXIT,
-                turnover_idr=(record.get("turnover_idr") if record is not None else None),
+                turnover_idr=(
+                    float(record["turnover_idr"])  # type: ignore[arg-type]
+                    if record is not None and record.get("turnover_idr") is not None
+                    else None
+                ),
             ).as_dict()
             if close
             else None

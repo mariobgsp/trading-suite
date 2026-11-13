@@ -552,9 +552,9 @@ def deployment() -> dict[str, object]:
     # the five-year replay - has the pooled book at -80.52%. Both numbers are in
     # the same study; presenting either alone is the error.
     loo = [
-        _f(r, "oos_pct")
+        value
         for r in robust
-        if r.get("test") == "fold_loo" and _f(r, "oos_pct") is not None
+        if r.get("test") == "fold_loo" and (value := _f(r, "oos_pct")) is not None
     ]
     chained = None
     per_year = None
@@ -881,10 +881,10 @@ def _rows(path: Path) -> list[dict[str, str]]:
         return []
 
 
-def _find(rows: list[dict[str, str]], case: str, **want: str) -> dict[str, object] | None:
+def _find(rows: list[dict[str, str]], case: str, **want: str) -> dict[str, str] | None:
     for row in rows:
         if all(row.get(k) == v for k, v in want.items()):
-            return {k: row.get(k) for k in row}
+            return dict(row)
     return None
 
 

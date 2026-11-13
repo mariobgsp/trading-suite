@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, time as dtime, timedelta, timezone
 from functools import lru_cache
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, cast
 
 import pandas as pd
 
@@ -89,9 +89,9 @@ def _drop_phantom(
     if bench is None or bench.empty or frame.empty:
         return frame, 0, set()
 
-    calendar = {pd.Timestamp(d).normalize() for d in bench["date"]}
-    dates = frame["date"].map(lambda d: pd.Timestamp(d).normalize())
-    off_calendar = ~dates.isin(calendar)
+    calendar = {cast(pd.Timestamp, pd.Timestamp(d)).normalize() for d in bench["date"]}
+    dates = frame["date"].map(lambda d: cast(pd.Timestamp, pd.Timestamp(d)).normalize())
+    off_calendar = ~dates.isin(list(calendar))
 
     volume = frame["volume"] if "volume" in frame.columns else None
     if volume is None:
@@ -104,8 +104,8 @@ def _drop_phantom(
     if not bool(bad.any()):
         return frame, 0, set()
 
-    dropped_dates = set(dates[bad])
-    return frame[~bad].reset_index(drop=True), int(bad.sum()), dropped_dates
+    dropped_dates = cast(set[pd.Timestamp], set(dates[bad]))
+    return cast(pd.DataFrame, frame[~bad].reset_index(drop=True)), int(bad.sum()), dropped_dates
 
 
 @dataclass
@@ -139,7 +139,7 @@ class Frames:
         """
         if self.benchmark is None or self.benchmark.empty:
             return []
-        return [pd.Timestamp(d) for d in self.benchmark["date"]]
+        return [cast(pd.Timestamp, pd.Timestamp(d)) for d in self.benchmark["date"]]
 
     def as_of(self) -> pd.Timestamp | None:
         """The most recent session the data is actually complete for.
@@ -173,7 +173,7 @@ class Frames:
         for frame in frames:
             if frame.empty:
                 continue
-            stamp = pd.Timestamp(frame["date"].iloc[-1])
+            stamp = cast(pd.Timestamp, pd.Timestamp(frame["date"].iloc[-1]))
             if last is None or stamp > last:
                 last = stamp
         return last
@@ -223,7 +223,7 @@ def _clean(df: pd.DataFrame | None) -> pd.DataFrame | None:
 class BarsSource(Protocol):
     """The seam: given a universe, return its daily bars."""
 
-    def load(self, codes: list[str]) -> Frames: ...
+    def load(self, codes: list[str] | None) -> Frames: ...
 
 
 class StudyBars:
@@ -331,7 +331,7 @@ class StoreBars:
         bench = _clean(raw.pop(BENCHMARK, None))
         if bench is None:
             raise RuntimeError("the market snapshot has no ^JKSE benchmark")
-        if wanted is not None:
+        if wanted is not None and codes is not None:
             raw = {code: frame for code, frame in raw.items() if code in codes}
         out: dict[str, pd.DataFrame] = {}
         dropped = 0
@@ -372,8 +372,12 @@ class LiveBars:
         # unfinished bar as today's.
         return f"live:{date.today().isoformat()}"
 
-    def load(self, codes: list[str]) -> Frames:
+    def load(self, codes: list[str] | None = None) -> Frames:
         from concurrent.futures import ThreadPoolExecutor
+
+        if codes is None:
+            # Live has no universe of its own; the caller must name one.
+            codes = []
 
         from app.market import fetch_history  # imported late: keeps the seam optional
 
@@ -427,7 +431,7 @@ class MergedBars:
         stamps = pd.to_datetime(frame["date"])
         mask = stamps.map(lambda d: session_is_final(d.date(), self.now))
         refused = int((~mask).sum())
-        return frame[mask.to_numpy()], refused
+        return cast(pd.DataFrame, frame[mask.to_numpy()]), refused
 
     def stamp(self) -> str:
         study = getattr(self.study, "stamp", None)
@@ -446,7 +450,7 @@ class MergedBars:
         refused_total = 0
         phantom_dropped = base.phantom_dropped
         phantom: set[pd.Timestamp] = {
-            pd.Timestamp(d) for d in base.phantom_dates
+            cast(pd.Timestamp, pd.Timestamp(d)) for d in base.phantom_dates
         }
 
         for code in wanted:
@@ -457,7 +461,7 @@ class MergedBars:
             if live_frame is None or live_frame.empty:
                 merged[code] = frame
                 continue
-            tail = live_frame[live_frame["date"] > frame["date"].iloc[-1]]
+            tail = cast(pd.DataFrame, live_frame[live_frame["date"] > frame["date"].iloc[-1]])
             if tail.empty:
                 merged[code] = frame
                 continue
@@ -481,9 +485,10 @@ class MergedBars:
             if bench is None or bench.empty:
                 bench = live.benchmark
             else:
-                bench_tail = live.benchmark[
-                    live.benchmark["date"] > bench["date"].iloc[-1]
-                ]
+                bench_tail = cast(
+                    pd.DataFrame,
+                    live.benchmark[live.benchmark["date"] > bench["date"].iloc[-1]],
+                )
                 if not bench_tail.empty:
                     bench_tail, _bench_refused = self._keep_final(bench_tail)
                     if not bench_tail.empty:

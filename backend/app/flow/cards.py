@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -77,7 +77,7 @@ def _movers(limit: int) -> tuple[list[str], dict[str, str]]:
 
 def _plan_codes(limit: int) -> list[str]:
     try:
-        from app.plan import plan as plan_module
+        import app.plan as plan_module
 
         current = plan_module.plan()
     except Exception as exc:  # noqa: BLE001
@@ -126,7 +126,7 @@ def resolve_universe(
 
 def _flow_for(df: pd.DataFrame, foreign_value: float | None) -> tuple[pd.DataFrame, dict[str, Any]]:
     if foreign_value is not None and len(df):
-        last = df.index[-1]
+        last = cast(pd.Timestamp, df.index[-1])
         foreign = pd.Series({last: float(foreign_value)})
     else:
         foreign = None
@@ -155,7 +155,7 @@ def build_card(
     if frame.empty:
         return None
     foreign_fresh = foreign_value is None or sources.foreign_is_fresh(
-        {"as_of": foreign_as_of}, frame.index[-1].date()
+        {"as_of": foreign_as_of}, cast(pd.Timestamp, frame.index[-1]).date()
     )
     if not foreign_fresh:
         foreign_value = None
@@ -179,7 +179,7 @@ def build_card(
         if warning and warning not in warnings:
             warnings.append(warning)
 
-    as_of = str(frame.index[-1].date())
+    as_of = str(cast(pd.Timestamp, frame.index[-1]).date())
     source_info = SourceInfo(
         bars="yfinance",
         flow=str(flow_meta.get("source") or "unavailable"),

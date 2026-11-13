@@ -407,7 +407,7 @@ function Row({ row }: { row: ScanRow }) {
 				</span>
 			</td>
 			<td className="tabular px-2 py-1.5 text-right">
-				<span style={{ color: row.breakout_pct > 0 ? "var(--up)" : "var(--text-faint)" }}>
+				<span style={{ color: row.conditions.breakout ? "var(--up)" : "var(--text-faint)" }}>
 					{signed(row.breakout_pct)}
 				</span>
 			</td>

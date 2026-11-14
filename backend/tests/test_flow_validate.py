@@ -83,3 +83,17 @@ def test_evaluate_frame_leaves_a_forward_return_tail():
     assert len(obs) == 30
     assert obs["fwd"].iloc[-1] != obs["fwd"].iloc[-1]  # NaN
     assert obs["fwd"].iloc[0] == obs["fwd"].iloc[0]
+
+
+def test_cross_section_ranks_without_scipy():
+    """Spearman must not reach for scipy: pandas' method="spearman" imports it,
+    and this image does not install it, so a multi-ticker report used to 500."""
+    dates = pd.bdate_range("2026-01-05", periods=3)
+    observations = [
+        pd.DataFrame({"date": dates, "signal": np.arange(3.0) + k, "fwd": np.arange(3.0) * k})
+        for k in range(6)
+    ]
+    out = V._cross_section(observations)
+    assert out["available"] is True
+    assert out["n_dates"] == 2  # the first date's forward return is flat
+    assert out["mean_rank_ic"] == pytest.approx(1.0)

@@ -845,12 +845,16 @@ def _multiple_testing() -> dict[str, object]:
                 return value
         return None
 
+    # Read into locals so the caveat cannot drift from the artifact it quotes.
+    spa = find("hansen spa p-value")
+    reality = find("white reality check p-value")
+
     return {
         "available": bool(by),
         "cells_searched": find("trial count, cells with trades"),
         "designs_searched": find("trial count, distinct designs"),
-        "reality_check_p": find("white reality check p-value"),
-        "spa_p": find("hansen spa p-value"),
+        "reality_check_p": reality,
+        "spa_p": spa,
         "spa_statistic": find("hansen spa max statistic"),
         "deflated_sharpe_pct": next(
             (
@@ -863,8 +867,8 @@ def _multiple_testing() -> dict[str, object]:
         "source": [str(MULTIPLE_TESTING_CSV)],
         "note": (
             "Three tests, three answers. A signal in the set is real (SPA "
-            "p = 0.004). The single best row is not distinguishable from the best "
-            "data-mined alternative (reality check p = 0.29), and should not be "
+            f"p = {spa}). The single best row is not distinguishable from the best "
+            f"data-mined alternative (reality check p = {reality}), and should not be "
             "read as a discovery (deflated Sharpe 0). What the study supports is "
             "the family-level pattern, not one exit geometry."
         ),

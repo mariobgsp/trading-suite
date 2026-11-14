@@ -7,6 +7,7 @@ set -euo pipefail
 #   ./trading-suite.sh dev        # alias for run
 #   ./trading-suite.sh build      # production build (vite build + tsc)
 #   ./trading-suite.sh start      # production start (vite preview + uvicorn)
+#   ./trading-suite.sh lan        # backend on the LAN, for the phone app
 #   ./trading-suite.sh stop       # kill dev servers started by run
 #   ./trading-suite.sh logs       # tail background logs
 #   ./trading-suite.sh verify     # backend tests + frontend typecheck
@@ -97,6 +98,23 @@ cmd_build() {
   info "build ok"
 }
 
+cmd_lan() {
+  # The phone reaches the API over Wi-Fi, where 127.0.0.1 means the phone itself.
+  ensure_backend_venv
+  local ip
+  ip="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{print $7; exit}')"
+  [[ -n "$ip" ]] || die "no LAN address — join a Wi-Fi network first"
+  info "backend on 0.0.0.0:8000 (logs: $PID_DIR/backend.log)"
+  nohup "$BACKEND/.venv/bin/python" -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --app-dir "$BACKEND" \
+    > "$PID_DIR/backend.log" 2>&1 & echo $! > "$PID_DIR/backend.pid"
+  sleep 1
+  if curl -fsS -m 2 "http://127.0.0.1:8000/api/health" >/dev/null 2>&1; then
+    info "phone → http://$ip:8000  (long-press the app's refresh button to set it)"
+  else
+    warn "backend did not answer yet — see $PID_DIR/backend.log"
+  fi
+}
+
 cmd_start() {
   ensure_backend_venv
   ensure_frontend_deps
@@ -162,7 +180,8 @@ case "${1:-run}" in
   logs)         cmd_logs ;;
   build)        cmd_build ;;
   start)        cmd_start ;;
+  lan)          cmd_lan ;;
   verify)       cmd_verify ;;
   clean)        cmd_clean ;;
-  *) echo "Usage: $0 {run|dev|plan|sync-data|build|start|stop|logs|verify|clean}"; exit 1 ;;
+  *) echo "Usage: $0 {run|dev|plan|sync-data|build|start|lan|stop|logs|verify|clean}"; exit 1 ;;
 esac

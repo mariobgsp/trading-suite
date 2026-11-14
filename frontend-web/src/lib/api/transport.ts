@@ -12,8 +12,15 @@ import {
 	setCache,
 } from "../cache.ts";
 
+// Behind the Caddy deploy the API shares the page's origin — no port, no CORS.
+// On the LAN (vite on :5173) it stays on :8000 of the same host. VITE_API_URL
+// still overrides both.
+const { port } = window.location;
+const sameOrigin = port === "" || port === "80" || port === "443";
+
 export const API_BASE =
-	import.meta.env.VITE_API_URL ?? "http://localhost:8000";
+	import.meta.env.VITE_API_URL ??
+	(sameOrigin ? "" : `http://${window.location.hostname}:8000`);
 
 // Codes: http_error — this is the transport's one error shape for a non-2xx
 // response; callers read ApiError.code for the backend's machine-readable reason.

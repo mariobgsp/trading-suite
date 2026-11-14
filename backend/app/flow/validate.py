@@ -18,7 +18,7 @@ from __future__ import annotations
 import math
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import pandas as pd
@@ -76,13 +76,22 @@ def _hit(predicted: list[float], actual: list[float]) -> dict[str, Any]:
     pairs = [
         (int(np.sign(p)), int(np.sign(a)))
         for p, a in zip(predicted, actual)
-        if p is not None and a is not None and math.isfinite(float(p)) and math.isfinite(float(a))
+        if p is not None
+        and a is not None
+        and math.isfinite(float(p))
+        and math.isfinite(float(a))
         and int(np.sign(p)) != 0
         and int(np.sign(a)) != 0
     ]
     n = len(pairs)
     if n == 0:
-        return {"n": 0, "correct": 0, "hit_rate_pct": None, "wilson_low_pct": None, "wilson_high_pct": None}
+        return {
+            "n": 0,
+            "correct": 0,
+            "hit_rate_pct": None,
+            "wilson_low_pct": None,
+            "wilson_high_pct": None,
+        }
     correct = sum(1 for p, a in pairs if p == a)
     low, high = _wilson(correct, n)
     return {
@@ -99,12 +108,14 @@ def evaluate_frame(frame: pd.DataFrame, horizon: int = 5) -> pd.DataFrame:
     if frame is None or frame.empty:
         return pd.DataFrame()
     out = frame.copy()
-    close = pd.to_numeric(out["Close"], errors="coerce")
+    # pandas' stubs widen column access to scalars, so name the Series once.
+    close = cast(pd.Series, pd.to_numeric(out["Close"], errors="coerce"))
+    lpm = cast(pd.Series, out["lpm_score"])
     out["fwd"] = close.shift(-horizon) / close - 1.0
-    out["signal"] = out["lpm_score"].diff(LOOKBACK)
+    out["signal"] = lpm.diff(LOOKBACK)
     out["momentum"] = close / close.shift(LOOKBACK) - 1.0
     out["date"] = pd.to_datetime(out.index)
-    return out[["date", "lpm_score", "signal", "fwd", "momentum"]]
+    return cast(pd.DataFrame, out[["date", "lpm_score", "signal", "fwd", "momentum"]])
 
 
 def _metrics(obs: pd.DataFrame) -> dict[str, Any]:
@@ -166,13 +177,18 @@ def _cross_section(observations: list[pd.DataFrame]) -> dict[str, Any]:
     for _, group in pooled.groupby("date"):
         if len(group) < 5 or group["signal"].nunique() < 2:
             continue
-        ic = group["signal"].corr(group["fwd"], method="spearman")
-        if ic is not None and math.isfinite(float(ic)):
-            ics.append(float(ic))
+        # Spearman is Pearson on ranks; pandas' "spearman" needs scipy, which
+        # this image does not install, so rank it here instead.
+        # Materialise the two columns as Series so their types are unambiguous.
+        sig = pd.Series(np.asarray(group["signal"], dtype=float))
+        fwd = pd.Series(np.asarray(group["fwd"], dtype=float))
+        ic = cast(float, sig.rank().corr(fwd.rank()))
+        if ic is not None and math.isfinite(ic):
+            ics.append(ic)
         ranked = group.sort_values("signal")
         cut = max(1, int(len(ranked) * 0.2))
-        top = ranked.tail(cut)["fwd"].mean()
-        bottom = ranked.head(cut)["fwd"].mean()
+        top = cast(float, ranked.tail(cut)["fwd"].mean())
+        bottom = cast(float, ranked.head(cut)["fwd"].mean())
         if pd.notna(top) and pd.notna(bottom):
             spreads.append(float(top - bottom) * 100.0)
     if not ics:
@@ -221,33 +237,53 @@ def _vendor_parity(observations: list[pd.DataFrame]) -> dict[str, Any]:
     if not rows:
         return {"available": False, "reason": "no proxy observations"}
     proxy = pd.concat(rows, ignore_index=True)
-    merged = proxy.merge(vendor[["date", "ticker", "vendor_lpm"]], on=["date", "ticker"], how="inner")
+    merged = proxy.merge(
+        vendor[["date", "ticker", "vendor_lpm"]], on=["date", "ticker"], how="inner"
+    )
     if merged.empty:
         return {"available": True, "sample": 0, "reason": "no overlapping date/ticker rows"}
     if merged["vendor_lpm"].nunique() < 2 or merged["lpm_score"].nunique() < 2:
-        return {"available": True, "sample": len(merged), "reason": "constant series; parity undefined"}
-    spearman = merged["lpm_score"].corr(merged["vendor_lpm"], method="spearman")
-    raw_mae = (merged["lpm_score"] - merged["vendor_lpm"]).abs().mean()
+        return {
+            "available": True,
+            "sample": len(merged),
+            "reason": "constant series; parity undefined",
+        }
+    proxy_lpm = cast(pd.Series, merged["lpm_score"])
+    vendor_lpm = cast(pd.Series, merged["vendor_lpm"])
+    spearman = cast(float, proxy_lpm.rank().corr(vendor_lpm.rank()))
+    raw_mae = cast(float, (proxy_lpm - vendor_lpm).abs().mean())
 
     def _norm(s: pd.Series) -> pd.Series:
         span = s.max() - s.min()
         return (s - s.min()) / span if span else s * 0.0
 
-    norm_mae = (_norm(merged["lpm_score"]) - _norm(merged["vendor_lpm"])).abs().mean()
+    norm_mae = cast(float, (_norm(proxy_lpm) - _norm(vendor_lpm)).abs().mean())
     ordered = merged.sort_values(["ticker", "date"]).copy()
     ordered["proxy_diff"] = ordered.groupby("ticker")["lpm_score"].diff()
     ordered["vendor_diff"] = ordered.groupby("ticker")["vendor_lpm"].diff()
     comparable = ordered.dropna(subset=["proxy_diff", "vendor_diff"])
     sign_agreement = (
-        np.sign(comparable["proxy_diff"]) == np.sign(comparable["vendor_diff"])
-    ).mean() if not comparable.empty else None
+        cast(
+            float,
+            (
+                np.sign(cast(pd.Series, comparable["proxy_diff"]))
+                == np.sign(cast(pd.Series, comparable["vendor_diff"]))
+            ).mean(),
+        )
+        if not comparable.empty
+        else None
+    )
     return {
         "available": True,
         "sample": len(merged),
         "spearman": round(float(spearman), 4) if pd.notna(spearman) else None,
         "mae_raw": round(float(raw_mae), 4),
         "mae_normalized": round(float(norm_mae), 4),
-        "sign_agreement_pct": round(float(sign_agreement) * 100.0, 2) if pd.notna(sign_agreement) else None,
+        "sign_agreement_pct": (
+            round(sign_agreement * 100.0, 2)
+            if sign_agreement is not None and math.isfinite(sign_agreement)
+            else None
+        ),
         "note": "Vendor LPM scale may differ; compare spearman and normalized MAE first.",
     }
 

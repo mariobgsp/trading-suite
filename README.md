@@ -130,7 +130,8 @@ The app shows three evidence tiers and never blends them:
   windows, and this screen runs one of them (108 trades). Both numbers travel.
 - The haircuts travel with the headline: dropping the best fifth of tickers leaves
   **+0.04%**, and unseen folds read **+0.09%**.
-- The five-year replay books **−68.2%** for tier 1 and **−80.5%** pooled. Leverage
+- The five-year replay books **+47.9%** for tier 1 — on 18 of 57 trades, with a
+  **68.2%** drawdown — and **−80.5%** pooled. Leverage
   is not modelled anywhere, and the one row that does model it puts 3× at −98.29%.
 - **Day trading is refused with arithmetic, not opinion**: an intraday sleeve was
   designed, run over 30 configurations and declined — all negative, ~0.36%

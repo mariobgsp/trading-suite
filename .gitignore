@@ -69,3 +69,10 @@ backend/vendor/
 
 # generated screenshots of the desk
 screenshots/
+
+# Android build output from android/build.sh; the debug key stays local
+android/build/
+android/data/
+android/*.apk
+android/*.idsig
+android/debug.keystore

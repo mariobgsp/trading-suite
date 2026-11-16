@@ -8,8 +8,15 @@ from typing import Any
 from fastapi import APIRouter, Query
 
 from app.alerts import run_alert_scan
+from app.feed import build_feed
 
 router = APIRouter(prefix="/api/alerts", tags=["alerts"])
+
+
+@router.get("/feed")
+async def feed() -> dict[str, Any]:
+    """The plan's book for tonight: ranked entries, watchlist, NO_TRADE."""
+    return await asyncio.to_thread(build_feed)
 
 
 @router.get("")

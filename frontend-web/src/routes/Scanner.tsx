@@ -9,6 +9,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
+import { AlertBook } from "@/components/AlertBook";
 import { scanApi, type ScanPayload, type ScanRow, type ScanScreenKey } from "@/lib/api/scanner";
 import { usePlanRefreshSignal } from "@/lib/refresh";
 import { Section, idr, pct, pctRaw } from "@/components/plan";
@@ -118,6 +119,7 @@ export default function Scanner() {
 				</p>
 			</header>
 
+			<AlertBook />
 			<MarketStrip payload={payload} />
 			<RegimeDriftStrip regime={payload.regime} />
 			{payload.index_context && <IndexContextLine payload={payload} />}

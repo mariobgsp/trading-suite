@@ -173,7 +173,7 @@ export default function Backtest() {
 				</div>
 				{result && (
 					<p className="mt-3 font-mono text-[10px] text-[var(--text-ghost)]">
-						{result.bars} bar · modal {fmtIdr(result.capital)} · {result.fees.note}
+						{result.bars} bar · modal {fmtIdr(result.capital)} · {result.fees.note} · exit {result.fees.exit_note}
 						{result.cache?.hit ? " · cache " + result.cache.age_seconds + "s" : ""}
 					</p>
 				)}

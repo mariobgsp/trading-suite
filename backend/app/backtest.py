@@ -19,14 +19,29 @@ from typing import Any
 
 import pandas as pd
 
+from app import costs
 from app.indicators import history_to_frame
 from core.indicators import ema, macd, sma, stochastic_oscillator
 from core.indicators import rsi as _rsi
 
 STOP_LOSS_PCT = 0.05
 TRAILING_STOP_PCT = 0.10
-FEE_RATE = 0.0015  # IDX broker fee (0.15% — from bot backtester)
-SLIPPAGE_RATE = 0.0015
+FEE_RATE = costs.BUY_FEE_RATE
+SLIPPAGE_RATE = costs.SLIPPAGE_RATE
+
+# Exit geometries. "method" is the study's shipped geometry — docs/21 §5 and
+# plan/method.py DEFAULT_EXIT (lt_13_35_95): +13% target, −35% stop, 95-session
+# cap. Execution follows the study's fill semantics (§9): the signal bar's
+# close is filled at the NEXT session's open, exits are checked from the bar
+# after the fill, a gap through a level fills at the open, and an intrabar tie
+# fills the stop first. Costs come from app.costs (asymmetric: the sell side
+# carries IDX 0.1% PPh final). "legacy" keeps the old 5% stop / 10% trailing
+# engine so prior callers can reproduce the old numbers.
+EXIT_PROFILES = ("legacy", "method")
+DEFAULT_EXIT_PROFILE = "method"
+# Fractions, matching the legacy engine's stop_loss_pct convention (+13%/−35%
+# is plan/method.py's lt_13_35_95, displayed in percent by the plan).
+METHOD_EXIT = (0.13, 0.35, 95)  # target_frac, stop_frac, cap_bars
 
 STRATEGIES = (
     "tsmom",
@@ -185,6 +200,7 @@ def run_backtest(
     fee_rate: float = FEE_RATE,
     slippage_rate: float = SLIPPAGE_RATE,
     start_idx: int | None = None,
+    exit_profile: str = DEFAULT_EXIT_PROFILE,
 ) -> dict[str, Any]:
     """Run a backtest over history records.
 
@@ -194,9 +210,14 @@ def run_backtest(
 
     ``start_idx`` skips simulation of the first N bars (indicator warmup)
     while still computing signals over the full series.
+    ``exit_profile`` selects the exit geometry: "method" (study's 13/35/95,
+    next-open fills, costs from app.costs) or "legacy" (5% stop / 10%
+    trailing, close fills, same cost model).
     """
     if strategy not in STRATEGIES:
         strategy = "momentum"
+    if exit_profile not in EXIT_PROFILES:
+        exit_profile = DEFAULT_EXIT_PROFILE
     df = history_to_frame(history)
     if start_idx:
         if start_idx >= len(df) - 30:
@@ -218,71 +239,117 @@ def run_backtest(
 
     signals = _signals(df, strategy)
 
+    method = exit_profile == "method"
+    target_pct, method_stop_pct, cap_bars = METHOD_EXIT if method else (0.0, stop_loss_pct, 0)
+
     trades: list[dict[str, Any]] = []
     equity: list[dict[str, Any]] = []
     cash = initial_capital
     bars_held = 0
     holding = False
+    pending = False  # method: a signal seen at close, filled at the next open
     entry_price = 0.0
+    buy_cost = 0.0  # total cash out at entry, fees + slippage included
     entry_date = None
     shares = 0
     highest_price = 0.0
+    bars_in_trade = 0
 
     for i, (date, row) in enumerate(df.iterrows()):
         close = _f(row.get("Close"))
+        open_ = _f(row.get("Open"))
         low = _f(row.get("Low"))
         high = _f(row.get("High"))
         date_str = _idx_date(df.index[i])
 
-        if not holding:
-            if signals.loc[date] == 1:
-                holding = True
-                entry_price = close * (1 + slippage_rate)
-                entry_date = date_str
-                try:
-                    shares = int(cash // max(entry_price * (1 + fee_rate), 1.0))
-                except (ValueError, ZeroDivisionError):
-                    shares = 0
-                cash -= shares * entry_price * (1 + fee_rate)
-                highest_price = entry_price
-        else:
+        if method and pending and not holding:
+            # The signal bar's close is bought at this bar's open (study §9).
+            pending = False
+            if open_ > 0:
+                fill = costs.buy_fill_price(open_)
+                raw_shares = int(cash // max(fill * (1 + costs.BUY_FEE_RATE), 1.0))
+                lot_shares = costs.lots(raw_shares)
+                if lot_shares > 0:  # one lot unaffordable → the signal is skipped
+                    holding = True
+                    entry_price = fill
+                    buy_cost = costs.buy_cash(open_, lot_shares)
+                    shares = lot_shares
+                    cash -= buy_cost
+                    entry_date = date_str
+                    highest_price = fill
+                    bars_in_trade = 0
+
+        if not method and not holding and signals.loc[date] == 1:
+            holding = True
+            entry_price = costs.buy_fill_price(close)
+            entry_date = date_str
+            try:
+                shares = int(cash // max(entry_price * (1 + fee_rate), 1.0))
+            except (ValueError, ZeroDivisionError):
+                shares = 0
+            buy_cost = shares * entry_price * (1 + fee_rate)
+            cash -= buy_cost
+            highest_price = entry_price
+
+        if holding:
             highest_price = max(highest_price, high)
 
             trigger = None
-            sell_price = close * (1 - slippage_rate)
+            exit_price = close
 
-            if low <= entry_price * (1 - stop_loss_pct):
-                trigger = "Stop Loss"
-                sell_price = entry_price * (1 - stop_loss_pct) * (1 - slippage_rate)
-            elif low <= highest_price * (1 - trailing_stop_pct) and highest_price > entry_price:
-                trigger = "Trailing Stop"
-                sell_price = highest_price * (1 - trailing_stop_pct) * (1 - slippage_rate)
-            elif signals.loc[date] == -1:
-                trigger = "Exit Signal"
-                sell_price = close * (1 - slippage_rate)
+            if method:
+                # Exits are checked from the bar AFTER the fill (study §9);
+                # a gap through a level fills at the open; stop before target.
+                if bars_in_trade > 0:
+                    stop_level = entry_price * (1 - method_stop_pct)
+                    target_level = entry_price * (1 + target_pct)
+                    if open_ <= stop_level:
+                        trigger, exit_price = "Stop (gap)", open_
+                    elif low <= stop_level:
+                        trigger, exit_price = "Stop", stop_level
+                    elif open_ >= target_level:
+                        trigger, exit_price = "Target (gap)", open_
+                    elif high >= target_level:
+                        trigger, exit_price = "Target", target_level
+                    elif bars_in_trade >= cap_bars:
+                        trigger, exit_price = "Time Cap", close
+            else:
+                if low <= entry_price * (1 - stop_loss_pct):
+                    trigger = "Stop Loss"
+                    exit_price = entry_price * (1 - stop_loss_pct)
+                elif low <= highest_price * (1 - trailing_stop_pct) and highest_price > entry_price:
+                    trigger = "Trailing Stop"
+                    exit_price = highest_price * (1 - trailing_stop_pct)
+                elif signals.loc[date] == -1:
+                    trigger = "Exit Signal"
+                    exit_price = close
 
             if trigger:
-                proceeds = shares * sell_price
-                fee = proceeds * fee_rate
-                cash += proceeds - fee
-                profit_pct = (sell_price - entry_price) / entry_price * 100
+                proceeds = costs.sell_cash(exit_price, shares)
+                cash += proceeds
+                profit_pct = (costs.sell_fill_price(exit_price) - entry_price) / entry_price * 100
                 trades.append(
                     {
                         "entry_date": entry_date,
                         "exit_date": date_str,
                         "trigger": trigger,
                         "entry_price": round(entry_price, 4),
-                        "exit_price": round(sell_price, 4),
+                        "exit_price": round(costs.sell_fill_price(exit_price), 4),
                         "shares": shares,
                         "profit_pct": round(profit_pct, 2),
-                        "pnl_idr": round(
-                            proceeds - fee - (shares * entry_price * (1 + fee_rate)), 0
-                        ),
+                        "pnl_idr": round(proceeds - buy_cost, 0),
                     }
                 )
                 holding = False
                 shares = 0
                 highest_price = 0.0
+                buy_cost = 0.0
+                bars_in_trade = 0
+            else:
+                bars_in_trade += 1
+
+        if method and not holding and not pending and signals.loc[date] == 1:
+            pending = True
 
         bars_held += 1 if holding else 0
         equity_value = cash + (shares * close if holding else 0)
@@ -377,7 +444,10 @@ def _compute_stats(
 
 
 def fee_note() -> str:
-    return f"broker {FEE_RATE * 100:.2f}% + slippage {SLIPPAGE_RATE * 100:.2f}%"
+    return (
+        f"buy {costs.BUY_FEE_RATE * 100:.2f}% + sell {costs.SELL_FEE_RATE * 100:.2f}% "
+        f"(incl PPh final 0.1%) + slippage {costs.SLIPPAGE_RATE * 100:.2f}%"
+    )
 
 
 def walk_forward(
@@ -441,7 +511,6 @@ def pattern_backtests(ticker: str, force: bool = False) -> dict[str, Any]:
     }
 
 
-
 # ── compare-all: every strategy on one target, versus the index ──────────────
 
 BENCHMARK_TICKER = "^JKSE"
@@ -499,9 +568,7 @@ def _hold_curve(history: list[dict[str, Any]], capital: float, dates: list[str] 
         if not ordered:
             return None, None
     base = ordered[0][1]
-    curve = [
-        {"date": day, "value": round(capital * close / base, 2)} for day, close in ordered
-    ]
+    curve = [{"date": day, "value": round(capital * close / base, 2)} for day, close in ordered]
     total = (ordered[-1][1] / base - 1.0) * 100.0
     return curve, round(total, 2)
 
@@ -514,10 +581,7 @@ def _normalize_curve(equity: list[dict[str, Any]] | None):
     if len(finite) < 2:
         return None
     base = _f(finite[0]["value"])
-    return [
-        {"date": e["date"], "value": round(_f(e["value"]) / base * 100.0, 2)}
-        for e in finite
-    ]
+    return [{"date": e["date"], "value": round(_f(e["value"]) / base * 100.0, 2)} for e in finite]
 
 
 def compare_all(
@@ -654,6 +718,13 @@ def compare_all(
         "strategies": rows,
         "hold_target": {"curve": target_curve, "total_pct": target_total},
         "hold_index": {"curve": bench_curve, "total_pct": bench_total},
-        "fees": {"fee_rate": FEE_RATE, "slippage_rate": SLIPPAGE_RATE, "note": fee_note()},
+        "fees": {
+            "buy_fee_rate": costs.BUY_FEE_RATE,
+            "sell_fee_rate": costs.SELL_FEE_RATE,
+            "slippage_rate": costs.SLIPPAGE_RATE,
+            "note": fee_note(),
+            "exit_profile": DEFAULT_EXIT_PROFILE,
+            "exit_note": "target +13% / stop −35% / cap 95 bar — geometry studi (docs/21 §5)",
+        },
         "capital": capital,
     }

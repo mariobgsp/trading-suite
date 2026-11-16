@@ -60,7 +60,14 @@ export interface CompareResult {
 	strategies: StrategyRow[];
 	hold_target: { curve: CurvePoint[] | null; total_pct: number | null };
 	hold_index: { curve: CurvePoint[] | null; total_pct: number | null };
-	fees: { fee_rate: number; slippage_rate: number; note: string };
+	fees: {
+		buy_fee_rate: number;
+		sell_fee_rate: number;
+		slippage_rate: number;
+		note: string;
+		exit_profile: string;
+		exit_note: string;
+	};
 	capital: number;
 	cache?: {
 		hit?: boolean;

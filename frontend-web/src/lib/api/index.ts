@@ -9,7 +9,6 @@ export * from "./plan";
 export * from "./feed";
 export * from "./scanner";
 export * from "./flow";
-export * from "./overview";
 export * from "./backtest";
 export * from "./market";
 export * from "./types-history";

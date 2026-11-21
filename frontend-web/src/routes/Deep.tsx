@@ -16,6 +16,8 @@ import {
 import { planApi, type PlanDetail, type Plan } from "@/lib/api/plan";
 import { caseApi, type CaseReport } from "@/lib/api/case";
 import { marketApi, type TickerProfile } from "@/lib/api/market";
+import { analysisApi, type PatternAnalysis } from "@/lib/api/backtest";
+import { pctRaw } from "@/components/plan";
 import { Page } from "./Tonight";
 import {
 	DeepHeader,
@@ -44,6 +46,8 @@ export default function Deep() {
 	const [period, setPeriod] = useState<Period>("1y");
 	const [history, setHistory] = useState<HistoryResponse | null>(null);
 	const [historyError, setHistoryError] = useState<string | null>(null);
+	const [patterns, setPatterns] = useState<PatternAnalysis | null>(null);
+	const [patternsError, setPatternsError] = useState<string | null>(null);
 	const [flow, setFlow] = useState<FlowSeries | null>(null);
 
 	useEffect(() => {
@@ -67,6 +71,8 @@ export default function Deep() {
 		setHistory(null);
 		setHistoryError(null);
 		setFlow(null);
+		setPatterns(null);
+		setPatternsError(null);
 
 		planApi
 			.detail(code)
@@ -84,6 +90,10 @@ export default function Deep() {
 			.series(code, 120)
 			.then((s) => alive && setFlow(s))
 			.catch(() => alive && setFlow(null));
+		analysisApi
+			.analysis(code)
+			.then((a) => alive && setPatterns(a))
+			.catch((error: Error) => alive && setPatternsError(error.message));
 
 		return () => {
 			alive = false;
@@ -140,7 +150,7 @@ export default function Deep() {
 						<TickerSearch ranked={plan?.ranked ?? []} onPick={() => {}} />
 					</span>
 				</div>
-				<span>Deep Dive · data riset, bukan saran</span>
+				<span>Periksa saham · data riset, bukan saran</span>
 			</nav>
 
 			{unknown ? (
@@ -170,9 +180,11 @@ export default function Deep() {
 						/>
 					</section>
 					<p className="mt-3 border border-[var(--border)] bg-[var(--panel-2)] px-4 py-2 font-mono text-[11px] leading-relaxed text-[var(--text-faint)]">
-						Dua pertanyaan, dua jawaban. Panel kiri bertanya apakah bisnis dan
-						struktur sahamnya sehat; panel kanan bertanya apakah tape satu tujuan
-						dengan metode malam ini. Tidak ada skor gabungan — merdu tapi bohong.
+						Halaman ini menjawab tiga hal secara terpisah: bagaimana bisnis sahamnya
+						(panel kiri), apakah waktunya tepat menurut aturan (panel kanan), dan di mana
+						target serta batas ruginya bila sudah masuk rencana (pada grafik).
+						Dua penilaian itu tidak digabung jadi satu skor — gabungan itu merdu tapi
+						bohong.
 					</p>
 
 					<section className="mt-8">
@@ -220,11 +232,96 @@ export default function Deep() {
 								</p>
 							)}
 						</div>
-						<p className="mt-2 font-mono text-[10px] leading-relaxed text-[var(--text-ghost)]">
-							Garis putus-putus: level breakout yang harus dilampaui metode. Garis
-							tebal: target dan stop yang meminta trade melipir ke sana.
+					<p className="mt-2 font-mono text-[10px] leading-relaxed text-[var(--text-ghost)]">
+						Garis putus-putus: level breakout yang harus dilampaui metode. Garis
+						tebal: target dan stop yang meminta trade melipir ke sana.
+					</p>
+				</section>
+
+				<section className="mt-8">
+					<h2 className="mb-3 flex flex-wrap items-baseline justify-between gap-2 text-[15px] font-semibold tracking-[-0.01em] text-[var(--text)]">
+						Backtest satu tahun terakhir
+						<span className="font-mono text-[10px] font-normal text-[var(--text-ghost)]">
+							aturan tetap · {patterns?.bars ?? "—"} bar disimulasikan
+						</span>
+					</h2>
+					{patternsError ? (
+						<p className="border border-[var(--border)] bg-[var(--panel)] p-4 font-mono text-[12px] text-[var(--text-faint)]">
+							Backtest {code} tidak tersedia ({patternsError}).
 						</p>
-					</section>
+					) : !patterns ? (
+						<p className="border border-[var(--border)] bg-[var(--panel)] p-4 font-mono text-[12px] text-[var(--text-faint)]">
+							Menjalankan simulasi…
+						</p>
+					) : !patterns.available ? (
+						<p className="border border-[var(--border)] bg-[var(--panel)] p-4 font-mono text-[12px] text-[var(--text-faint)]">
+							Riwayat {code} terlalu pendek untuk disimulasikan.
+						</p>
+					) : (
+						<>
+							<div className="overflow-x-auto border border-[var(--border)] bg-[var(--panel)]">
+								<table className="w-full min-w-[640px] border-collapse text-left">
+									<thead className="font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--text-ghost)]">
+										<tr className="border-b border-[var(--border)] bg-[var(--panel-2)]">
+											<th className="px-3 py-2">Metode</th>
+											<th className="px-2 py-2 text-right">Total</th>
+											<th className="px-2 py-2 text-right">Max DD</th>
+											<th className="px-2 py-2 text-right">Win rate</th>
+											<th className="px-2 py-2 text-right">Order</th>
+											<th className="px-3 py-2 text-right">Waktu di pasar</th>
+										</tr>
+									</thead>
+									<tbody className="font-mono text-[11px]">
+										{Object.entries(patterns.strategies).map(([strat, run]) => {
+											const st = run.stats;
+											const failed = run.error || !st || st.total_return_pct == null;
+											return (
+												<tr key={strat} className="border-t border-[var(--border)]">
+													<td className="px-3 py-1.5 text-[var(--text)]">{run.label}</td>
+													{failed ? (
+														<td colSpan={5} className="px-2 py-1.5 text-right text-[var(--text-ghost)]">
+															{run.error ?? "tidak cukup data"}
+														</td>
+													) : (
+														<>
+															<td
+																className="px-2 py-1.5 text-right"
+																style={{
+																	color:
+																	(st.total_return_pct ?? 0) >= 0 ? "var(--up)" : "var(--down)",
+																}}
+															>
+																{pctRaw(st.total_return_pct, 2)}
+															</td>
+															<td className="px-2 py-1.5 text-right text-[var(--text-faint)]">
+																{pctRaw(st.max_drawdown_pct, 1)}
+															</td>
+															<td className="px-2 py-1.5 text-right text-[var(--text-dim)]">
+																{pctRaw(st.win_rate, 0)}
+															</td>
+															<td className="px-2 py-1.5 text-right text-[var(--text-dim)]">
+																{st.total_trades}
+															</td>
+															<td className="px-3 py-1.5 text-right text-[var(--text-faint)]">
+																{pctRaw(st.time_in_market_pct, 0)}
+															</td>
+														</>
+													)}
+												</tr>
+											);
+										})}
+									</tbody>
+								</table>
+							</div>
+							<p className="mt-2 font-mono text-[10px] leading-relaxed text-[var(--text-ghost)]">
+								Simulasi, bukan janji: aturan tetap dijalankan pada satu tahun terakhir
+								ini dengan biaya nyata ({patterns.fee_note}). Indikatornya membaca tiga
+								tahun bar, jadi jendela tidak menghitung rata-rata dari nol; rujukan
+								beli-tahan pada jendela yang sama ikut di statistik tiap baris.
+							</p>
+						</>
+					)}
+				</section>
 
 					<section className="mt-8 grid gap-4 lg:grid-cols-[1.2fr_1fr]">
 						<div className="min-w-0">
@@ -299,7 +396,7 @@ function DeepIndex({ plan }: { plan: Plan | null }) {
 					One stock, two questions
 				</p>
 				<h1 className="mt-2 font-display text-[34px] leading-none tracking-[-0.02em] text-[var(--text)] sm:text-[40px]">
-					Deep Dive
+					Periksa saham
 				</h1>
 				<p className="mt-3 text-[14px] leading-relaxed text-[var(--text-dim)]">
 					Pilih satu saham. Halaman ini mengukurnya dua kali: kasus fundamental

@@ -88,6 +88,20 @@ def test_the_last_final_session_ignores_todays_unfinished_bar():
     assert R._last_final_session([], at(2026, 10, 12, 16, 30)) is None
 
 
+@pytest.mark.parametrize(
+    ("now", "expected"),
+    (
+        (at(2026, 10, 14, 9, 30), date(2026, 10, 13)),  # mid-session Wed: yesterday
+        (at(2026, 10, 14, 16, 2), date(2026, 10, 14)),  # the close just finished: today
+        (at(2026, 10, 17, 9, 30), date(2026, 10, 16)),  # Saturday: Friday
+        (at(2026, 10, 19, 9, 30), date(2026, 10, 16)),  # Monday morning: still Friday
+    ),
+)
+def test_expected_last_session_tracks_the_wall_clock(now: datetime, expected: date):
+    """The freshness anchor: what session should the bars end on, by the clock."""
+    assert B.expected_last_session(now) == expected
+
+
 def test_bar_dates_arrive_in_every_shape_the_cache_uses():
     assert R._bar_date({"date": "2026-10-09T00:00:00"}) == SESSION
     assert R._bar_date({"date": SESSION}) == SESSION
@@ -107,9 +121,7 @@ def test_merged_bars_appends_only_finished_sessions():
             source="study",
         )
     )
-    live = StubSource(
-        B.Frames(bars={"AAA": _frame(live_dates)}, benchmark=_frame(live_dates))
-    )
+    live = StubSource(B.Frames(bars={"AAA": _frame(live_dates)}, benchmark=_frame(live_dates)))
     # 11:00 on the live session: NEXT is today and still trading.
     merged = B.MergedBars(study, live, now=at(2026, 10, 12, 11, 0)).load(None)
 
@@ -123,7 +135,8 @@ def test_merged_bars_appends_only_finished_sessions():
     assert closed.partial_bars_rejected == 0
     assert closed.bars["AAA"]["date"].iloc[-1].date() == NEXT
     assert closed.source.startswith("study+live")
-    assert closed.as_of().date() == NEXT
+    closed_at = closed.as_of()
+    assert closed_at is not None and closed_at.date() == NEXT
 
 
 def test_merged_bars_is_a_no_op_when_the_live_side_is_empty():
@@ -146,10 +159,6 @@ def job_world(monkeypatch: pytest.MonkeyPatch):
         bars={"AAA": _frame(study_dates), "BBB": _frame(study_dates)},
         benchmark=_frame(study_dates),
         source="study",
-    )
-    live = B.Frames(
-        bars={"AAA": _frame(live_dates), "BBB": _frame(study_dates)},
-        benchmark=_frame(live_dates),
     )
     calls: dict[str, int] = {}
 

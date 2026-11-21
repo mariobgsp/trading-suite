@@ -18,26 +18,28 @@ import Backtest from "@/routes/Backtest";
 import Paper from "@/routes/Paper";
 
 /**
- * The scanner is the product. Deep Dive answers one name; Backtest is the
- * evidence drawer. Method, Plan, Paper and Flow stay reachable by URL but are
- * deliberately out of the header: a scanner should not compete with five
- * secondary screens for attention.
+ * Navigasi dibuat dari tugas pembacanya, bukan dari mesinnya:
  *
- *   Scanner    - every tradable name, with the same conditions the plan runs
- *   Deep Dive  - one stock: the fundamental verdict and the technical verdict
- *   Backtest   - every strategy on one target, priced against the index
+ *   /          Hari ini       — kondisi pasar dan langkah berikutnya
+ *   /scanner   Cari saham     — saring seluruh daftar saham
+ *   /deep      Periksa saham  — satu saham, dari bisnis sampai risiko
+ *   /backtest  Uji strategi   — adukan aturan pada satu target
+ *
+ * Cara kerja (/method), Akun latihan (/paper) dan Riset teknikal (/flow)
+ * tetap terjangkau dari footer dan tautan kontekstual: halaman lanjutan
+ * tidak boleh berebut perhatian dengan empat tugas utama.
  */
 
-const TITLE = "Scanner - IDX daily desk";
+const TITLE = "Trading Suite — pasar dan saham IDX dalam bahasa sederhana";
 const DESCRIPTION =
-	"Every tradable IDX name on one scanner, with the study's measured conditions " +
-	"on each row, then one-stock fundamentals and technicals, and every strategy " +
-	"backtested against the index. Research, not investment advice.";
+	"Kondisi pasar hari ini, saham yang lolos aturan beserta alasan dan risikonya, " +
+	"lalu uji strategi terukur. Riset dengan biaya di dalam setiap transaksi, bukan saran investasi.";
 
 const PRIMARY_TABS = [
-	{ to: "/", label: "Scanner" },
-	{ to: "/deep", label: "Deep Dive" },
-	{ to: "/backtest", label: "Backtest" },
+	{ to: "/", label: "Hari ini" },
+	{ to: "/scanner", label: "Cari saham" },
+	{ to: "/deep", label: "Periksa saham" },
+	{ to: "/backtest", label: "Uji strategi" },
 ] as const;
 
 function RootComponent() {
@@ -78,8 +80,8 @@ function RootComponent() {
 				</div>
 				<div className="mx-auto flex max-w-[1180px] items-end justify-between gap-3 px-4 sm:px-6 lg:px-8">
 					<nav
-						aria-label="Tabs"
-						className="flex items-center gap-1 sm:gap-2"
+						aria-label="Navigasi utama"
+						className="flex min-w-0 items-center gap-1 overflow-x-auto sm:gap-2"
 					>
 						{PRIMARY_TABS.map(({ to, label }) => (
 							<Link
@@ -92,10 +94,10 @@ function RootComponent() {
 								}}
 								inactiveProps={{
 									className:
-										"border-transparent text-[var(--text-ghost)] hover:text-[var(--text)]",
+										"border-transparent text-[var(--text-faint)] hover:text-[var(--text)]",
 								}}
 								className={
-									"border-b-2 px-2.5 py-2 font-mono text-[12px] font-semibold uppercase tracking-[0.1em] transition-colors"
+									"whitespace-nowrap border-b-2 px-2.5 py-2 text-[13px] font-medium transition-colors"
 								}
 							>
 								{label}
@@ -108,18 +110,29 @@ function RootComponent() {
 				<Outlet />
 			</main>
 			<footer className="border-t border-[var(--border)]">
-				<div className="mx-auto max-w-[1180px] px-4 py-8 font-[11px] text-[11px] leading-relaxed text-[var(--text-ghost)] sm:px-6 lg:px-8">
+				<div className="mx-auto max-w-[1180px] px-4 py-8 text-[12px] leading-relaxed text-[var(--text-ghost)] sm:px-6 lg:px-8">
+					<nav aria-label="Halaman lanjutan" className="mb-3 flex flex-wrap gap-x-4 gap-y-1">
+						<Link to="/method" className="text-[var(--text-faint)] underline underline-offset-2 hover:text-[var(--text-dim)]">
+							Cara kerja &amp; bukti
+						</Link>
+						<Link to="/paper" className="text-[var(--text-faint)] underline underline-offset-2 hover:text-[var(--text-dim)]">
+							Akun latihan
+						</Link>
+						<Link to="/flow" className="text-[var(--text-faint)] underline underline-offset-2 hover:text-[var(--text-dim)]">
+							Riset teknikal
+						</Link>
+					</nav>
 					<p className="max-w-[80ch]">
-						Every number is read from a walk-forward backtest of the IDX universe
-						with fees inside each trade, or from the live tape as labelled. It is
-						a research result, not financial advice - read{" "}
+						Setiap angka dibaca dari riset historis dengan biaya di dalam setiap
+						transaksi, atau dari pita pasar seperti yang diberi label. Ini hasil riset,
+						bukan saran investasi — baca{" "}
 						<Link
 							to="/method"
 							className="underline underline-offset-2 hover:text-[var(--text-faint)]"
 						>
-							the method page
+							halaman Cara kerja
 						</Link>{" "}
-						before the first trade.
+						sebelum transaksi pertama.
 					</p>
 				</div>
 			</footer>
@@ -130,23 +143,22 @@ function RootComponent() {
 // Codes: not_found - the root notFoundComponent is the designed 404; retired
 // routes redirect instead of landing here.
 const rootRoute = createRootRoute({
-	component: RootComponent,
-	notFoundComponent: () => (
-		<div className="mx-auto max-w-[1180px] px-4 py-20 sm:px-6 lg:px-8">
-			<p className="font-mono text-[11px] uppercase tracking-[0.16em] text-[var(--text-ghost)]">
-				404
-			</p>
-			<h1 className="mt-3 font-display text-[32px] text-[var(--text)]">
-				No such screen
-			</h1>
-			<Link
-				to="/"
-				className="mt-4 inline-block font-mono text-[12px] text-[var(--text-faint)] underline underline-offset-4"
-			>
-				Back to the market
-			</Link>
-		</div>
-	),
+component: RootComponent,
+notFoundComponent: () => (
+<div className="mx-auto max-w-[1180px] px-4 py-20 sm:px-6 lg:px-8">
+<p className="font-mono text-[11px] uppercase tracking-[0.16em] text-[var(--text-ghost)]">404</p>
+<h1 className="mt-3 font-display text-[32px] text-[var(--text)]">Halaman tidak ditemukan</h1>
+<p className="mt-2 max-w-[60ch] text-[13px] leading-relaxed text-[var(--text-dim)]">
+Alamat ini bukan salah satu dari empat tugas aplikasi. Mulai lagi dari Hari ini.
+</p>
+<Link
+to="/"
+className="mt-4 inline-block border border-[var(--border-strong)] bg-[var(--panel)] px-3 py-1.5 font-mono text-[12px] text-[var(--text-dim)] hover:text-[var(--text)]"
+>
+Kembali ke Hari ini
+</Link>
+</div>
+),
 });
 
 function to(where: string | { to: string }) {
@@ -155,16 +167,23 @@ function to(where: string | { to: string }) {
 	};
 }
 
-const scannerRoute = createRoute({
+const homeRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "/",
+	component: Tonight,
+});
+
+const scannerRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: "/scanner",
 	component: Scanner,
 });
 
+/* Alamat lama tetap mendarat di tugas barunya. */
 const marketAliasRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "/market",
-	beforeLoad: to("/"),
+	beforeLoad: to("/scanner"),
 });
 
 const deepIndexRoute = createRoute({
@@ -185,10 +204,11 @@ const backtestRoute = createRoute({
 	component: Backtest,
 });
 
+/* Halaman rencana lama kini menjadi halaman utama; alamatnya dialihkan. */
 const planRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "/plan",
-	component: Tonight,
+	beforeLoad: to("/"),
 });
 
 /* The per-name screen folded into the Deep Dive tab; old links land there. */
@@ -209,7 +229,7 @@ const methodRoute = createRoute({
 const screenerRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "/screener",
-	beforeLoad: to("/"),
+	beforeLoad: to("/scanner"),
 });
 
 /* The book the app plays by itself: the plan's signals, filled by the sync. */
@@ -265,6 +285,7 @@ const retiredRoutes = RETIRED.flatMap((path) => [
 
 export const router = createRouter({
 	routeTree: rootRoute.addChildren([
+		homeRoute,
 		scannerRoute,
 		marketAliasRoute,
 		deepIndexRoute,

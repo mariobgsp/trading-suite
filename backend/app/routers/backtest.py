@@ -21,7 +21,15 @@ _ALLOWED_INTERVALS = {"1d", "1wk", "1mo"}
 _PERIOD_DAYS = {"3mo": 63, "6mo": 126, "1y": 252, "2y": 504, "5y": 1260, "10y": 2520}
 # TSMOM's 12-month lookback needs years of warmup, so fetch a longer window
 # than requested and only simulate the tail.
-_TSMOM_FETCH = {"3mo": "5y", "6mo": "5y", "1y": "5y", "2y": "5y", "5y": "10y", "10y": "max", "max": "max"}
+_TSMOM_FETCH = {
+    "3mo": "5y",
+    "6mo": "5y",
+    "1y": "5y",
+    "2y": "5y",
+    "5y": "10y",
+    "10y": "max",
+    "max": "max",
+}
 
 
 @router.get("/strategies")
@@ -30,6 +38,7 @@ async def strategies() -> dict[str, Any]:
 
 
 # ── compare-all: the Backtest tab's engine call ──────────────────────────────
+
 
 @router.get("/compare")
 async def compare(
@@ -55,7 +64,7 @@ async def compare(
 
     from app import computed_cache
 
-    cache_key = f"computed:backtest:v4:{code}:{period}:{int(capital)}"
+    cache_key = f"computed:backtest:v6:{code}:{period}:{int(capital)}"  # v6: monthly Faber gate + full-series signals
     if not force:
         cached = computed_cache.read(cache_key, 6 * 3600)
         if cached is not None:
@@ -78,7 +87,11 @@ async def compare(
     bench_history = None
     if code != backtest_module.BENCHMARK_TICKER:
         bench_history = await asyncio.to_thread(
-            fetch_history, backtest_module.BENCHMARK_TICKER, _TSMOM_FETCH.get(period, period), "1d", force
+            fetch_history,
+            backtest_module.BENCHMARK_TICKER,
+            _TSMOM_FETCH.get(period, period),
+            "1d",
+            force,
         )
 
     result = await asyncio.to_thread(

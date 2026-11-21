@@ -16,8 +16,10 @@ plus the benchmark, sorted ascending by date, with no NaN closes.
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass, field
-from datetime import date, datetime, time as dtime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
+from datetime import time as dtime
 from functools import lru_cache
 from pathlib import Path
 from typing import Protocol, cast
@@ -25,6 +27,8 @@ from typing import Protocol, cast
 import pandas as pd
 
 from .method import DOCS_DIR
+
+log = logging.getLogger(__name__)
 
 # Jakarta is UTC+7 with no daylight saving, so a fixed offset is exact.
 WIB = timezone(timedelta(hours=7))
@@ -47,6 +51,34 @@ def session_is_final(bar_date: date, now: datetime | None = None) -> bool:
     if bar_date > moment.date():
         return False
     return moment.time() >= SESSION_FINAL_AFTER
+
+
+# How many calendar days the bars' last session may lag the wall clock's last
+# completed session before the app stops trusting the tape. The budget absorbs a
+# long weekend and the common single holiday; a full Eid week can overrun it,
+# which fails closed - the app says the tape is old rather than screening on it
+# in silence. `app/feed.py` uses the same budget for the alert's own stale flag.
+DATA_STALE_AFTER_DAYS = 4
+
+
+def expected_last_session(now: datetime | None = None) -> date:
+    """The most recent weekday session the exchange should have finished.
+
+    This is the wall clock's answer to "what session should the bars end on".
+    The benchmark's own calendar cannot answer it: a stale benchmark is the thing
+    being checked, so a freshness test read from it compares equal every time
+    (docs/accuracy-2026-11-14.md #8). A weekday is an expectation, not a fact -
+    a holiday means the exchange held nothing - and `DATA_STALE_AFTER_DAYS` is
+    the budget that absorbs one.
+    """
+    moment = (now or datetime.now(WIB)).astimezone(WIB)
+    expected = moment.date()
+    if moment.time() < SESSION_FINAL_AFTER:
+        expected -= timedelta(days=1)
+    while expected.weekday() >= 5:
+        expected -= timedelta(days=1)
+    return expected
+
 
 BENCHMARK = "^JKSE"
 OHLCV = ["date", "open", "high", "low", "close", "volume"]
@@ -238,8 +270,19 @@ class StudyBars:
         self.manifest_path = self.root / "data" / "meta" / "manifest.json"
 
     def _manifest(self) -> dict:
-        with self.manifest_path.open(encoding="utf-8") as fh:
-            return json.load(fh)
+        """The manifest, read as the provenance it is.
+
+        Failing closed is the point: swallowing an unreadable manifest would
+        fall through to unverified live bars, which is a worse screen, not a
+        safer one. The error names the file so the fix is one glance.
+        """
+        try:
+            with self.manifest_path.open(encoding="utf-8") as fh:
+                return json.load(fh)
+        except (OSError, json.JSONDecodeError) as exc:
+            raise RuntimeError(
+                f"unreadable study manifest ({exc.__class__.__name__}): {self.manifest_path}"
+            ) from exc
 
     def _read(self, entries: dict[str, dict], code: str) -> pd.DataFrame | None:
         """One CSV, resolved against the study root.
@@ -397,11 +440,9 @@ class LiveBars:
 
         bench = None
         try:
-            bench = _clean(
-                pd.DataFrame(fetch_history(BENCHMARK, self.period, "1d", force=True))
-            )
-        except Exception:  # noqa: BLE001
-            pass
+            bench = _clean(pd.DataFrame(fetch_history(BENCHMARK, self.period, "1d", force=True)))
+        except Exception as exc:  # noqa: BLE001 - the screen still runs on the bars
+            log.warning("live benchmark fetch failed: %s", exc)
         return Frames(bars=out, benchmark=bench, source="live:yfinance")
 
 
@@ -417,9 +458,7 @@ class MergedBars:
     The merge is testable without a network: pass a stub for either side.
     """
 
-    def __init__(
-        self, study: BarsSource, live: BarsSource, now: datetime | None = None
-    ) -> None:
+    def __init__(self, study: BarsSource, live: BarsSource, now: datetime | None = None) -> None:
         self.study = study
         self.live = live
         self.now = now
@@ -532,8 +571,8 @@ def default_source() -> BarsSource:
 
         if market_store.available():
             return StoreBars()
-    except Exception:  # noqa: BLE001 - a bad store must not make the app unstartable
-        pass
+    except Exception as exc:  # noqa: BLE001 - a bad store must not make the app unstartable
+        log.warning("market store unusable, falling back: %s", exc)
     study = StudyBars()
     if study.manifest_path.exists():
         return study

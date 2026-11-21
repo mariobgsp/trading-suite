@@ -131,7 +131,11 @@ def _scan_one(ticker: str) -> dict[str, Any] | None:
     breakout = bool(high20 > 0 and close >= high20 * 0.999)
     last_vol = _to_float(volumes.iloc[-1]) or 0.0
     premium = bool(
-        rsi is not None and rsi < 45 and close > vwap * 0.998 and vol_ma20 > 0 and last_vol > 1.2 * vol_ma20
+        rsi is not None
+        and rsi < 45
+        and close > vwap * 0.998
+        and vol_ma20 > 0
+        and last_vol > 1.2 * vol_ma20
     )
     spike_pagi = bool(vol_ma20 > 0 and last_vol >= 2 * vol_ma20 and change_pct > 0)
 
@@ -144,6 +148,13 @@ def _scan_one(ticker: str) -> dict[str, Any] | None:
         "ma_ladder": _ladder(above),
         "d_signal": "PREMIUM" if premium else ("BREAKOUT" if breakout else None),
         "spike_pagi": spike_pagi,
+        # TradingView alert semantics: computed signals are indicator-type,
+        # evaluated server-side on the last close, valid until next session.
+        "kind": "indicator",
+        "trigger": "PREMIUM"
+        if premium
+        else ("BREAKOUT" if breakout else ("SPIKE_PAGI" if spike_pagi else None)),
+        "expires": "next_session",
     }
 
 

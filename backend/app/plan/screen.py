@@ -18,6 +18,7 @@ exactly, including the details that a rewrite usually gets wrong:
 
 from __future__ import annotations
 
+import logging
 import statistics
 import threading
 import time
@@ -46,6 +47,8 @@ from .model import (
     Regime,
     WatchItem,
 )
+
+logger = logging.getLogger(__name__)
 
 # A name with no volatility at all is a halted or degenerate series, and it
 # passes the "quiet" gate for free (0 <= 0). Drop it rather than recommend it.
@@ -76,6 +79,15 @@ ZERO_VOLUME_RUN = 20
 # edge to leave unstated. There is no upper bound worth setting: the point is
 # that every headline renders its own friction, not that some do.
 FRICTION_NOTE_PCT = 0.0
+# ── reversal support and resistance ─────────────────────────────────────────
+# A level is only as real as the number of times price turned there. A pivot
+# high or low needs LEVEL_K sessions on each side, pivots within LEVEL_TOL of
+# the level's anchor are the same level, and each pivot in the cluster is one
+# reversal. Only the trailing LEVEL_LOOKBACK sessions are counted, because a
+# level nobody has tested this year is history, not a level.
+LEVEL_K = 5
+LEVEL_TOL = 0.02
+LEVEL_LOOKBACK = 260
 # ── sizing (docs/21 §8) — what makes a thin name's number real ──────────────
 POSITION_FLOOR_IDR = 2_000_000.0
 POSITION_CAP_IDR = 10_000_000.0
@@ -1179,10 +1191,77 @@ def screen(
     )
 
 
+def support_resistance(
+    frame: pd.DataFrame, as_of: pd.Timestamp
+) -> tuple[float | None, int | None, float | None, int | None]:
+    """Nearest reversal support and resistance, each with its reversal count.
+
+    A support level is a cluster of pivot lows (resistance: pivot highs) within
+    LEVEL_TOL of the cluster's anchor over the trailing LEVEL_LOOKBACK
+    sessions. The count is how many times price reversed there - one per pivot
+    in the cluster - so a level priced at x3 has turned price three times and a
+    level nobody has tested does not appear at all.
+
+    Returns (support, support_reversals, resistance, resistance_reversals);
+    either side can be None when the window is too short, the series never
+    turned, or price sits outside every level.
+    """
+    window = frame[frame["date"] <= as_of].tail(LEVEL_LOOKBACK)
+    if len(window) < 2 * LEVEL_K + 3:
+        return None, None, None, None
+    highs = np.asarray(window["high"], dtype=float)
+    lows = np.asarray(window["low"], dtype=float)
+    close = float(np.asarray(window["close"])[-1])
+    if not (np.isfinite(close) and close > 0):
+        return None, None, None, None
+
+    hi_pivots: list[float] = []
+    lo_pivots: list[float] = []
+    for i in range(LEVEL_K, len(window) - LEVEL_K):
+        seg_hi = highs[i - LEVEL_K : i + LEVEL_K + 1]
+        seg_lo = lows[i - LEVEL_K : i + LEVEL_K + 1]
+        # A pivot is unique in its window: a flat series has no reversals, not
+        # one reversal per bar.
+        if float(highs[i]) == float(seg_hi.max()) and float((seg_hi == highs[i]).sum()) == 1:
+            hi_pivots.append(float(highs[i]))
+        if float(lows[i]) == float(seg_lo.min()) and float((seg_lo == lows[i]).sum()) == 1:
+            lo_pivots.append(float(lows[i]))
+
+    def nearest(pivots: list[float], below: bool) -> tuple[float | None, int | None]:
+        """Cluster pivots into levels, then take the one closest to price.
+
+        A cluster grows while pivots stay within LEVEL_TOL of its anchor (the
+        first pivot that started it), and the level it quotes is the mean of
+        its pivots - the price the cluster actually respected, not its edge.
+        """
+        levels: list[tuple[float, float, int]] = []  # (anchor, sum, count)
+        for price in sorted(pivots):
+            if levels and price <= levels[-1][0] * (1 + LEVEL_TOL):
+                _, total, count = levels[-1]
+                levels[-1] = (levels[-1][0], total + price, count + 1)
+            else:
+                levels.append((price, price, 1))
+        candidates = [
+            (total / count, count)
+            for _anchor, total, count in levels
+            if ((total / count) <= close) == below
+        ]
+        if not candidates:
+            return None, None
+        price, touches = max(candidates) if below else min(candidates)
+        return round(price, 2), touches
+
+    support, support_reversals = nearest(lo_pivots, below=True)
+    resistance, resistance_reversals = nearest(hi_pivots, below=False)
+    return support, support_reversals, resistance, resistance_reversals
+
+
 def scan_rows(
     scored: list[dict[str, object]],
     spec: M.FamilySpec,
     cap_codes: set[str] | frozenset[str] = frozenset(),
+    bars: dict[str, pd.DataFrame] | None = None,
+    as_of: pd.Timestamp | None = None,
 ) -> list[dict[str, object]]:
     """One compact row per tradable name, with the screens it belongs to.
 
@@ -1204,6 +1283,22 @@ def scan_rows(
         ticker = str(record["ticker"])
         if ticker in cap_codes:
             screens.append("capitulation")
+        # Reversal levels come from the same bars the gates read, so a row
+        # cannot cite a level the rest of the chain has never seen. One bad
+        # frame must not sink the scan: its levels read as absent.
+        support = support_touches = resistance = resistance_touches = None
+        if bars is not None and as_of is not None:
+            frame = bars.get(ticker)
+            if frame is not None:
+                try:
+                    (
+                        support,
+                        support_touches,
+                        resistance,
+                        resistance_touches,
+                    ) = support_resistance(frame, as_of)
+                except Exception as exc:  # noqa: BLE001 - see comment above
+                    logger.debug("scan: no levels for %s (%s)", ticker, exc)
         rows.append(
             {
                 "ticker": ticker,
@@ -1221,6 +1316,10 @@ def scan_rows(
                 "conditions_passed": passed,
                 "conditions": conditions,
                 "screens": screens,
+                "support": support,
+                "support_touches": support_touches,
+                "resistance": resistance,
+                "resistance_touches": resistance_touches,
             }
         )
     rows.sort(

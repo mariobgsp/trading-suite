@@ -56,12 +56,17 @@ export default function Method() {
 		<Page>
 			<header className="mb-10">
 				<h1 className="font-display text-[34px] leading-[1.1] tracking-[-0.02em] text-[var(--text)] sm:text-[40px]">
-					The method, and what it measured
+					Cara kerja, dan hasil terukurnya
 				</h1>
 				<p className="mt-3 max-w-[74ch] text-[14px] leading-relaxed text-[var(--text-dim)]">
-					{card.family} × {card.exit_method}. Every rule below is transcribed from the study at{" "}
-					{card.studies_at}, and a test replays the study's own signal code against this app's copy to
-					prove the two still agree.
+					Aturan yang berjalan: {card.family} × {card.exit_method}. Ringkasnya —{" "}
+					<b className="text-[var(--text)]">
+						{pct(e.win_rate, 1)} dari transaksi untung, rata-rata{" "}
+						{e.avg_ret_pct != null ? `+${e.avg_ret_pct.toFixed(2)}%` : "—"} tiap transaksi,
+						dari {idr(e.oos_trades)} transaksi terukur
+					</b>
+					. Setiap aturan di bawah disalin dari studi di {card.studies_at}, dan satu uji
+					menjalankan ulang kode sinyal studi untuk membuktikan keduanya masih sepakat.
 				</p>
 			</header>
 
@@ -170,11 +175,17 @@ export default function Method() {
 				</Section>
 			)}
 
-			<Section
-				id="regime"
-				title="When it trades, and how often that is"
-				subtitle={card.regime_bands.note}
-			>
+			<details id="regime" className="mt-12 scroll-mt-20">
+				<summary className="cursor-pointer text-[15px] font-semibold text-[var(--text)]">
+					Kapan aturannya berdagang, dan seberapa sering
+					<span className="ml-2 text-[11px] font-normal text-[var(--text-ghost)]">(rincian teknis)</span>
+				</summary>
+				<div className="mt-4">
+				<Section
+					id="regime-body"
+					title="Pita pasar dan frekuensinya"
+					subtitle={card.regime_bands.note}
+				>
 				<div className="grid gap-px border border-[var(--border)] bg-[var(--border)] sm:grid-cols-3">
 					{(["capitulation", "sideways", "trending"] as const).map((band) => {
 						const active = band === "trending";
@@ -242,7 +253,9 @@ export default function Method() {
 						</p>
 					</div>
 				)}
-			</Section>
+				</Section>
+				</div>
+			</details>
 
 			<Section
 				id="tradability"
@@ -429,11 +442,17 @@ export default function Method() {
 				</div>
 			</Section>
 
-			<Section
-				id="horizons"
-				title="Horizons: what was measured, and what was refused"
-				subtitle="The study answers the day-trade question with a measurement rather than a shrug. Everything shorter than a swing was either tested and declined, or never tested at all — and both are stated here."
-			>
+			<details id="horizons" className="mt-12 scroll-mt-20">
+				<summary className="cursor-pointer text-[15px] font-semibold text-[var(--text)]">
+					Jangka waktu: yang diukur, dan yang ditolak
+					<span className="ml-2 text-[11px] font-normal text-[var(--text-ghost)]">(rincian teknis)</span>
+				</summary>
+				<div className="mt-4">
+				<Section
+					id="horizons-body"
+					title="Jangka waktu: yang diukur, dan yang ditolak"
+					subtitle="Studi menjawab pertanyaan day-trade dengan pengukuran, bukan dengan mengangkat bahu. Yang lebih pendek dari swing diuji lalu ditolak, atau tidak pernah diuji — keduanya dinyatakan di sini."
+				>
 				<ul className="space-y-px border border-[var(--border)] bg-[var(--border)]">
 					{card.horizons?.map((horizon) => {
 						const evidence = horizon.evidence;
@@ -483,7 +502,9 @@ export default function Method() {
 						);
 					})}
 				</ul>
-			</Section>
+				</Section>
+				</div>
+			</details>
 
 			<Section
 				id="corrected"

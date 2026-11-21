@@ -21,13 +21,13 @@ makes "no trade" an answer rather than an absence of one.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
-from typing import Sequence
 
 from . import citations as C
 from . import method as M
-from .bars import COVERAGE_FLOOR
+from .bars import COVERAGE_FLOOR, DATA_STALE_AFTER_DAYS
 from .model import Candidate, Evidence, Gate, Regime, RegimeFrequency, WatchItem
 
 STATE_ENTER = "ENTER"
@@ -62,15 +62,15 @@ class Blocker:
     unit: str = ""
 
     def as_dict(self) -> dict[str, object]:
-        return dict(
-            key=self.key,
-            label=self.label,
-            severity=self.severity,
-            text=self.text,
-            value=self.value,
-            threshold=self.threshold,
-            unit=self.unit,
-        )
+        return {
+            "key": self.key,
+            "label": self.label,
+            "severity": self.severity,
+            "text": self.text,
+            "value": self.value,
+            "threshold": self.threshold,
+            "unit": self.unit,
+        }
 
 
 @dataclass(frozen=True)
@@ -83,7 +83,7 @@ class Check:
     detail: str
 
     def as_dict(self) -> dict[str, object]:
-        return dict(key=self.key, label=self.label, ok=self.ok, detail=self.detail)
+        return {"key": self.key, "label": self.label, "ok": self.ok, "detail": self.detail}
 
 
 @dataclass(frozen=True)
@@ -108,25 +108,23 @@ class Verdict:
         return self.state == STATE_ENTER
 
     def as_dict(self) -> dict[str, object]:
-        return dict(
-            state=self.state,
-            action=self.action,
-            headline=self.headline,
-            detail=self.detail,
-            primary_blocker=(
-                self.primary_blocker.as_dict() if self.primary_blocker else None
-            ),
-            blockers=[b.as_dict() for b in self.blockers],
-            change_needed=self.change_needed,
-            recheck_on=self.recheck_on.isoformat(),
-            recheck_basis=self.recheck_basis,
-            integrity=[c.as_dict() for c in self.integrity],
-            sound=self.sound,
-            buys=self.buys,
-            stand_down_case=self.stand_down_case,
-            place_by=self.place_by,
-            place_note=self.place_note,
-        )
+        return {
+            "state": self.state,
+            "action": self.action,
+            "headline": self.headline,
+            "detail": self.detail,
+            "primary_blocker": self.primary_blocker.as_dict() if self.primary_blocker else None,
+            "blockers": [b.as_dict() for b in self.blockers],
+            "change_needed": self.change_needed,
+            "recheck_on": self.recheck_on.isoformat(),
+            "recheck_basis": self.recheck_basis,
+            "integrity": [c.as_dict() for c in self.integrity],
+            "sound": self.sound,
+            "buys": self.buys,
+            "stand_down_case": self.stand_down_case,
+            "place_by": self.place_by,
+            "place_note": self.place_note,
+        }
 
 
 # ── data integrity, fail closed ─────────────────────────────────────────────
@@ -138,9 +136,32 @@ def integrity(
     names_on_session: int,
     phantom_dropped: int,
     evidence_measured: bool,
+    expected_session: date | None = None,
 ) -> tuple[Check, ...]:
-    """Every check a ticket depends on, in the order that fails fastest."""
+    """Every check a ticket depends on, in the order that fails fastest.
+
+    `expected_session` is the wall clock's last completed session. Without it,
+    `bars_current` can only compare the bars against the benchmark's own
+    calendar - and a stale benchmark always compares equal to itself, so the
+    check stayed green on a five-session-old tape (docs/accuracy-2026-11-14.md
+    #8). Replays pass `None`: a session asked for by date is old by design.
+    """
     coverage = (names_on_session / universe_size) if universe_size else 0.0
+    bars_current_ok = bars_session is not None and bars_session == exchange_session
+    bars_current_detail = (
+        f"Bars end {bars_session}; the exchange's last session is {exchange_session}."
+    )
+    if bars_current_ok and expected_session is not None and bars_session is not None:
+        gap = (expected_session - bars_session).days
+        if gap > DATA_STALE_AFTER_DAYS:
+            bars_current_ok = False
+            bars_current_detail = (
+                f"Bars end {bars_session}, but by the wall clock the last completed "
+                f"session is {expected_session} - the tape is {gap} calendar days "
+                f"behind, past the {DATA_STALE_AFTER_DAYS}-day weekend and holiday "
+                "budget. Every reading below is dated, not live: refresh the bars "
+                "before acting on any of it."
+            )
     return (
         Check(
             "exchange_calendar",
@@ -155,15 +176,14 @@ def integrity(
         Check(
             "bars_current",
             "Bars reach the last exchange session",
-            bars_session is not None and bars_session == exchange_session,
-            f"Bars end {bars_session}; the exchange's last session is {exchange_session}.",
+            bars_current_ok,
+            bars_current_detail,
         ),
         Check(
             "universe",
             "The universe is big enough to be a market reading",
             universe_size >= MIN_UNIVERSE,
-            f"{universe_size} names traded above their own 200-day average "
-            f"(floor {MIN_UNIVERSE}).",
+            f"{universe_size} names traded above their own 200-day average (floor {MIN_UNIVERSE}).",
         ),
         Check(
             "coverage",
@@ -262,9 +282,7 @@ _STAND_DOWN_LABELS = (
 )
 
 
-def stand_down_case(
-    regime: Regime, frequency: RegimeFrequency | None = None
-) -> dict[str, object]:
+def stand_down_case(regime: Regime, frequency: RegimeFrequency | None = None) -> dict[str, object]:
     """The measured argument for not trading, as numbers rather than a warning."""
     cited = C.value
     book = M.book_with_sideways()
@@ -324,6 +342,7 @@ def build(
     next_session: date,
     next_session_basis: str,
     frequency: RegimeFrequency | None = None,
+    expected_session: date | None = None,
 ) -> Verdict:
     """Decide the session's verdict. Pure: everything it needs is an argument."""
     checks = integrity(
@@ -333,6 +352,7 @@ def build(
         names_on_session=names_on_session,
         phantom_dropped=phantom_dropped,
         evidence_measured=bool(evidence.measured),
+        expected_session=expected_session,
     )
     failed = [c for c in checks if not c.ok]
     blockers: list[Blocker] = list(_market_blockers(regime, required_gates))
@@ -355,8 +375,7 @@ def build(
             ),
             blockers=tuple(blockers),
             change_needed=(
-                "Repair the failed check, then refresh. Nothing here is tradeable "
-                "until it passes."
+                "Repair the failed check, then refresh. Nothing here is tradeable until it passes."
             ),
             recheck_on=next_session,
             recheck_basis=next_session_basis,
@@ -387,9 +406,7 @@ def build(
             ),
             primary_blocker=blockers[0] if blockers else None,
             blockers=tuple(blockers),
-            change_needed=_change_needed(
-                regime, STATE_NO_TRADE, candidates, watchlist
-            ),
+            change_needed=_change_needed(regime, STATE_NO_TRADE, candidates, watchlist),
             recheck_on=next_session,
             recheck_basis=next_session_basis,
             integrity=checks,
@@ -420,9 +437,7 @@ def build(
                 ),
                 primary_blocker=size_blocker,
                 blockers=tuple(blockers) + (size_blocker,),
-                change_needed=_change_needed(
-                    regime, STATE_NO_TRADE, candidates, watchlist
-                ),
+                change_needed=_change_needed(regime, STATE_NO_TRADE, candidates, watchlist),
                 recheck_on=next_session,
                 recheck_basis=next_session_basis,
                 integrity=checks,
@@ -507,8 +522,6 @@ def _change_needed(
 
 
 __all__ = [
-    "Blocker",
-    "Check",
     "MIN_UNIVERSE",
     "PLACE_BY",
     "PLACE_NOTE",
@@ -516,6 +529,8 @@ __all__ = [
     "STATE_ENTER",
     "STATE_NO_TRADE",
     "STATE_WAIT",
+    "Blocker",
+    "Check",
     "Verdict",
     "build",
     "integrity",

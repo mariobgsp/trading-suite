@@ -130,31 +130,31 @@ export default function Flow() {
 		<Page>
 			<header className="mb-8">
 				<p className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--text-ghost)]">
-					Research panel
+					Riset
 				</p>
 				<h1 className="mt-2 font-display text-[34px] leading-none tracking-[-0.02em] text-[var(--text)] sm:text-[40px]">
-					Flow pressure
+					Riset teknikal
 				</h1>
 				<p className="mt-3 max-w-[78ch] text-[14px] leading-relaxed text-[var(--text-dim)]">
-					A bandarmology-style readout: technicals, a 5-day value, and a
-					flow-pressure direction for a bounded universe. The flow line is a{" "}
-					<strong className="text-[var(--text)]">transparent proxy</strong>, not
-					Bandarmetrics LPM, and it is not used in tonight&rsquo;s plan or verdict.
+					Panel lanjutan untuk membaca tekanan arus dana: teknikal, nilai 5 hari,
+					dan arah tekanan untuk sekelompok saham terbatas. Garis arus di sini
+					adalah <strong className="text-[var(--text)]">proksi transparan</strong> —
+					bukan data broker resmi, bukan Bandarmetrics LPM — dan tidak dipakai
+					dalam keputusan halaman Hari ini.
 				</p>
 				<div className="mt-4 border border-[var(--border)] border-l-[3px] border-l-[var(--gold)] bg-[var(--panel)] p-4 text-[12px] leading-relaxed text-[var(--text-dim)]">
 					<p>
-						<strong className="text-[var(--text)]">What this is not.</strong> The
-						vendor LPM formula and its broker data are proprietary. The score here
-						uses Chaikin Money Flow plus the current IDX foreign-flow print (and
-						Stockbit broker rows only on explicit detail requests). Its levels are
-						not comparable to the vendor&rsquo;s line. Read the{" "}
+						<strong className="text-[var(--text)]">Yang bukan ini.</strong> Rumus LPM
+						vendor dan datanya milik vendor. Skor di sini memakai Chaikin Money
+						Flow plus cetakan arus asing IDX terkini (baris broker Stockbit hanya
+						saat diminta). Levelnya tidak sebanding dengan garis vendor. Baca{" "}
 						<Link
 							to="/method"
 							className="underline underline-offset-2 hover:text-[var(--text)]"
 						>
-							method page
+							halaman metode
 						</Link>{" "}
-						for why the plan does not trade a flow proxy.
+						untuk alasan rencana tidak memperdagangkan proksi arus dana.
 					</p>
 				</div>
 			</header>

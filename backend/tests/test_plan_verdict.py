@@ -13,6 +13,7 @@ every trading signal.
 from __future__ import annotations
 
 from datetime import date
+from typing import Any
 
 import pytest
 
@@ -100,21 +101,21 @@ def watch() -> WatchItem:
 
 
 def build(**overrides: object) -> V.Verdict:
-    base: dict[str, object] = dict(
-        regime=regime(),
-        candidates=[],
-        watchlist=[],
-        required_gates=GATES,
-        evidence=M.corrected_evidence(),
-        bars_session=SESSION,
-        exchange_session=SESSION,
-        universe_size=420,
-        names_on_session=400,
-        phantom_dropped=0,
-        next_session=NEXT,
-        next_session_basis="exchange_calendar",
-        frequency=None,
-    )
+    base: dict[str, object] = {
+        "regime": regime(),
+        "candidates": [],
+        "watchlist": [],
+        "required_gates": GATES,
+        "evidence": M.corrected_evidence(),
+        "bars_session": SESSION,
+        "exchange_session": SESSION,
+        "universe_size": 420,
+        "names_on_session": 400,
+        "phantom_dropped": 0,
+        "next_session": NEXT,
+        "next_session_basis": "exchange_calendar",
+        "frequency": None,
+    }
     base.update(overrides)
     return V.build(**base)  # type: ignore[arg-type]
 
@@ -201,10 +202,47 @@ def test_data_unsafe_beats_a_shut_market_gate():
     assert verdict.state == V.STATE_DATA_UNSAFE
 
 
+# ── the wall clock owns freshness, not the benchmark ───────────────────────
+def test_a_tape_behind_the_wall_clock_is_data_unsafe():
+    """docs/accuracy-2026-11-14.md #8: a stale benchmark always compares
+    equal to itself, so bars_current must also ask the wall clock."""
+    verdict = build(candidates=[candidate()], expected_session=date(2026, 10, 20))
+    assert verdict.state == V.STATE_DATA_UNSAFE
+    assert verdict.sound is False
+    assert verdict.primary_blocker is not None
+    assert verdict.primary_blocker.key == "bars_current"
+    assert "wall clock" in verdict.primary_blocker.text
+    assert "11 calendar days" in verdict.primary_blocker.text
+    failed = {check.key for check in verdict.integrity if not check.ok}
+    assert failed == {"bars_current"}, "only the freshness leg fails"
+
+
+def test_a_tape_within_the_holiday_budget_still_enters():
+    """Friday bars read the following Tuesday: a Monday holiday explains the
+    whole gap, so the budget (4 days) must not fail the check."""
+    verdict = build(candidates=[candidate()], expected_session=date(2026, 10, 13))
+    assert verdict.state == V.STATE_ENTER
+    assert verdict.sound is True
+    assert all(check.ok for check in verdict.integrity)
+
+
+def test_a_fresh_tape_anchored_to_the_wall_clock_still_enters():
+    verdict = build(candidates=[candidate()], expected_session=NEXT)
+    assert verdict.state == V.STATE_ENTER
+    assert verdict.sound is True
+
+
+def test_a_replay_passes_no_anchor_and_stays_silent():
+    """`?as_of=` asks for an old session on purpose; no anchor, no staleness."""
+    verdict = build(bars_session=date(2026, 9, 4), exchange_session=date(2026, 9, 4))
+    bars_current = {c.key: c for c in verdict.integrity}["bars_current"]
+    assert bars_current.ok is True
+
+
 # ── the stand-down case ─────────────────────────────────────────────────────
 def test_the_stand_down_case_carries_the_measured_numbers():
     verdict = build(regime=regime("sideways", breadth=0.41))
-    case = verdict.stand_down_case
+    case: dict[str, Any] = verdict.stand_down_case
     assert case["band"] == "sideways"
     assert case["sideways"]["win_rate"] == pytest.approx(0.5741, abs=1e-4)
     assert case["sideways"]["avg_ret_pct"] == pytest.approx(-2.11, abs=0.01)
@@ -220,7 +258,7 @@ def test_the_stand_down_case_carries_the_measured_numbers():
 
 def test_the_book_comparison_is_the_argument_for_flat():
     """Same screen, same period, ten slots: with the flat band in it loses."""
-    book = M.book_with_sideways()
+    book: dict[str, Any] = M.book_with_sideways()
     assert book["trend_only"]["available"] is True
     assert book["with_sideways"]["available"] is True
     assert book["slots"] == 10

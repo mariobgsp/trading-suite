@@ -100,6 +100,35 @@ export const compareApi = {
 	},
 };
 
+/** One pattern strategy's run on the Deep Dive's trailing-year window. */
+export interface PatternRun {
+	label: string;
+	stats?: Partial<StrategyStats>;
+	error?: string | null;
+	recent_trades?: unknown[];
+}
+
+export interface PatternAnalysis {
+	ticker: string;
+	available: boolean;
+	bars: number;
+	fee_note: string;
+	strategies: Record<string, PatternRun>;
+}
+
+const PATTERN_TTL = 10 * 60_000;
+
+export const analysisApi = {
+	/** The per-name pattern backtests the Deep Dive panel renders. */
+	analysis: (ticker: string, force = false) => {
+		const code = encodeURIComponent(ticker.trim().toUpperCase());
+		const extra = force ? "?force=1" : "";
+		return api.getCached<PatternAnalysis>(`/api/analysis/backtest/${code}${extra}`, {
+			ttl: PATTERN_TTL,
+		});
+	},
+};
+
 /** Strategy rows with a valid stats block, sorted by total return. */
 export function rankedRows(result: CompareResult | null): StrategyRow[] {
 	if (!result) return [];

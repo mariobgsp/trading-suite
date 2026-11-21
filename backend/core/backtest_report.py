@@ -49,6 +49,28 @@ class ReportCard:
     start_date: str = ""
     end_date: str = ""
     total_days: int = 0
+    # TradingView strategy-tester parity: same names Pine reports use, so a
+    # Pine backtest via MCP diffs 1:1 instead of by eyeballing.
+    net_profit: float = 0.0
+    exposure_pct: float | None = None
+    buy_hold_return_pct: float | None = None
+
+    def to_strategy_tester(self) -> dict[str, object]:
+        """Pine strategy-tester shaped dict. Unknowns stay None, never invented."""
+        return {
+            "net_profit": round(self.net_profit, 2),
+            "total_trades": self.total_trades,
+            "percent_profitable": round(self.win_rate, 2),
+            "profit_factor": self.profit_factor,
+            "max_drawdown_pct": self.max_drawdown_pct,
+            "avg_trade": round(float(self.expected_value), 2),
+            "avg_win": round(float(self.avg_win), 2),
+            "avg_loss": round(float(self.avg_loss), 2),
+            "sharpe_ratio": self.sharpe_ratio,
+            "exposure_pct": self.exposure_pct,
+            "buy_hold_return_pct": self.buy_hold_return_pct,
+            "total_return_pct": self.total_return_pct,
+        }
 
     # Flags
     drawdown_flag: bool = False  # True if MDD > threshold
@@ -62,6 +84,7 @@ def generate_report_card(
     start_date: str = "",
     end_date: str = "",
     total_days: int = 0,
+    buy_hold_return_pct: float | None = None,
 ) -> ReportCard:
     """
     Generate a performance report card from backtest trades.
@@ -159,6 +182,8 @@ def generate_report_card(
     card.total_return_pct = round(
         ((card.final_equity / initial_capital) - 1.0) * 100.0, 2
     )
+    card.net_profit = round(card.final_equity - initial_capital, 2)
+    card.buy_hold_return_pct = buy_hold_return_pct
 
     return card
 

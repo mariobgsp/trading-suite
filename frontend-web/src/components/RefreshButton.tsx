@@ -80,19 +80,19 @@ export default function RefreshButton() {
 			: 0;
 	const label = running
 		? job && job.names_total > 0
-			? `${job.names_checked}/${job.names_total}`
-			: "starting…"
+			? `Memperbarui ${job.names_checked}/${job.names_total}`
+			: "memulai…"
 		: job?.state === "done"
-			? `screened ${job.session_after ?? ""}`
-			: "Refresh data";
+			? `selesai · ${job.session_after ?? ""}`
+			: "Perbarui data";
 
 	const title = running
-		? "Pulling the latest daily bars. Nothing is screened until the analysis is re-run."
+		? "Mengunduh harga harian terbaru. Belum ada yang dihitung ulang sampai analisis selesai."
 		: job?.state === "done"
-			? `Screened ${job.session_after} from ${job.bars_basis}${
-					job.live_appended ? `, ${job.live_appended} bars appended` : ""
-				}${job.degraded ? `, ${job.names_failed} names failed` : ""}.`
-			: "Pull the latest daily bars and re-run the analysis on them.";
+			? `Analisis selesai untuk sesi ${job.session_after} dari ${job.bars_basis}${
+					job.live_appended ? `, ${job.live_appended} baris baru ditambahkan` : ""
+				}${job.degraded ? `, ${job.names_failed} saham gagal diperbarui` : ""}.`
+			: "Tarik harga harian terbaru lalu hitung ulang analisisnya.";
 
 	return (
 		<div className="flex items-center gap-2">
@@ -118,22 +118,22 @@ export default function RefreshButton() {
 					type="button"
 					onClick={() => void planApi.cancelRefresh(job.id)}
 					className="font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--text-ghost)] hover:text-[var(--text)]"
-					title="Stop after the name being fetched."
+					title="Berhenti setelah saham yang sedang diunduh selesai."
 				>
-					stop
+					hentikan
 				</button>
 			) : null}
 			{!running && job?.degraded ? (
 				<span
 					className="font-mono text-[10px] text-[var(--gold)]"
-					title={`${job.names_failed} of ${job.names_total} names could not be refreshed: ${job.failed_sample.join(", ")}`}
+					title={`${job.names_failed} dari ${job.names_total} saham tidak bisa diperbarui: ${job.failed_sample.join(", ")}`}
 				>
-					{job.names_failed} failed
+					{job.names_failed} gagal
 				</span>
 			) : null}
 			{error ? (
 				<span className="font-mono text-[10px] text-[var(--down)]" title={error}>
-					refresh failed
+					gagal memperbarui
 				</span>
 			) : null}
 		</div>

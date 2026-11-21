@@ -18,8 +18,10 @@ from app.plan import plan_payload
 # the ranked rest stay watchlist.
 MAX_ENTRIES = 5
 
-# A plan older than this many days is stale (long weekend + holidays budget).
-STALE_AFTER_DAYS = 4
+# A plan older than this many days is stale. The budget lives beside the wall-clock
+# anchor it belongs to (plan/bars.py): one number for "how old may a tape be",
+# shared by the verdict's freshness check and this feed's own stale flag.
+from app.plan.bars import DATA_STALE_AFTER_DAYS as STALE_AFTER_DAYS
 
 _REGIME_KEYS = ("band", "action", "breadth")
 

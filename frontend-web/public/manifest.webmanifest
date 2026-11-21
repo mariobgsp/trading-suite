@@ -1,7 +1,7 @@
 {
-  "name": "Trading Suite",
+  "name": "Trading Suite — pasar dan saham IDX",
   "short_name": "Trading",
-  "description": "IDX scanner, plan and backtest desk.",
+  "description": "Kondisi pasar hari ini, cari dan periksa saham, uji strategi — riset IDX dalam bahasa sederhana.",
   "id": "/",
   "start_url": "/",
   "scope": "/",

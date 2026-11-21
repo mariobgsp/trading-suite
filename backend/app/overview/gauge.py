@@ -28,6 +28,24 @@ BANDS = (
     (100.1, "extreme_greed", "Extreme greed"),
 )
 
+# TradingView-style 5-step technical rating mapped from the 0-100 value.
+# Same vocabulary as app.screener analyze_single (STRONG BUY .. STRONG SELL)
+# so the gauge, the screener, and a Pine cross-check speak one language.
+RATING_BANDS = (
+    (20.0, "STRONG_SELL"),
+    (40.0, "SELL"),
+    (60.0, "NEUTRAL"),
+    (80.0, "BUY"),
+    (100.1, "STRONG_BUY"),
+)
+
+
+def _rating(value: float) -> str:
+    for ceiling, rating in RATING_BANDS:
+        if value < ceiling or ceiling >= 100.0:
+            return rating
+    return "NEUTRAL"
+
 
 def _clamp(value: float, low: float = 0.0, high: float = 100.0) -> float:
     return max(low, min(high, value))
@@ -50,7 +68,7 @@ def _band(value: float) -> tuple[str, str]:
     return "neutral", "Neutral"
 
 
-def build(summary: dict[str, Any]) -> dict[str, Any]:
+def build(summary: dict[str, Any], tf_values: dict[str, float] | None = None) -> dict[str, Any]:
     high = float(summary.get("near_52w_high") or 0)
     low = float(summary.get("near_52w_low") or 0)
     balance = ((high - low) / (high + low)) if (high + low) else 0.0
@@ -112,10 +130,18 @@ def build(summary: dict[str, Any]) -> dict[str, Any]:
         component["score"] = round(float(component["score"]), 1)
     value = round(sum(component["score"] * component["weight"] for component in components), 1)
     band_key, band_label = _band(value)
+    timeframes = None
+    if tf_values:
+        timeframes = {
+            tf: {"value": round(float(v), 1), "rating": _rating(float(v))}
+            for tf, v in tf_values.items()
+        }
     return {
         "value": value,
         "band": band_key,
         "band_label": band_label,
+        "rating": _rating(value),
+        "timeframes": timeframes,
         "components": components,
         "weights": dict(WEIGHTS),
         "note": (

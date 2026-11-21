@@ -110,20 +110,12 @@ export function Section({
  * loudest, and it is the backend that withholds the tickets: a screen that says
  * "buy" on a broken bar source is worse than one that says nothing.
  */
+import { verdictCopy } from "@/lib/present";
+
 export function VerdictHero({ plan }: { plan: Plan }) {
 	const v = plan.verdict;
-	const tone =
-		v.state === "ENTER"
-			? "var(--up)"
-			: v.state === "DATA_UNSAFE"
-				? "var(--down)"
-				: "var(--gold)";
-	const word: Record<string, string> = {
-		ENTER: "Enter",
-		WAIT: "Wait",
-		NO_TRADE: "No trade",
-		DATA_UNSAFE: "Data unsafe",
-	};
+	const copy = verdictCopy(v.state);
+	const tone = copy.tone;
 	return (
 		<section
 			className="relative overflow-hidden border border-[var(--border)] bg-[var(--panel)]"
@@ -133,7 +125,7 @@ export function VerdictHero({ plan }: { plan: Plan }) {
 			<div className="flex flex-col gap-6 p-5 sm:p-7 lg:flex-row lg:items-start lg:justify-between lg:gap-10">
 				<div className="min-w-0">
 					<p className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--text-ghost)]">
-						{plan.session_label} · plan for {plan.horizon}
+						Data per {plan.session_label} · rencana untuk {plan.horizon}
 					</p>
 					<div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
 						<span
@@ -145,48 +137,56 @@ export function VerdictHero({ plan }: { plan: Plan }) {
 							className="font-display text-[30px] leading-none tracking-[-0.01em] sm:text-[38px]"
 							style={{ color: tone }}
 						>
-							{word[v.state] ?? v.state}
+							{copy.title}
 						</span>
 						<span className="font-mono text-[11px] uppercase tracking-[0.14em] text-[var(--text-ghost)]">
 							{v.state}
 						</span>
 					</div>
 					<p className="mt-3 max-w-[64ch] text-[15px] leading-relaxed text-[var(--text)]">
-						{v.headline}
-					</p>
-					<p className="mt-2 max-w-[64ch] text-[13px] leading-relaxed text-[var(--text-dim)]">
-						{v.detail}
+						{copy.novice}
 					</p>
 					<div className="mt-4 border-l-2 pl-3" style={{ borderColor: tone }}>
-						<p className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--text-faint)]">
-							Do this
+						<p className="text-[10px] uppercase tracking-[0.14em] text-[var(--text-faint)]">
+							Yang perlu dilakukan
 						</p>
 						<p className="mt-1 max-w-[64ch] text-[13px] leading-relaxed text-[var(--text)]">
-							{v.action}
+							{copy.action}
 						</p>
 					</div>
-					<p className="mt-3 max-w-[64ch] text-[12px] leading-relaxed text-[var(--text-faint)]">
-						<span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--text-ghost)]">
-							What would change it ·{" "}
-						</span>
-						{v.change_needed}
-					</p>
-					<p className="mt-3 font-mono text-[11px] leading-relaxed text-[var(--text-ghost)]">
-						{idr(plan.regime.universe_size)} names above their 200-day average · breadth{" "}
-						{pct(plan.regime.breadth, 0)}
-						{plan.regime.index_close != null ? ` · IHSG ${idr(plan.regime.index_close)}` : ""}
-						<br />
-						Look again {v.recheck_on} ·{" "}
-						{v.recheck_basis === "exchange_calendar"
-							? "from the exchange calendar"
-							: "next weekday, holiday unverified"}
-					</p>
 					{v.state === "ENTER" && (
 						<p className="mt-3 max-w-[64ch] text-[12px] leading-relaxed text-[var(--text-dim)]">
-							Order by <span className="font-mono text-[var(--text)]">{v.place_by}</span> WIB.{" "}
+							Pesan sebelum pukul <span className="font-mono text-[var(--text)]">{v.place_by}</span> WIB.{" "}
 							{v.place_note}
 						</p>
 					)}
+					<details className="mt-4">
+						<summary className="cursor-pointer text-[12px] text-[var(--text-faint)] hover:text-[var(--text-dim)]">
+							Lihat alasan teknis dan angka lengkapnya
+						</summary>
+						<p className="mt-2 max-w-[64ch] text-[13px] leading-relaxed text-[var(--text-dim)]">
+							{v.headline}
+						</p>
+						<p className="mt-1 max-w-[64ch] text-[12px] leading-relaxed text-[var(--text-faint)]">
+							{v.detail}
+						</p>
+						<p className="mt-2 max-w-[64ch] text-[12px] leading-relaxed text-[var(--text-faint)]">
+							<span className="text-[var(--text-dim)]">Saran teknis: </span>{v.action}
+						</p>
+						<p className="mt-1 max-w-[64ch] text-[12px] leading-relaxed text-[var(--text-faint)]">
+							<span className="text-[var(--text-dim)]">Yang akan mengubah keputusan: </span>{v.change_needed}
+						</p>
+						<p className="mt-2 font-mono text-[11px] leading-relaxed text-[var(--text-ghost)]">
+							{idr(plan.regime.universe_size)} saham di atas rata-rata 200 hari miliknya · breadth{" "}
+							{pct(plan.regime.breadth, 0)}
+							{plan.regime.index_close != null ? ` · IHSG ${idr(plan.regime.index_close)}` : ""}
+							<br />
+							Dicek lagi {v.recheck_on} ·{" "}
+							{v.recheck_basis === "exchange_calendar"
+								? "dari kalender bursa"
+								: "hari kerja berikutnya, hari libur belum diverifikasi"}
+						</p>
+					</details>
 					{v.state === "DATA_UNSAFE" && <IntegrityList checks={v.integrity} />}
 				</div>
 				<div className="w-full shrink-0 space-y-3 lg:w-[330px]">

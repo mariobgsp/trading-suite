@@ -35,6 +35,12 @@ export interface ScanRow {
 	conditions_passed: number;
 	conditions: ScanConditions;
 	screens: ScanScreenKey[];
+	/** Nearest reversal level under/over price, with how many times price
+	 * turned there. Null when the window is too short to confirm any pivot. */
+	support: number | null;
+	support_touches: number | null;
+	resistance: number | null;
+	resistance_touches: number | null;
 }
 
 export interface ScanMeasured {
@@ -80,6 +86,15 @@ export interface IndexContext {
 	share_beating_index: number | null;
 }
 
+export interface ScanFreshness {
+	/** The wall clock's read on the tape, computed per request — never cached. */
+	bars_session: string;
+	expected_session: string;
+	gap_days: number;
+	budget_days: number;
+	stale: boolean;
+}
+
 export interface ScanUniverse {
 	codes: number;
 	tradable: number;
@@ -107,6 +122,7 @@ export interface ScanPayload {
 	index_context: IndexContext | null;
 	screens: ScanScreen[];
 	rows: ScanRow[];
+	freshness?: ScanFreshness;
 }
 
 const SCAN_TTL = 5 * 60_000;

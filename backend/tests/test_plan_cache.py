@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from typing import Any
 
 from app import computed_cache
@@ -70,3 +71,40 @@ def test_invalidate_drops_the_persisted_plan(monkeypatch):
     finally:
         planner.set_source(*previous)
         computed_cache.clear("plan")
+
+
+def test_the_scanner_cache_never_owns_the_clock(monkeypatch):
+    """Freshness is the wall clock's field, recomputed on every request.
+
+    A payload cached at 06:00 can still be served at 22:00, and the verdict's
+    own freshness check only re-runs on recompute - so the scanner's freshness
+    line is merged per request. A stale tape must be able to age *inside* a
+    cache hit (docs/accuracy-2026-11-14.md #8).
+    """
+    computed_cache.clear("scan")
+    previous = planner._active
+    calls: list[int] = []
+
+    def fake_scan(as_of=None):
+        calls.append(1)
+        return {"as_of": "2026-11-06", "rows": []}
+
+    monkeypatch.setattr(planner, "_scan", fake_scan)
+    monkeypatch.setattr(planner, "expected_last_session", lambda now=None: date(2026, 11, 6))
+    try:
+        planner.set_source(_StubSource("fresh-tape"), "clock-test")
+        first = planner.scan_payload()
+        assert first["freshness"]["stale"] is False
+        assert first["freshness"]["gap_days"] == 0
+        assert first["freshness"]["bars_session"] == "2026-11-06"
+
+        # The wall clock moves; the payload stays cached. The scan must not
+        # run again, while the freshness line must move with the clock.
+        monkeypatch.setattr(planner, "expected_last_session", lambda now=None: date(2026, 11, 17))
+        second = planner.scan_payload()
+        assert len(calls) == 1, "the second read must come from the cache"
+        assert second["freshness"]["stale"] is True
+        assert second["freshness"]["gap_days"] == 11
+    finally:
+        planner.set_source(*previous)
+        computed_cache.clear("scan")

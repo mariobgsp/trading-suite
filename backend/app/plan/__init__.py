@@ -21,7 +21,7 @@ import dataclasses
 import logging
 import os
 import threading
-from datetime import date
+from datetime import date, datetime
 from typing import cast
 
 import pandas as pd
@@ -34,7 +34,14 @@ from . import method as M
 from . import regimes as R
 from . import screen as S
 from . import verdict as V
-from .bars import COVERAGE_FLOOR, BarsSource, Frames, default_source
+from .bars import (
+    COVERAGE_FLOOR,
+    DATA_STALE_AFTER_DAYS,
+    BarsSource,
+    Frames,
+    default_source,
+    expected_last_session,
+)
 from .model import Candidate, Evidence, Gate, Plan, Regime, WatchItem
 
 log = logging.getLogger(__name__)
@@ -70,7 +77,7 @@ _active: tuple[BarsSource, str] = (default_source(), "default")
 # raised). Both leave the in-memory plan path intact.
 PLAN_CACHE_VERSION = "v2"
 PLAN_CACHE_TTL = int(os.getenv("PLAN_CACHE_TTL_SECONDS", str(8 * 86400)))
-SCAN_CACHE_VERSION = "v2"
+SCAN_CACHE_VERSION = "v3"  # v3: rows carry counted reversal support/resistance
 
 
 def _source_stamp(source: BarsSource, label: str) -> str:
@@ -78,8 +85,8 @@ def _source_stamp(source: BarsSource, label: str) -> str:
     if callable(stamp):
         try:
             return str(stamp())
-        except Exception:  # noqa: BLE001 - a failed stamp must not break the plan
-            pass
+        except Exception as exc:  # noqa: BLE001 - a failed stamp must not break the plan
+            log.warning("source %s has no readable stamp, using label: %s", label, exc)
     return label
 
 
@@ -153,21 +160,42 @@ def scan_cache_key(as_of: date | None = None) -> str:
     )
 
 
+def _freshness(bars_session: date, now: datetime | None = None) -> dict[str, object]:
+    """The wall clock's read on the tape (docs/accuracy-2026-11-14.md #8).
+
+    Computed per request, never persisted: a cached clock reading is exactly
+    the failure class this field exists to catch - a screen that keeps serving
+    the same old session with every internal check green.
+    """
+    expected = expected_last_session(now)
+    gap = (expected - bars_session).days
+    return {
+        "bars_session": bars_session.isoformat(),
+        "expected_session": expected.isoformat(),
+        "gap_days": gap,
+        "budget_days": DATA_STALE_AFTER_DAYS,
+        "stale": gap > DATA_STALE_AFTER_DAYS,
+    }
+
+
 def scan_payload(as_of: date | None = None) -> dict:
     """Every tradable name at one session, with the measured filters.
 
     Persisted like the plan: the universe pass is not free, and the scanner is
     the first page a reader opens. The cache key carries the data stamp and the
     universe thresholds, so a weekly sync or a floor change is not shadowed by
-    an old artifact.
+    an old artifact. Freshness is the one field the cache must never own, so
+    it is read from the wall clock on every request and merged in here.
     """
     key = scan_cache_key(as_of)
     cached = computed_cache.read(key, PLAN_CACHE_TTL)
     if cached is not None:
         payload, _meta = cached
-        return payload
-    payload = _scan(as_of)
-    computed_cache.write(key, payload)
+    else:
+        payload = _scan(as_of)
+        computed_cache.write(key, payload)
+    payload = dict(payload)
+    payload["freshness"] = _freshness(date.fromisoformat(str(payload["as_of"])))
     return payload
 
 
@@ -193,7 +221,7 @@ def _scan(as_of: date | None = None) -> dict:
         else ()
     )
     cap_codes = {item.ticker for item in cap_items}
-    rows = S.scan_rows(scored, spec, cap_codes)
+    rows = S.scan_rows(scored, spec, cap_codes, bars=frames.bars, as_of=session)
     screens = S.screen_registry(
         regime,
         rows,
@@ -260,8 +288,10 @@ def plan(as_of: date | None = None, exit_method: str | None = None) -> Plan:
     if session is None or pd.isna(session):
         raise RuntimeError(f"no benchmark bars available from {label}")
     session = cast(pd.Timestamp, session)
+    replayed = False
     if as_of is not None and pd.Timestamp(as_of) < session:
         session = cast(pd.Timestamp, pd.Timestamp(as_of))
+        replayed = True
 
     key = (label, session.date().isoformat(), exit_name, spec.family)
     with _lock:
@@ -300,6 +330,11 @@ def plan(as_of: date | None = None, exit_method: str | None = None) -> Plan:
         # exchange calendar read is the last session at or before it - otherwise
         # every ?as_of= replay would fail the bars-current check by construction.
         exchange_session=(next((d.date() for d in reversed(calendar) if d <= session), None)),
+        # The wall clock's own anchor: the benchmark's calendar cannot judge the
+        # benchmark, because a stale frame always compares equal to itself
+        # (docs/accuracy-2026-11-14.md #8). A replay is old by design and passes
+        # None, so the staleness leg of bars_current stays off for it.
+        expected_session=None if replayed else expected_last_session(),
         universe_size=regime.universe_size,
         names_on_session=frames.coverage_on(session),
         phantom_dropped=frames.phantom_dropped,
@@ -321,42 +356,42 @@ def plan(as_of: date | None = None, exit_method: str | None = None) -> Plan:
         watchlist=tuple(watchlist),
         evidence=evidence,
         ladder=M.ladder(),
-        costs=dict(
-            fee_buy=M.FEE_BUY * 100,
-            fee_sell=M.FEE_SELL * 100,
-            slippage=M.SLIPPAGE * 100,
-            round_trip=M.ROUND_TRIP_COST * 100,
-            lot_size=M.LOT_SIZE,
-            risk_budget_idr=M.RISK_BUDGET_IDR,
-        ),
+        costs={
+            "fee_buy": M.FEE_BUY * 100,
+            "fee_sell": M.FEE_SELL * 100,
+            "slippage": M.SLIPPAGE * 100,
+            "round_trip": M.ROUND_TRIP_COST * 100,
+            "lot_size": M.LOT_SIZE,
+            "risk_budget_idr": M.RISK_BUDGET_IDR,
+        },
         source=frames.source,
         ranked=tuple(ranked),
         required_gates=required,
         verdict=verdict.as_dict(),
-        coverage=dict(
-            codes=len(frames.bars),
-            benchmark=str(session.date()),
-            tradable_on_session=len(candidates) + len(watchlist),
+        coverage={
+            "codes": len(frames.bars),
+            "benchmark": str(session.date()),
+            "tradable_on_session": len(candidates) + len(watchlist),
             # Rows the app refused to screen on, per scripts/repair_phantom_bars.
             # Normally zero after the study's repair; non-zero means a re-fetch
             # reintroduced sessions the exchange never held.
-            phantom_bars_dropped=frames.phantom_dropped,
-            phantom_dates=list(frames.phantom_dates),
-            exchange_sessions=len(calendar),
+            "phantom_bars_dropped": frames.phantom_dropped,
+            "phantom_dates": list(frames.phantom_dates),
+            "exchange_sessions": len(calendar),
             # What the verdict's integrity checks read: how many names have a bar
             # on the session, and the floor they have to clear.
-            names_on_session=frames.coverage_on(session),
-            coverage_floor=COVERAGE_FLOOR,
+            "names_on_session": frames.coverage_on(session),
+            "coverage_floor": COVERAGE_FLOOR,
             # How the bars were assembled, so a screen run on a merged pull says
             # so rather than looking identical to one run on the study's cache.
-            bars_basis=frames.source,
-            live_appended=frames.live_appended,
-            partial_bars_rejected=frames.partial_bars_rejected,
-            reason_seconds=next(
+            "bars_basis": frames.source,
+            "live_appended": frames.live_appended,
+            "partial_bars_rejected": frames.partial_bars_rejected,
+            "reason_seconds": next(
                 (c.reason.seconds for c in candidates if c.reason is not None),
                 None,
             ),
-        ),
+        },
         # Attached to every plan, not only the Method page. A user deciding what
         # to buy tomorrow is owed the searched maximum *and* what survived
         # unseen data in the same glance; separating them is how the headline
@@ -478,6 +513,8 @@ def method_card() -> dict[str, object]:
     evidence = M.default_evidence()
     spec = M.family_spec(evidence.family)
     ladder = M.ladder()
+    holdout = M.holdout()
+    frequency = M.regime_frequency()
     return {
         "family": evidence.family or M.DEFAULT_FAMILY,
         "exit_method": evidence.exit_method or M.DEFAULT_EXIT,
@@ -542,13 +579,13 @@ def method_card() -> dict[str, object]:
         "deployment": M.deployment(),
         "robustness": M.robustness(),
         # The three things that answer "should I believe the headline?".
-        "holdout": (lambda h: h.as_dict() if h else None)(M.holdout()),
+        "holdout": holdout.as_dict() if holdout else None,
         "shipped": M.shipped_config(),
         "five_year": M.five_year_replay(),
         "regime_bands": {
             "trending": M.BREADTH_TRENDING,
             "capitulation": M.BREADTH_CAPITULATION,
-            "frequency": (lambda f: f.as_dict() if f else None)(M.regime_frequency()),
+            "frequency": frequency.as_dict() if frequency else None,
             "note": (
                 "Above the trending line the screen trades; between the two lines "
                 "it stays flat, because the study measured that band drifting "

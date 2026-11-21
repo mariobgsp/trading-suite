@@ -31,6 +31,7 @@ import {
 	type StrategyRow,
 } from "@/lib/api/backtest";
 import { planApi, type MethodCard } from "@/lib/api/plan";
+import { featuredStrategy, strategyCopy } from "@/lib/present";
 import { Page } from "./Tonight";
 
 const PERIODS: { value: Period; label: string }[] = [
@@ -94,16 +95,18 @@ export default function Backtest() {
 		<Page>
 			<header className="mb-7">
 				<p className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--text-ghost)]">
-					Methods, measured
+					Metode, diukur
 				</p>
 				<h1 className="mt-2 font-display text-[34px] leading-none tracking-[-0.02em] text-[var(--text)] sm:text-[40px]">
-					Backtest
+					Uji strategi
 				</h1>
 				<p className="mt-3 max-w-[78ch] text-[14px] leading-relaxed text-[var(--text-dim)]">
-					Semua metode yang dimiliki domain ini berjalan pada satu target dengan
-					model biaya yang sama (fee + slippage di dalam setiap order), lalu
-					diadu dengan kinerja indeks. Di bawahnya, studi walk-forward menaruh
-					catatan metodologisnya yang sudah diterbitkan.
+					Semua metode dijalankan pada satu target dengan model biaya yang sama (fee +
+					slippage di setiap order), lalu diadu dengan kinerja indeks. Target bawaannya
+					IHSG itu sendiri, jadi kurva Buy &amp; hold memang mengikuti gerak indeks — bukan
+					hasil sebuah metode. Ketik kode saham (misal BBCA) untuk mengadu metode di saham
+					itu. Rantai Tier 1 yang jadi hasil studi tidak diukur di halaman ini; angkanya
+					hidup di halaman Metode.
 				</p>
 			</header>
 
@@ -173,6 +176,7 @@ export default function Backtest() {
 				</div>
 				{result && (
 					<p className="mt-3 font-mono text-[10px] text-[var(--text-ghost)]">
+						Target: {result.ticker === "^JKSE" ? "IHSG (indeks, bukan saham)" : result.ticker + " (saham)"} ·{" "}
 						{result.bars} bar · modal {fmtIdr(result.capital)} · {result.fees.note} · exit {result.fees.exit_note}
 						{result.cache?.hit ? " · cache " + result.cache.age_seconds + "s" : ""}
 					</p>
@@ -199,13 +203,18 @@ export default function Backtest() {
 						<EquityCompareChart result={result} />
 					</section>
 
-					<section className="mt-6">
-						<h2 className="mb-3 text-[17px] font-semibold tracking-[-0.01em] text-[var(--text)]">
-							Statistik per metode
-						</h2>
-						<StrategyTable result={result} />
-						<ErrorRows result={result} />
-					</section>
+					<details className="mt-6">
+						<summary className="cursor-pointer text-[15px] font-semibold text-[var(--text)]">
+							Lihat semua strategi dan angka teknis
+						</summary>
+						<section className="mt-3">
+							<h2 className="mb-3 text-[17px] font-semibold tracking-[-0.01em] text-[var(--text)]">
+								Statistik per metode
+							</h2>
+							<StrategyTable result={result} />
+							<ErrorRows result={result} />
+						</section>
+					</details>
 
 					<section className="mt-6 border border-[var(--border)] bg-[var(--panel-2)] p-4 font-mono text-[11px] leading-relaxed text-[var(--text-faint)]">
 						<p>
@@ -231,17 +240,31 @@ export default function Backtest() {
 /* ── winner card ────────────────────────────────────────────────────── */
 
 function WinnerCard({ result }: { result: CompareResult }) {
-	const rows = rankedRows(result).filter((row) => row.strategy !== "buyhold");
-	if (rows.length === 0) return null;
-	const best = rows[0]!;
+	// Unggulan hanya strategi yang benar-benar membuka transaksi; hasil
+	// negatif tetap dilaporkan apa adanya, dan beli-tahan jadi pembanding.
+	const best = featuredStrategy(result.strategies);
+	if (!best || !best.stats) {
+		return (
+				<div className="border border-[var(--border)] border-l-[3px] border-l-[var(--gold)] bg-[var(--panel)] p-5">
+					<p className="text-[10px] uppercase tracking-[0.14em] text-[var(--text-faint)]">
+						Jawaban pendek periode ini
+					</p>
+					<p className="mt-2 max-w-[86ch] text-[15px] leading-relaxed text-[var(--text)]">
+						Tidak ada strategi yang membuka satu pun transaksi di periodenya ini —
+						tidak ada yang bisa dinyatakan unggul, dan halaman ini tidak memilih
+						pemenang dari angka kosong.
+					</p>
+				</div>
+		);
+	}
+	const copy = strategyCopy(best.strategy);
+	const stats = best.stats;
 	const indexTotal = result.hold_index.total_pct ?? result.hold_target.total_pct;
 	const baselineLabel =
 		result.hold_index.total_pct != null
-			? "Beli-tahan IHSG identik memberi"
-			: "Beli-tahan target identik memberi";
-	const stats = best.stats!;
-	const total = stats.total_return_pct;
-	const beat = indexTotal != null && total > indexTotal;
+			? "Sementara beli-tahan IHSG pada jendela yang sama memberi"
+			: "Sementara beli-tahan target ini pada jendela yang sama memberi";
+	const beat = indexTotal != null && stats.total_return_pct > indexTotal;
 	const alpha =
 		best.alpha_vs_index_pct == null
 			? "—"
@@ -257,11 +280,12 @@ function WinnerCard({ result }: { result: CompareResult }) {
 				Jawaban pendek periode ini
 			</p>
 			<p className="mt-2 max-w-[86ch] text-[15px] leading-relaxed text-[var(--text)]">
-				<strong>{best.label}</strong> mencatat {fmtPct(total)} selama{" "}
+				<strong>{best.label}</strong> mencatat {fmtPct(stats.total_return_pct)} selama{" "}
 				{fmtNum(result.bars, 0)} sesi ({stats.total_trades} order,{" "}
-				{fmtPct(stats.win_rate)} menang, drawdown paling dalam{" "}
+				{fmtPct(stats.win_rate)} menang, penurunan terdalam{" "}
 				{stats.max_drawdown_pct.toFixed(1)}%, berada di pasar{" "}
 				{stats.time_in_market_pct.toFixed(0)}% dari waktu).{" "}
+				{copy ? copy + " " : ""}
 				{indexTotal != null
 					? baselineLabel +
 						" " +
@@ -283,6 +307,7 @@ function WinnerCard({ result }: { result: CompareResult }) {
 
 const LINE_ORDER = [
 	"golden_cross",
+	"gate_sma200",
 	"breakout",
 	"tsmom",
 	"momentum",
@@ -302,6 +327,7 @@ const LINE_COLORS = (theme: { up: string; down: string; gold: string; violet: st
 	breakout: withAlpha(theme.up, 0.85),
 	mildmover: withAlpha(theme.violet, 0.55),
 	golden_cross: theme.ink,
+	gate_sma200: theme.down,
 	cross_3_5: withAlpha(theme.blue, 0.5),
 	cross_9_21: withAlpha(theme.gold, 0.55),
 	buyhold: withAlpha(theme.ink, 0.75),
@@ -352,7 +378,9 @@ function EquityCompareChart({ result }: { result: CompareResult }) {
 					})),
 				);
 		}
-		const on: string[] = [];
+		const on: string[] = ["buyhold"];
+		const featured = featuredStrategy(result.strategies);
+		if (featured) on.push(featured.strategy);
 		for (const row of result.strategies) {
 			if (!row.curve || row.curve.length < 2) continue;
 			const series = chart.addSeries(LineSeries, {
@@ -365,7 +393,6 @@ function EquityCompareChart({ result }: { result: CompareResult }) {
 				row.curve.map((point) => ({ time: point.date as Time, value: point.value })),
 			);
 			seriesRef.current[row.strategy] = series;
-			on.push(row.strategy);
 		}
 		setVisible(new Set(on));
 		chart.timeScale().fitContent();

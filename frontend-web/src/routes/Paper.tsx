@@ -54,7 +54,7 @@ export default function Paper() {
 		return (
 			<Page>
 				<Header />
-				<Panel title="The book could not be read">
+				<Panel title="Buku latihan tidak bisa dibaca">
 					<p className="text-[13px] text-[var(--text-faint)]">{error}</p>
 				</Panel>
 			</Page>
@@ -65,9 +65,9 @@ export default function Paper() {
 		return (
 			<Page>
 				<Header />
-				<Panel title="Reading the book">
+				<Panel title="Membaca buku latihan…">
 					<p className="text-[13px] text-[var(--text-faint)]">
-						Fetching the ledger…
+						Mengambil catatan transaksi…
 					</p>
 				</Panel>
 			</Page>
@@ -78,12 +78,12 @@ export default function Paper() {
 		return (
 			<Page>
 				<Header />
-				<Panel title="The book has not opened yet">
+				<Panel title="Buku latihan belum dibuka">
 					<p className="max-w-[70ch] text-[13px] leading-relaxed text-[var(--text-faint)]">
-						It opens on the first sync after this build: the plan&rsquo;s
-						candidates become orders, and the following session&rsquo;s open
-						fills them. Nothing is placed by hand, so there is nothing to do
-						here but wait for the timer.
+						Buku ini terbuka pada sinkronisasi pertama setelah aplikasi dipasang:
+						kandidat halaman Hari ini menjadi order, dan pembukaan sesi
+						berikutnya mengisinya. Tidak ada yang dipesan dengan tangan, jadi
+						tidak ada yang perlu dilakukan selain menunggu jadwal sinkronisasi.
 					</p>
 				</Panel>
 			</Page>
@@ -100,39 +100,39 @@ export default function Paper() {
 			<Header />
 
 			{phase === "unsettled" && (
-				<Panel title="The book is behind the tape">
+				<Panel title="Buku latihan tertinggal dari data terbaru">
 					<p className="max-w-[76ch] text-[13px] leading-relaxed text-[var(--text-faint)]">
-						Settled through {settledThrough ?? "—"} but the newest session is{" "}
-						{plan?.as_of ?? "unknown"}. A stop breached in the middle of that gap
-						has not been booked yet, so the equity below is not today&rsquo;s.
+						Sudah dihitung sampai {settledThrough ?? "—"} padahal sesi terbaru adalah{" "}
+						{plan?.as_of ?? "tidak diketahui"}. Batas rugi yang tertembus di tengah
+						celah itu belum dibukukan, jadi saldo di bawah belum angka hari ini.
 					</p>
 				</Panel>
 			)}
 
 			<div className="grid grid-cols-2 gap-px border border-[var(--border)] bg-[var(--border)] sm:grid-cols-4">
-				<Stat label="Equity" value={`Rp${idr(snap.equity_idr)}`} />
-				<Stat label="Cash" value={`Rp${idr(snap.cash_idr)}`} />
+				<Stat label="Saldo" value={`Rp${idr(snap.equity_idr)}`} />
+				<Stat label="Tunai" value={`Rp${idr(snap.cash_idr)}`} />
 				<Stat
-					label="P&L"
+					label="Untung/rugi"
 					value={`${(snap.pnl_idr ?? 0) >= 0 ? "+" : ""}Rp${idr(snap.pnl_idr)}`}
 					tone={(snap.pnl_idr ?? 0) >= 0 ? "up" : "down"}
 				/>
-				<Stat label="Return" value={pctRaw(snap.return_pct)} />
+				<Stat label="Hasil" value={pctRaw(snap.return_pct)} />
 			</div>
 
 			<p className="mt-3 font-mono text-[11px] text-[var(--text-ghost)]">
-				Started {snap.started ?? "—"} · settled through {settledThrough ?? "—"} ·{" "}
-				{planOpen ? "the plan is trading" : "the plan is closed"} ·{" "}
-				{stats ? `${stats.closed_count} closed / ${stats.open_count} open` : ""}
+				Dimulai {snap.started ?? "—"} · dihitung sampai {settledThrough ?? "—"} ·{" "}
+				{planOpen ? "aturan sedang berdagang" : "aturan sedang menahan"} ·{" "}
+				{stats ? `${stats.closed_count} selesai / ${stats.open_count} terbuka` : ""}
 			</p>
 
 			<Section
-				title="Waiting for the open"
-				subtitle="Orders the plan placed tonight. They fill at the next session's open, at whatever that open is — not at the level that triggered them."
-				right={`${pending.length} pending`}
+				title="Menunggu pembukaan pasar"
+				subtitle="Order yang ditempatkan aturan malam ini. Order terisi pada harga pembukaan sesi berikutnya, berapapun pembukaannya — bukan pada level pemicunya."
+				right={`${pending.length} order`}
 			>
 				{pending.length === 0 ? (
-					<Empty>No order is waiting. Either the plan is not trading, or it is fully invested.</Empty>
+					<Empty>Tidak ada order yang menunggu. Aturannya sedang menahan, atau posisinya sudah penuh.</Empty>
 				) : (
 					<Table
 						head={["Ticker", "Shares", "Stop", "Target", "Hold", "Fills"]}
@@ -149,12 +149,12 @@ export default function Paper() {
 			</Section>
 
 			<Section
-				title="Open"
-				subtitle="Priced at the last close each name actually printed. A name with no fresh bar shows its entry price and its own as-of date rather than an invented one."
+				title="Posisi terbuka"
+				subtitle="Dihargai dengan penutupan terakhir yang benar-benar tercetak tiap saham. Saham tanpa bar baru menampilkan harga masuknya dan tanggal datanya sendiri, bukan angka karangan."
 				right={`${positions.length} positions`}
 			>
 				{positions.length === 0 ? (
-					<Empty>Flat. The book is waiting for the next signal.</Empty>
+					<Empty>Tanpa posisi. Buku latihan menunggu sinyal berikutnya.</Empty>
 				) : (
 					<div className="overflow-x-auto">
 						<table className="w-full min-w-[720px] border border-[var(--border)] bg-[var(--panel)] text-[12px]">
@@ -199,8 +199,8 @@ export default function Paper() {
 			</Section>
 
 			<Section
-				title="Closed"
-				subtitle="Why each position left: the stop, the target, or the hold horizon running out. A stop that gapped through books the open, not the stop."
+				title="Transaksi selesai"
+				subtitle="Alasan tiap posisi keluar: batas rugi, target, atau jangka waktu habis. Batas rugi yang tertembus saat gap dicatat pada harga pembukaan, bukan pada level batasnya."
 				right={stats?.profit_factor == null ? "" : `PF ${stats.profit_factor}`}
 			>
 				{trades.length === 0 ? (
@@ -237,12 +237,13 @@ function Header() {
 	return (
 		<header className="mb-8">
 			<h1 className="font-display text-[26px] tracking-[-0.01em] text-[var(--text)]">
-				Paper book
+				Akun latihan
 			</h1>
 			<p className="mt-2 max-w-[76ch] text-[13px] leading-relaxed text-[var(--text-faint)]">
-				The plan trading a simulated five-million-rupiah account, with nobody
-				placing the orders. It exists to answer whether the method survives its
-				own costs, on the days it actually spoke.
+				Uang latihan Rp5 juta — bukan akun nyata, tidak ada order yang dikirim
+				ke broker. Aturan dari halaman Hari ini dijalankan otomatis setiap
+				sinkronisasi, supaya kelihatan apakah metodenya bertahan dari biayanya
+				sendiri pada hari-hari ketika ia berbicara.
 			</p>
 		</header>
 	);

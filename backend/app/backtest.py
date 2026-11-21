@@ -54,6 +54,7 @@ STRATEGIES = (
     "golden_cross",
     "cross_3_5",
     "cross_9_21",
+    "gate_sma200",
 )
 PATTERN_STRATEGIES = (
     "pullback",
@@ -62,6 +63,7 @@ PATTERN_STRATEGIES = (
     "golden_cross",
     "cross_3_5",
     "cross_9_21",
+    "gate_sma200",
 )
 
 # MA-cross family: golden-cross entry, death-cross exit ("stop").
@@ -77,6 +79,10 @@ TSMOM_LOOKBACK = 252  # ~12 months of trading days
 # Indicator warmup before a sub-window's trades count as valid
 # (covers SMA50, MACD/RSI/Stoch and the 252-bar TSMOM lookback).
 WARMUP_BARS = 260
+
+# The Deep Dive's per-name window: one trading year simulated, with the
+# fetch (and therefore the signals) carrying years of warmup behind it.
+SIM_WINDOW_BARS = 252
 
 
 def _signals(df: pd.DataFrame, strategy: str) -> pd.Series:
@@ -142,6 +148,23 @@ def _signals(df: pd.DataFrame, strategy: str) -> pd.Series:
         sig = pd.Series(0, index=df.index)
         sig[ret_12m > 0] = 1
         sig[ret_12m < 0] = -1
+        return sig
+
+    if strategy == "gate_sma200":
+        # Faber (2007) as published: month-end closes against their own
+        # 10-month average, judged once a month. Watching the level daily
+        # whipsaws an average that was never meant to be watched daily, so
+        # the faithful rule trades less and means what it says. A verdict is
+        # known at the month's final close; under the method profile the
+        # engine fills at the next session's open, never same-bar.
+        monthly = close_s.resample("ME").last().dropna()
+        verdict = (monthly > monthly.rolling(10).mean()).astype(float)
+        daily = verdict.reindex(df.index, method="ffill").fillna(0.0)
+        sig = pd.Series(0, index=df.index)
+        enter = (daily > 0.5) & (daily.shift(1).fillna(0.0) <= 0.5)
+        leave = (daily <= 0.5) & (daily.shift(1).fillna(0.0) > 0.5)
+        sig[enter] = 1
+        sig[leave] = -1
         return sig
 
     if strategy == "momentum":
@@ -219,6 +242,7 @@ def run_backtest(
     if exit_profile not in EXIT_PROFILES:
         exit_profile = DEFAULT_EXIT_PROFILE
     df = history_to_frame(history)
+    full = df  # signals read the full series, warmup included (see docstring)
     if start_idx:
         if start_idx >= len(df) - 30:
             return {
@@ -237,7 +261,7 @@ def run_backtest(
             "stats": {},
         }
 
-    signals = _signals(df, strategy)
+    signals = _signals(full, strategy)
 
     method = exit_profile == "method"
     target_pct, method_stop_pct, cap_bars = METHOD_EXIT if method else (0.0, stop_loss_pct, 0)
@@ -486,18 +510,24 @@ def walk_forward(
 
 
 def pattern_backtests(ticker: str, force: bool = False) -> dict[str, Any]:
-    """Run the pullback / breakout / mild-mover pattern backtests over ~1y
-    of the same history the profiler charts. Each strategy shares the
-    engine's fee/slippage/stop model; buy-and-hold comes free in stats."""
+    """Run the pattern strategies over the trailing year of one name's bars.
+
+    Three years are fetched so every indicator - SMA50, the gate's 10-month
+    average - enters its simulated year already warm; the engine simulates
+    only the trailing SIM_WINDOW_BARS while signals read the full fetch.
+    Buy-and-hold over the same window rides along in each row's stats.
+    """
     # Late import avoids a market <-> backtest cycle at module load.
     from app.market import fetch_history
 
-    history = fetch_history(ticker, period="1y", interval="1d", force=force)
+    history = fetch_history(ticker, period="3y", interval="1d", force=force)
+    window = max(len(history) - SIM_WINDOW_BARS, 0) or None
     strategies: dict[str, Any] = {}
     for strat in PATTERN_STRATEGIES:
-        out = run_backtest(history, strategy=strat)
+        out = run_backtest(history, strategy=strat, start_idx=window)
         trades = out.get("trades") or []
         strategies[strat] = {
+            "label": STRATEGY_LABELS.get(strat, strat),
             "stats": out.get("stats") or {},
             "error": out.get("error"),
             "recent_trades": trades[-3:][::-1],  # newest first
@@ -505,7 +535,7 @@ def pattern_backtests(ticker: str, force: bool = False) -> dict[str, Any]:
     return {
         "ticker": ticker,
         "available": len(history) >= 30,
-        "bars": len(history),
+        "bars": len(history) - (window or 0),
         "fee_note": fee_note(),
         "strategies": strategies,
     }
@@ -526,6 +556,7 @@ STRATEGY_LABELS = {
     "golden_cross": "Golden cross SMA 20/50",
     "cross_3_5": "Cross EMA 3/5",
     "cross_9_21": "Cross EMA 9/21",
+    "gate_sma200": "Gerbang SMA 200 (close bulanan)",
 }
 
 STRATEGY_KIN = {
@@ -533,6 +564,7 @@ STRATEGY_KIN = {
     "momentum": "trend",
     "golden_cross": "trend",
     "breakout": "trend",
+    "gate_sma200": "trend",
     "pullback": "pullback",
     "mildmover": "volatility",
     "meanreversion": "reversal",

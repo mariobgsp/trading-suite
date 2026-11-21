@@ -1,18 +1,19 @@
 /**
- * Tonight — the front door.
+ * Hari ini — halaman pertama.
  *
- * One screen, read top to bottom: the verdict, the gate that explains it, the
- * names, and what to do with each. On a weekend the same screen becomes the
- * week-ahead list, because the horizon comes from the session rather than from
- * the clock.
+ * Dibaca dari atas ke bawah seperti satu keputusan: status pasar, tanggal
+ * datanya, kandidat beserta risikonya, lalu daftar pantau. Angka teknis dan
+ * bukti tetap ada di balik satu bagian "Lihat angka" — dekat, tetapi tidak
+ * menghalangi pembaca baru.
  */
 
 import { useEffect, useState } from "react";
 import { planApi, type Plan } from "@/lib/api/plan";
 import { usePlanRefreshSignal } from "@/lib/refresh";
+import { AlertBook } from "@/components/AlertBook";
 import { CapitulationWatch, RegimeDriftStrip } from "@/components/regimes";
+import { bandCopy } from "@/lib/present";
 import {
-	CandidateRow,
 	EvidenceBadge,
 	LimitsPanel,
 	Section,
@@ -23,7 +24,7 @@ import {
 } from "@/components/plan";
 
 function usePlan() {
-	// Bumped by the header's refresh button once new bars have been screened.
+	// Bump by the header's refresh button once new bars have been screened.
 	const nonce = usePlanRefreshSignal();
 	const [plan, setPlan] = useState<Plan | null>(null);
 	const [error, setError] = useState<string | null>(null);
@@ -47,10 +48,11 @@ export default function Tonight() {
 	if (error) {
 		return (
 			<Page>
-				<h1 className="font-display text-[30px] text-[var(--text)]">The backend is not answering</h1>
+				<h1 className="font-display text-[30px] text-[var(--text)]">Backend tidak menjawab</h1>
 				<p className="mt-3 max-w-[60ch] text-[14px] leading-relaxed text-[var(--text-dim)]">
-					Start it with <code className="font-mono text-[13px]">./trading-suite run</code> and reload.
-					It reads the study's own universe, so the first plan takes a few seconds.
+					Jalankan <code className="font-mono text-[13px]">./trading-suite run</code> lalu muat
+					ulang halaman. Analisis pertama membaca seluruh daftar riset, jadi butuh beberapa
+					detik.
 				</p>
 				<p className="mt-3 font-mono text-[11px] text-[var(--text-ghost)]">{error}</p>
 			</Page>
@@ -61,23 +63,14 @@ export default function Tonight() {
 		return (
 			<Page>
 				<p className="font-mono text-[13px] text-[var(--text-faint)]">
-					Reading the study's universe — a few seconds.
+					Membaca data riset — beberapa detik.
 				</p>
 			</Page>
 		);
 	}
 
-	const { regime, candidates, watchlist, evidence, coverage } = plan;
-	const needsIndex = plan.required_gates.includes("index_above_200");
-
-	/* The three bands, so the closed screen reads as an instruction rather than a
-	 * failure: trade above the trending line, flat in the middle, watch below. */
-	const BAND: Record<string, { label: string; action: string; color: string }> = {
-		trending: { label: "trending", action: "trade", color: "var(--up)" },
-		sideways: { label: "sideways", action: "stay flat", color: "var(--gold)" },
-		capitulation: { label: "capitulation", action: "watch only", color: "var(--down)" },
-	};
-	const band = BAND[regime.band] ?? BAND.sideways;
+	const { regime, watchlist, evidence } = plan;
+	const band = bandCopy(regime.band);
 
 	return (
 		<Page>
@@ -86,100 +79,35 @@ export default function Tonight() {
 			{plan.holdout && !plan.holdout.winners_surviving && (
 				<div className="mb-6 border border-[var(--border)] border-l-[3px] border-l-[var(--gold)] bg-[var(--panel)] p-4">
 					<p className="text-[13px] leading-relaxed text-[var(--text-dim)]">
-						<span className="font-semibold text-[var(--text)]">Before you act on a name:</span>{" "}
-						{plan.holdout.search_cells_clearing} of {plan.holdout.search_cells} configurations the
-						study searched cleared 80% win rate and +5% per trade together, and{" "}
-						{plan.holdout.winners_surviving} of {plan.holdout.winners_tested} held up on folds no
-						search had seen. The best of everything tried reached{" "}
+						<span className="font-semibold text-[var(--text)]">Sebelum menindaklanjuti kandidat:</span>{" "}
+						dari {plan.holdout.search_cells} kombinasi aturan yang dicoba riset, hanya{" "}
+						{plan.holdout.search_cells_clearing} yang lolos batas 80% menang dan +5% per transaksi
+						sekaligus — dan {plan.holdout.winners_surviving} dari {plan.holdout.winners_tested} yang
+						di bawa ke depan tetap bertahan di data uji. Hasil terbaik yang pernah dicapai:{" "}
 						<span className="text-[var(--text)]">
-							{pct(plan.holdout.best_holdout_win_rate, 1)} win rate and +
-							{(plan.holdout.best_holdout_avg_ret_pct ?? 0).toFixed(2)}% per trade
+							{pct(plan.holdout.best_holdout_win_rate, 1)} menang dan +
+							{(plan.holdout.best_holdout_avg_ret_pct ?? 0).toFixed(2)}% per transaksi
 						</span>
 						.{" "}
 						<a
 							href="/method#holdout"
 							className="underline decoration-[var(--border-strong)] underline-offset-2 hover:text-[var(--text)]"
 						>
-							Read the holdout
+							Baca catatan holdout
 						</a>
 					</p>
 				</div>
 			)}
 
-			<Section
-				title="The market gate"
-				subtitle={
-					needsIndex
-						? "Two conditions every name shares. While either is shut, no stock in the universe qualifies — that is the method protecting you, not the app failing."
-						: "One condition every name shares. While it is shut, no stock in the universe qualifies — that is the method protecting you, not the app failing. The index reading is shown for context, but this method does not trade on it."
-				}
-			>
-				<div className="mb-4 flex flex-wrap items-baseline gap-x-3 gap-y-1 border border-[var(--border)] bg-[var(--panel)] px-4 py-3">
-					<span className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--text-faint)]">
-						Tonight&rsquo;s band
-					</span>
-					<span className="font-display text-[18px] font-semibold" style={{ color: band.color }}>
-						{band.label}
-					</span>
-					<span className="font-mono text-[12px] text-[var(--text-dim)]">→ {band.action}</span>
-				</div>
-				<RegimeDriftStrip regime={regime} />
-				<div className="grid gap-px border border-[var(--border)] bg-[var(--border)] sm:grid-cols-2">
-					<Gate
-						label="Market breadth"
-						ok={regime.breadth_open}
-						value={pct(regime.breadth, 1)}
-						need={`needs ${pct(regime.breadth_threshold, 0)}`}
-						note={`Share of the ${idr(regime.universe_size)} names that traded above their own 200-day average. Over five years its median is ${pct(regime.breadth_median, 0)}. The study measured this band directly and found the index drifts about zero over five sessions while a round trip costs 0.50%, so the flat band is the finding rather than a gap.`}
-					/>
-					<Gate
-						label="IHSG above its 200-day average"
-						ok={regime.index_above_200 ?? false}
-						required={needsIndex}
-						value={regime.index_above_200 ? "Yes" : "No"}
-						need={idr(regime.index_close)}
-						note={
-							needsIndex
-								? `The index itself has to be worth buying. It is also ${
-										regime.index_above_50 ? "above" : "below"
-									} its own 50-day average.`
-								: "Context only — this method trades on the universe's own breadth, not on the index."
-						}
-					/>
-				</div>
-			</Section>
-
-			<Section
-				title={plan.verdict.buys ? `Buy for ${plan.horizon}` : "Not buying tonight"}
-				subtitle={
-					plan.verdict.buys
-						? "Every name below cleared every condition this method applies and can be sized at 2% of its own turnover. Entry, target, stop and size are priced for you — you only have to place the order."
-						: "The verdict above is the honest answer. The study measured its win rate on the trades it did take, which is exactly why it waits for these conditions rather than buying something close."
-				}
-				right={`${idr(coverage.tradable_on_session as number)} close to firing`}
-			>
-				{candidates.length > 0 ? (
-					<ul className="border border-[var(--border)] bg-[var(--panel)]">
-						{candidates.map((c) => (
-							<CandidateRow key={c.ticker} candidate={c} />
-						))}
-					</ul>
-				) : (
-					<div className="border border-[var(--border)] bg-[var(--panel)] px-6 py-7">
-						<p className="max-w-[74ch] text-[14px] leading-relaxed text-[var(--text-dim)]">
-							Nothing cleared every condition on {plan.session_label}. Holding out is the
-							position here, and it is a measured one: taking something outside these six rules is
-							a different strategy that nobody has backtested.
-						</p>
-					</div>
-				)}
-			</Section>
+			{/* Kandidat malam ini: kartu berbahasa sederhana dari sisi server,
+			    sudah membawa harga masuk, target, stop, dan risiko rupiah. */}
+			<AlertBook />
 
 			{watchlist.length > 0 && (
 				<Section
-					title="One condition away"
-					subtitle="Not buyable yet. Each of these leads the universe on momentum and sits at its breakout level, so this is the list to watch for the next session."
-					right={`${watchlist.length} names`}
+					title="Hampir lolos: daftar pantau"
+					subtitle="Belum bisa dibeli. Setiap saham di sini unggul di momentum dan sedang berada tepat di bawah batas harganya — ini daftar yang menunggu sesi berikutnya."
+					right={`${watchlist.length} saham`}
 				>
 					<ul className="border border-[var(--border)] bg-[var(--panel)]">
 						{watchlist.map((w) => (
@@ -192,17 +120,18 @@ export default function Tonight() {
 			{plan.capitulation_watch?.length > 0 && <CapitulationWatch plan={plan} />}
 
 			<Section
-				title="What this method is worth"
-				subtitle="The number at the top is real, and so is its limit. Read this before the first trade, not after."
+				title="Seberapa andal metodenya"
+				subtitle="Angka di atas nyata, dan batasnya juga. Baca ini sebelum transaksi pertama, bukan setelahnya."
 			>
 				<div className="grid gap-5 lg:grid-cols-[1fr_320px]">
 					<div className="border border-[var(--border)] bg-[var(--panel)] p-5">
 						<p className="max-w-[78ch] text-[13px] leading-relaxed text-[var(--text-dim)]">
-							Measured out-of-sample under walk-forward folds on{" "}
-							{idr(evidence.oos_trades)} closed trades, with fees and slippage inside every one of
-							them. The pooled result is {pct(evidence.win_rate, 1)} of trades winning, averaging{" "}
-							{evidence.avg_ret_pct != null ? `+${evidence.avg_ret_pct.toFixed(2)}%` : "—"} each.
-							It is not evenly earned — fold by fold it ran{" "}
+							Diukur pada data yang tidak dilihat saat aturannya dicari:{" "}
+							{idr(evidence.oos_trades)} transaksi selesai, dengan biaya dan slippage di dalam
+							setiap transaksinya. Gabungannya {pct(evidence.win_rate, 1)} transaksi untung,
+							rata-rata{" "}
+							{evidence.avg_ret_pct != null ? `+${evidence.avg_ret_pct.toFixed(2)}%` : "—"} tiap
+							transaksi. Hasilnya tidak rata — fold demi fold:{" "}
 							<span className="font-mono text-[12px] text-[var(--text)]">
 								{evidence.fold_detail || "—"}
 							</span>
@@ -215,7 +144,46 @@ export default function Tonight() {
 				</div>
 			</Section>
 
-			<LimitsPanel plan={plan} />
+			<details className="mt-8">
+				<summary className="cursor-pointer text-[13px] text-[var(--text-faint)] hover:text-[var(--text-dim)]">
+					Lihat angka dan cara perhitungannya
+				</summary>
+				<div className="mt-5">
+					<Section
+						title="Kondisi pasar (syarat semua saham)"
+						subtitle="Saat syarat ini tertutup, tidak ada saham di daftar riset yang memenuhi aturan — itu metode yang melindungi, bukan aplikasi yang rusak."
+					>
+						<div className="mb-4 flex flex-wrap items-baseline gap-x-3 gap-y-1 border border-[var(--border)] bg-[var(--panel)] px-4 py-3">
+							<span className="text-[10px] uppercase tracking-[0.14em] text-[var(--text-faint)]">
+								Pita malam ini
+							</span>
+							<span className="font-display text-[18px] font-semibold" style={{ color: band.tone }}>
+								{band.label}
+							</span>
+							<span className="text-[12px] text-[var(--text-dim)]">→ {band.advice}</span>
+						</div>
+						<RegimeDriftStrip regime={regime} />
+						<div className="grid gap-px border border-[var(--border)] bg-[var(--border)] sm:grid-cols-2">
+							<Gate
+								label="Kondisi pasar (breadth)"
+								ok={regime.breadth_open}
+								value={pct(regime.breadth, 1)}
+								need={`butuh ${pct(regime.breadth_threshold, 0)}`}
+								note={`Berapa banyak dari ${idr(regime.universe_size)} saham yang berada di atas rata-rata 200 hari miliknya sendiri. Median lima tahun: ${pct(regime.breadth_median, 0)}.`}
+							/>
+							<Gate
+								label="IHSG di atas rata-rata 200 hari"
+								ok={regime.index_above_200 ?? false}
+								required={plan.required_gates.includes("index_above_200")}
+								value={regime.index_above_200 ? "Ya" : "Tidak"}
+								need={idr(regime.index_close)}
+								note="Konteks saja — metode ini berdagang pada kondisi seluruh daftar, bukan pada indeks."
+							/>
+						</div>
+					</Section>
+					<LimitsPanel plan={plan} />
+				</div>
+			</details>
 		</Page>
 	);
 }
@@ -238,7 +206,7 @@ function Gate({
 	return (
 		<div className="bg-[var(--panel)] p-5">
 			<div className="flex items-baseline justify-between gap-3">
-				<span className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--text-faint)]">
+				<span className="text-[10px] uppercase tracking-[0.14em] text-[var(--text-faint)]">
 					{label}
 				</span>
 				<span
@@ -252,7 +220,7 @@ function Gate({
 								: "color-mix(in srgb, var(--gold) 14%, transparent)",
 					}}
 				>
-					{required ? (ok ? "open" : "shut") : "context"}
+					{required ? (ok ? "terbuka" : "tertutup") : "konteks"}
 				</span>
 			</div>
 			<div className="tabular mt-2 font-mono text-[30px] font-bold leading-none text-[var(--text)]">

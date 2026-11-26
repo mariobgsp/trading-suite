@@ -16,9 +16,9 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-echo "▶ Starting Vite frontend on http://localhost:5173 ..."
-# The Python backend's CORS allowlist already covers :5173, so the Vite
-# default port works without touching backend/app/config.py.
-(cd "$ROOT/frontend-web" && npm run dev)
+echo "▶ Serving static frontend on http://localhost:5173 ..."
+# The Python backend's CORS allowlist already covers :5173, so the static
+# server's origin works without touching backend/app/config.py.
+(cd "$ROOT/frontend-native" && python3 -m http.server 5173 --bind 127.0.0.1)
 
 wait "$BACKEND_PID"

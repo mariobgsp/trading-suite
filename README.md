@@ -37,13 +37,14 @@ seconds to half a minute, then the persisted payload answers from cache.
 # backend
 backend/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload --app-dir backend
 
-# frontend
-cd frontend-web && npm install && npm run dev -- --port 5173
+# frontend — static files, no install, no build
+cd frontend-native && python3 -m http.server 5173 --bind 127.0.0.1
 ```
 
-The browser fetches the API at `VITE_API_URL`, default `http://localhost:8000`. If
-your browser resolves `localhost` to IPv6 and the backend is IPv4, start the
-frontend with `VITE_API_URL=http://127.0.0.1:8000` and open `http://127.0.0.1:5173`.
+Same-origin in deploy (Caddy proxies `/api`), so no CORS config. On the LAN
+dev server (`:5173`) the pages call `http://<host>:8000`, which the backend's
+CORS list already allows. If your browser resolves `localhost` to IPv6 while
+the backend is IPv4, open `http://127.0.0.1:5173` instead.
 </details>
 
 ## The three tabs
@@ -302,9 +303,9 @@ the cached TradingView universe.
 
 | Path | What it is |
 | --- | --- |
-| `frontend-web/src/routes/{MarketsHome,Deep,Backtest,Tonight,Scanner,Flow,Method}.tsx` | the three tabs plus the hidden screens |
-| `frontend-web/src/components/{plan,regimes,deep,FlowChart,MarketChart,market,RefreshButton,ThemeToggle,InvestCase}.tsx` | shared vocabulary, the regime ledger, charts, the dashboard, deep-dive panels, refresh, theme, the invest case |
-| `frontend-web/src/lib/{api/plan.ts,api/flow.ts,api/overview.ts,api/case.ts,refresh.ts,cache.ts,theme.ts}` | types + SWR client + the re-read signal |
+| `frontend-native/{index,scanner,deep,backtest,paper,flow,method}.html` | one static shell per page (header/nav/footer/theme boot) |
+| `frontend-native/js/{tonight,scanner,deep,backtest,paper,flow,method,invest}.js` | one renderer per page; `invest.js` is the shared invest-case section |
+| `frontend-native/js/{api,format,present,theme,refresh,chart}.js` + `vendor/lightweight-charts.js` | fetch + TTL cache, escaping + units, display copy, theme, refresh job, vendored charts |
 | `backend/app/plan/` | the nightly method: `screen`, `method`, `model`, `verdict`, `refresh`, `idx`, `citations`, `bars`, `regimes` |
 | `backend/app/flow/` | the research proxy: `technicals`, `lpm`, `sources`, `cards`, `series`, `validate` |
 | `backend/app/overview/` | the cache-first dashboard: `universe`, `summary`, `gauge`, `rotation`, `moves` (movers, sector day, IHSG contribution, benchmark tail), `snapshot` |
@@ -368,18 +369,15 @@ frontend reads `VITE_API_URL` instead with the same default.
   UI quotes.
 - `pytest` is **not** in `backend/requirements.txt`. If the venv lacks it:
   `uv pip install --python backend/.venv/bin/python pytest`.
-- **Frontend**: `cd frontend-web && npm run typecheck` (or `npm run build`).
-  `@types/node` is a devDependency; without it the `node:test` / `node:url`
-  imports in the existing test files and `vite.config.ts` fail the typecheck.
+- **Frontend**: `for f in frontend-native/js/*.js; do node --check "$f"; done` (no build step — static files).
+
 
 ## Known gaps
 
-- **Docker is stale.** `docker-compose.yml` and the root `Dockerfile` still build
-  the removed Next.js frontend (they need a root `package.json` that no longer
-  exists) and a `pilot` service whose directory is gone. Use the runner or the raw
-  commands above; the compose file needs rewriting for `frontend-web`.
+- **Docker serve statis.** `docker-compose.yml` menyajikan `frontend-native/` apa adanya
+  lewat Caddy di `:80` + API di `:8000`; tidak ada build frontend.
 - Leftovers from that era sit at the repo root: `next-env.d.ts`,
-  `tsconfig.tsbuildinfo`, `public/*.svg`, `scripts/check-feature-wiring.mjs`.
+  `tsconfig.tsbuildinfo` (both belong to no tool in this repo any more).
 - `docs/architecture/*.puml` describe the earlier 5-route desk, not this app.
 
 ## License

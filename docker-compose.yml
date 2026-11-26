@@ -43,7 +43,7 @@ services:
     environment:
       - DOMAIN=${DOMAIN:-localhost}
     volumes:
-      - ./frontend-web/dist:/srv:ro
+      - ./frontend-native:/srv:ro
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config

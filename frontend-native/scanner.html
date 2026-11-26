@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Trading Suite — Cari saham</title>
+    <meta
+      name="description"
+      content="Saring seluruh daftar saham IDX dengan aturan yang sama dengan halaman Hari ini. Riset, bukan saran investasi."
+    />
+    <link rel="stylesheet" href="css/styles.css" />
+    <style>
+      html { background: #ffffff; }
+      html.dark { background: #121110; }
+    </style>
+    <script>
+      (function () {
+        try {
+          var pref = localStorage.getItem("ts-theme");
+          if (pref !== "light" && pref !== "dark") pref = "system";
+          var dark =
+            pref === "dark" ||
+            (pref !== "light" &&
+              window.matchMedia("(prefers-color-scheme: dark)").matches);
+          if (dark) document.documentElement.classList.add("dark");
+        } catch (e) { /* private mode: fall through to light */ }
+      })();
+    </script>
+  </head>
+  <body>
+    <a href="#main" class="sr-only skip">Lewati ke konten</a>
+    <header class="top">
+      <div class="top-in">
+        <div style="display:flex;align-items:baseline;gap:8px">
+          <a href="index.html" class="brand">
+            <span class="font-display brand-name">Trading<span>Suite</span></span>
+          </a>
+          <span class="brand-idx">IDX</span>
+        </div>
+        <div class="top-actions">
+          <div class="refresh" data-refresh>
+            <button type="button" class="btn bar" data-refresh-btn title="Tarik harga harian terbaru lalu hitung ulang analisisnya.">⟳ Perbarui data</button>
+            <button type="button" class="btn" data-refresh-stop hidden title="Berhenti setelah saham yang sedang diunduh selesai.">hentikan</button>
+            <span class="mono" data-refresh-flag hidden style="font-size:10px;color:var(--gold)"></span>
+            <span class="mono" data-refresh-err hidden style="font-size:10px;color:var(--down)"></span>
+          </div>
+          <button type="button" class="themebtn" data-theme-toggle>Auto</button>
+        </div>
+      </div>
+      <nav class="tabs" aria-label="Tugas utama">
+        <a href="index.html" class="tab">Hari ini</a>
+        <a href="scanner.html" class="tab" aria-current="page">Cari saham</a>
+        <a href="deep.html" class="tab">Periksa saham</a>
+        <a href="backtest.html" class="tab">Uji strategi</a>
+      </nav>
+    </header>
+    <main id="main">
+      <div class="wrap" id="app">
+        <p class="loading">Membaca daftar riset…</p>
+      </div>
+    </main>
+    <footer class="site">
+      <div class="wrap">
+        <nav aria-label="Halaman lanjutan">
+          <a href="method.html">Cara kerja &amp; bukti</a>
+          <a href="paper.html">Akun latihan</a>
+          <a href="flow.html">Riset teknikal</a>
+        </nav>
+        <p class="note">
+          Setiap angka dibaca dari riset historis dengan biaya di dalam setiap
+          transaksi, atau dari pita pasar seperti yang diberi label. Ini hasil riset,
+          bukan saran investasi — baca
+          <a href="method.html" style="text-decoration:underline">halaman Cara kerja</a>
+          sebelum transaksi pertama.
+        </p>
+      </div>
+    </footer>
+    <script type="module">
+      import { initTheme } from "./js/theme.js";
+      import { initRefresh } from "./js/refresh.js";
+      import { initScanner } from "./js/scanner.js";
+      initTheme();
+      initRefresh();
+      initScanner(document.getElementById("app"));
+    </script>
+  </body>
+</html>

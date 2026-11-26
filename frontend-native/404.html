@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Trading Suite — Halaman tidak ditemukan</title>
+    <link rel="stylesheet" href="css/styles.css" />
+    <style>
+      html { background: #ffffff; }
+      html.dark { background: #121110; }
+    </style>
+    <script>
+      (function () {
+        try {
+          var pref = localStorage.getItem("ts-theme");
+          if (pref !== "light" && pref !== "dark") pref = "system";
+          var dark =
+            pref === "dark" ||
+            (pref !== "light" &&
+              window.matchMedia("(prefers-color-scheme: dark)").matches);
+          if (dark) document.documentElement.classList.add("dark");
+        } catch (e) { /* private mode: fall through to light */ }
+      })();
+    </script>
+  </head>
+  <body>
+    <a href="#main" class="sr-only skip">Lewati ke konten</a>
+    <header class="top">
+      <div class="top-in">
+        <div style="display:flex;align-items:baseline;gap:8px">
+          <a href="index.html" class="brand">
+            <span class="font-display brand-name">Trading<span>Suite</span></span>
+          </a>
+          <span class="brand-idx">IDX</span>
+        </div>
+        <div class="top-actions">
+          <button type="button" class="themebtn" data-theme-toggle>Auto</button>
+        </div>
+      </div>
+      <nav class="tabs" aria-label="Tugas utama">
+        <a href="index.html" class="tab">Hari ini</a>
+        <a href="scanner.html" class="tab">Cari saham</a>
+        <a href="deep.html" class="tab">Periksa saham</a>
+        <a href="backtest.html" class="tab">Uji strategi</a>
+      </nav>
+    </header>
+    <main id="main">
+      <div class="wrap">
+        <p class="mono" style="font-size:11px;text-transform:uppercase;letter-spacing:0.16em;color:var(--text-ghost)">404</p>
+        <h1 class="font-display" style="margin-top:12px;font-size:32px">Halaman tidak ditemukan</h1>
+        <p class="fine dim" style="margin-top:8px;max-width:60ch;font-size:13px">Alamat ini bukan salah satu dari empat tugas aplikasi. Mulai lagi dari Hari ini.</p>
+        <p><a href="index.html" class="btn" style="display:inline-block;margin-top:16px;text-decoration:none">Kembali ke Hari ini</a></p>
+      </div>
+    </main>
+    <script type="module">
+      import { initTheme } from "./js/theme.js";
+      initTheme();
+
+      /* Client-side alias map: mirrors the retired React-router redirects so
+       * old/bookmarked paths land on their new page even on hosts that serve
+       * this 404 file for unknown paths. Server rewrites (deploy/Caddyfile)
+       * do the same with proper 301s where available. */
+      var path = window.location.pathname.replace(/\/+$/, "") || "/";
+      var seg = path.split("/").filter(Boolean);
+      var base = "/" + (seg[0] || "");
+      var rest = seg.slice(1).join("/");
+      var target = null;
+
+      var retired = {
+        "/desk": "/", "/overview": "/", "/markets": "/", "/profiler": "/",
+        "/calculators": "/", "/watchlist": "/", "/regime": "/", "/alerts": "/",
+        "/portfolio": "/", "/journal": "/", "/rotation": "/", "/ownership": "/",
+        "/sentiment": "/", "/announcements": "/", "/foreignflow": "/",
+        "/brokerintel": "/", "/stockbit": "/", "/validator": "/", "/suspended": "/",
+        "/konglo": "/", "/msci": "/", "/stealth": "/", "/wiki": "/",
+        "/plan": "/", "/market": "/scanner.html", "/screener": "/scanner.html",
+      };
+      if (base === "/deep" && rest) target = "/deep.html?ticker=" + encodeURIComponent(rest.toUpperCase());
+      else if (base === "/name" && rest) target = "/deep.html?ticker=" + encodeURIComponent(rest.toUpperCase());
+      else if (retired[path] !== undefined || retired[base] !== undefined) target = retired[path] !== undefined ? retired[path] : retired[base];
+      else if (base === "/scanner") target = "/scanner.html";
+      else if (base === "/backtest") target = "/backtest.html";
+      else if (base === "/method") target = "/method.html";
+      else if (base === "/paper") target = "/paper.html";
+      else if (base === "/flow") target = "/flow.html";
+
+      if (target) {
+        var page = target === "/" ? "index.html" : target.slice(1);
+        window.location.replace(page + window.location.search + window.location.hash);
+      }
+    </script>
+  </body>
+</html>

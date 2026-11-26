@@ -23,8 +23,8 @@ TARGET_SDK=36
 rm -rf "$OUT"
 mkdir -p "$OUT/classes" "$OUT/dex"
 
-DIST="$HERE/../frontend-web/dist"
-[ -d "$DIST" ] || { echo "no frontend build: run npm run build in frontend-web" >&2; exit 1; }
+DIST="$HERE/../frontend-native"
+[ -d "$DIST" ] || { echo "no frontend directory: expected frontend-native/" >&2; exit 1; }
 # aapt2 -A packs the directory's *contents* as assets/, so mirror dist/ under web/.
 ASSETS="$OUT/assets"
 rm -rf "$ASSETS"

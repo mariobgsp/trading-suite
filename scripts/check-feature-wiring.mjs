@@ -1,26 +1,22 @@
 #!/usr/bin/env node
 /**
- * Feature-wiring guard — fails if the suite's features get dismantled:
+ * Feature-wiring guard — fails if the suite's pages get dismantled:
  *
- *   1. Every section in src/lib/sections.ts must have a module at
- *      src/components/sections/<id>.tsx.   (frontend-web/src/...)
- *   2. Every section must reference at least one endpoint declared for it.
- *   3. Every declared /api/... endpoint must exist in some backend router file.
- *   4. Core feature strings must survive in the sections that own them
- *      (D-Signal groups, Konglo groups, ownership register, rotation accum).
+ *   1. Every page in PAGES must exist as <page>.html with its js/<page>.js.
+ *   2. Every page module must reference at least one /api/... endpoint.
+ *   3. Every referenced endpoint must exist in some backend router file.
+ *   4. Shell markers (nav tabs, theme toggle, refresh button) must survive in
+ *      every page; the redirect map must survive in 404.html + deploy/Caddyfile.
+ *   5. The vendored chart lib must exist (pages render charts offline).
  *
- * No dependencies: plain node + regex. Run: npm test
+ * No dependencies: plain node + regex. Run: node scripts/check-feature-wiring.mjs
  */
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-
-// The frontend moved to frontend-web/ (Vite) when Next.js was dropped. The
-// guard checks the same section-to-module wiring, so only the frontend paths
-// need repointing - backend/ paths stay relative to root.
-const fe = join(root, "frontend-web");
+const fe = join(root, "frontend-native");
 
 let failures = 0;
 const fail = (msg) => {
@@ -29,42 +25,30 @@ const fail = (msg) => {
 };
 const ok = (msg) => console.log(`ok   ${msg}`);
 
-// ── Parse sections.ts ───────────────────────────────────────────────────
-const registrySrc = readFileSync(join(fe, "src/lib/sections.ts"), "utf8");
-const apps = [...registrySrc.matchAll(/id:\s*"([^"]+)"([\s\S]*?)endpoints:\s*\[([^\]]*)\]/g)].map(
-	([, id, , eps]) => ({
-		id,
-		endpoints: [...eps.matchAll(/"(\/api\/[^"]*)"/g)].map((m) => m[1]),
-	}),
-);
-if (apps.length < 5) {
-	fail(`sections.ts declares only ${apps.length} sections — entries were removed`);
-}
-
-// ── 1+2: module exists per section, references its endpoints ────────────
-for (const { id, endpoints } of apps) {
-	const file = join(fe, "src/components/sections", `${id}.tsx`);
-	if (!existsSync(file)) {
-		fail(`${id}: src/components/sections/${id}.tsx deleted`);
+// ── 1+2: page shell + module exist, module calls its API ─────────────
+// [page, module]: the home page's module keeps its Tonight name.
+const PAGES = [["index", "tonight"], ["scanner", "scanner"], ["deep", "deep"], ["backtest", "backtest"], ["paper", "paper"], ["flow", "flow"], ["method", "method"]];
+const pageEndpoints = {};
+for (const [id, mod] of PAGES) {
+	const html = join(fe, `${id}.html`);
+	const js = join(fe, "js", `${mod}.js`);
+	if (!existsSync(html)) {
+		fail(`${id}.html deleted`);
 		continue;
 	}
-	const sectionSrc = readFileSync(file, "utf8");
-	const concrete = endpoints.map((e) => e.replace(/\{ticker\}.*/, ""));
-	if (concrete.length === 0) {
-		ok(`${id}: section exists (no API)`);
+	if (!existsSync(js)) {
+		fail(`js/${id}.js deleted`);
 		continue;
 	}
-	const referenced = concrete.some((e) => sectionSrc.includes(e));
-	if (!referenced) {
-		fail(
-			`${id}.tsx no longer calls any of its declared endpoints (${endpoints.join(", ")})`,
-		);
-	} else ok(`${id}: section exists, calls its API`);
+	const src = readFileSync(js, "utf8");
+	const eps = [...src.matchAll(/"(\/api\/[^"?]*)"/g)].map((m) => m[1]);
+	pageEndpoints[id] = eps;
+	if (eps.length === 0) fail(`${id}.js no longer calls any /api endpoint`);
+	else ok(`${id}: shell + module exist, calls its API`);
 }
 
-// ── 3: every declared endpoint exists in backend routers ──────────────
+// ── 3: every referenced endpoint exists in backend routers ────────────
 const routersDir = join(root, "backend/app/routers");
-// Combine each router's prefix with its @router.get("/...") paths.
 const allRoutes = readdirSync(routersDir)
 	.filter((f) => f.endsWith(".py"))
 	.map((f) => {
@@ -75,44 +59,45 @@ const allRoutes = readdirSync(routersDir)
 		);
 	})
 	.flat();
-for (const { id, endpoints } of apps) {
+for (const [id, endpoints] of Object.entries(pageEndpoints)) {
 	for (const ep of endpoints) {
-		const base = ep.replace(/\{[^}]*\}/g, "{}");
-		if (!allRoutes.includes(base)) {
-			fail(`endpoint ${ep} (section ${id}) missing from backend routers`);
-		}
+		const base = ep.split("?")[0];
+		const hit = allRoutes.some(
+			(r) =>
+				r === base ||
+				base === r.replace(/\/\{\}$/, "") ||
+				base.startsWith(r.replace(/\/\{\}$/, "") + "/"),
+		);
+		if (!hit) fail(`endpoint ${ep} (page ${id}) missing from backend routers`);
 	}
 }
-ok("backend routes cover all declared section endpoints");
+ok("backend routes cover all page endpoints");
 
-// ── 4: feature markers that must not disappear ────────────────────────
-const MARKERS = [
-	[
-		"src/components/sections/markets.tsx",
-		["ForeignBarsPanel", "showLpm", "showIntensity"],
-		"Markets foreign bars + LPM toggles",
-	],
-	[
-		"src/components/sections/profiler.tsx",
-		["ValidatorDetail", "StockbitBrokerPanel", "Bandarmology"],
-		"Profiler merged validator",
-	],
-	[
-		"src/components/sections/screener.tsx",
-		["SSE", "behavior", "vault"],
-		"Screener backend filter",
-	],
-];
-for (const [file, needles, label] of MARKERS) {
-	if (!existsSync(join(fe, file))) {
-		fail(`${label}: ${file} deleted`);
-		continue;
-	}
-	const src = readFileSync(join(fe, file), "utf8");
-	const missing = needles.filter((n) => !src.includes(n));
-	if (missing.length) fail(`${label}: lost markers ${missing.join(", ")}`);
-	else ok(`${label}: intact`);
+// ── 4: shell + redirect markers ───────────────────────────────────────
+const TABS = ["index.html", "scanner.html", "deep.html", "backtest.html"];
+for (const [id] of PAGES) {
+	const src = readFileSync(join(fe, `${id}.html`), "utf8");
+	const missing = TABS.filter((t) => !src.includes(`href="${t}"`));
+	if (missing.length) fail(`${id}.html lost nav tabs ${missing.join(", ")}`);
+	if (!src.includes("data-theme-toggle")) fail(`${id}.html lost theme toggle`);
+	if (!src.includes("data-refresh")) fail(`${id}.html lost refresh button`);
 }
+ok("shell: nav tabs, theme toggle, refresh button on all pages");
+
+const notFound = readFileSync(join(fe, "404.html"), "utf8");
+for (const needle of ["/deep.html?ticker=", "/plan", "retired"]) {
+	if (!notFound.includes(needle)) fail(`404.html lost redirect marker ${needle}`);
+}
+const caddy = readFileSync(join(root, "deploy/Caddyfile"), "utf8");
+for (const needle of ["frontend-native", "redir /plan", "path_regexp", "404.html"]) {
+	if (!caddy.includes(needle)) fail(`deploy/Caddyfile lost marker ${needle}`);
+}
+ok("redirects: 404 fallback + Caddy 301 map intact");
+
+// ── 5: vendored chart lib ─────────────────────────────────────────────
+if (!existsSync(join(fe, "vendor/lightweight-charts.js"))) {
+	fail("vendor/lightweight-charts.js deleted — charts break offline");
+} else ok("vendored chart lib present");
 
 if (failures) {
 	console.error(`\n${failures} check(s) failed`);

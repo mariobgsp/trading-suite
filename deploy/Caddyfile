@@ -1,6 +1,7 @@
 # The app and the API on one origin: /api goes to FastAPI, everything else is
-# the built SPA. Same origin means no CORS config, and the Android app can point
-# at https://<domain> with no port.
+# the static vanilla frontend (frontend-native/, no build step). Same origin
+# means no CORS config, and the Android app can point at https://<domain>
+# with no port.
 {$DOMAIN:localhost} {
 	encode gzip
 
@@ -8,6 +9,53 @@
 	reverse_proxy @api backend:8000
 
 	root * /srv
-	try_files {path} /index.html
+
+	# Old aliases + retired tool paths (mirrors the React-router map the
+	# vanilla 404.html also carries as a client-side fallback).
+	redir /plan / permanent
+	redir /market /scanner.html permanent
+	redir /screener /scanner.html permanent
+	redir /desk / permanent
+	redir /overview / permanent
+	redir /markets / permanent
+	redir /profiler / permanent
+	redir /calculators / permanent
+	redir /watchlist / permanent
+	redir /regime / permanent
+	redir /alerts / permanent
+	redir /portfolio / permanent
+	redir /journal / permanent
+	redir /rotation / permanent
+	redir /ownership / permanent
+	redir /sentiment / permanent
+	redir /announcements / permanent
+	redir /foreignflow / permanent
+	redir /brokerintel / permanent
+	redir /stockbit / permanent
+	redir /validator / permanent
+	redir /suspended / permanent
+	redir /konglo / permanent
+	redir /msci / permanent
+	redir /stealth / permanent
+	redir /wiki / permanent
+	redir /scanner /scanner.html permanent
+	redir /deep /deep.html permanent
+	redir /backtest /backtest.html permanent
+	redir /method /method.html permanent
+	redir /paper /paper.html permanent
+	redir /flow /flow.html permanent
+
+	@deepTicker path_regexp ^/deep/(.+)
+	redir @deepTicker /deep.html?ticker={re.1} permanent
+	@nameTicker path_regexp ^/name/(.+)
+	redir @nameTicker /deep.html?ticker={re.1} permanent
+
+	try_files {path} {path}.html /404.html
 	file_server
+
+	handle_errors {
+		@e404 expression {http.error.status_code} == 404
+		rewrite @e404 /404.html
+		file_server
+	}
 }

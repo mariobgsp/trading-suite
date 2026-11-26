@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# trading-suite.sh — one-command runner for the lean desk (6 routes)
+# trading-suite.sh — one-command runner for the lean desk (7 static pages)
 # Usage:
-#   ./trading-suite.sh run        # backend :8000 + frontend :5173
+#   ./trading-suite.sh run        # backend :8000 + static frontend :5173
 #   ./trading-suite.sh dev        # alias for run
-#   ./trading-suite.sh build      # production build (vite build + tsc)
-#   ./trading-suite.sh start      # production start (vite preview + uvicorn)
+#   ./trading-suite.sh build      # frontend syntax check + backend tests
+#   ./trading-suite.sh start      # production start (static server + uvicorn)
 #   ./trading-suite.sh lan        # backend on the LAN, for the phone app
 #   ./trading-suite.sh stop       # kill dev servers started by run
 #   ./trading-suite.sh logs       # tail background logs
@@ -23,7 +23,7 @@ info() { printf "\033[36m[trading-suite]\033[0m %s\n" "$*"; }
 warn() { printf "\033[33m[warn]\033[0m %s\n" "$*"; }
 die()  { printf "\033[31m[error]\033[0m %s\n" "$*"; exit 1; }
 
-FRONTEND="$ROOT/frontend-web"
+FRONTEND="$ROOT/frontend-native"
 FRONTEND_PORT="${FRONTEND_PORT:-5173}"
 
 ensure_backend_venv() {
@@ -33,24 +33,14 @@ ensure_backend_venv() {
   fi
 }
 
-ensure_frontend_deps() {
-  # The frontend is a Vite app in frontend-web, not the repo root; without this
-  # the runner silently starts nothing and reports a port that is not listening.
-  if [[ ! -d "$FRONTEND/node_modules" ]]; then
-    info "installing frontend dependencies (first run only)..."
-    (cd "$FRONTEND" && npm install --silent) || die "npm install failed in $FRONTEND"
-  fi
-}
-
 cmd_run() {
   ensure_backend_venv
-  ensure_frontend_deps
   info "starting backend :8000 and frontend :$FRONTEND_PORT (logs: $PID_DIR)..."
   # backend
   nohup "$BACKEND/.venv/bin/python" -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload --app-dir "$BACKEND" \
     > "$PID_DIR/backend.log" 2>&1 & echo $! > "$PID_DIR/backend.pid"
-  # frontend
-  (cd "$FRONTEND" && nohup npm run dev --silent -- --port "$FRONTEND_PORT" > "$PID_DIR/frontend.log" 2>&1 & echo $! > "$PID_DIR/frontend.pid")
+  # frontend — static files, no build step; the backend's CORS allows :5173
+  (cd "$FRONTEND" && nohup python3 -m http.server "$FRONTEND_PORT" --bind 127.0.0.1 > "$PID_DIR/frontend.log" 2>&1 & echo $! > "$PID_DIR/frontend.pid")
   sleep 3
   if kill -0 "$(cat "$PID_DIR/backend.pid")" 2>/dev/null; then info "backend up  → http://localhost:8000  (health /api/health)"; else warn "backend failed — see $PID_DIR/backend.log"; fi
   if kill -0 "$(cat "$PID_DIR/frontend.pid")" 2>/dev/null; then info "frontend up → http://localhost:$FRONTEND_PORT"; else warn "frontend failed — see $PID_DIR/frontend.log"; fi
@@ -79,8 +69,7 @@ cmd_stop() {
     fi
   done
   pkill -f "uvicorn app.main:app" 2>/dev/null && info "killed stray uvicorn" || true
-  pkill -f "bin/vite dev" 2>/dev/null && info "killed stray vite" || true
-  pkill -f "bin/vite preview" 2>/dev/null && info "killed stray vite preview" || true
+  pkill -f "http.server $FRONTEND_PORT" 2>/dev/null && info "killed stray static server" || true
 }
 
 cmd_logs() {
@@ -88,9 +77,8 @@ cmd_logs() {
 }
 
 cmd_build() {
-  ensure_frontend_deps
-  info "frontend typecheck + build..."
-  (cd "$FRONTEND" && npm run build) || die "frontend build failed"
+  info "frontend syntax check (node --check, no build step)..."
+  for f in "$FRONTEND"/js/*.js; do node --check "$f" || die "syntax error in $f"; done
   info "backend tests..."
   (cd backend && .venv/bin/python -m pytest -q) || die "backend tests failed"
   info "backend typecheck..."
@@ -117,17 +105,15 @@ cmd_lan() {
 
 cmd_start() {
   ensure_backend_venv
-  ensure_frontend_deps
-  info "production start — backend :8000 (no reload) + frontend :$FRONTEND_PORT"
+  info "production start — backend :8000 (no reload) + static frontend :$FRONTEND_PORT"
   nohup "$BACKEND/.venv/bin/python" -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --app-dir "$BACKEND" > "$PID_DIR/backend.log" 2>&1 & echo $! > "$PID_DIR/backend.pid"
-  (cd "$FRONTEND" && nohup npm run preview --silent -- --port "$FRONTEND_PORT" > "$PID_DIR/frontend.log" 2>&1 & echo $! > "$PID_DIR/frontend.pid")
+  (cd "$FRONTEND" && nohup python3 -m http.server "$FRONTEND_PORT" --bind 127.0.0.1 > "$PID_DIR/frontend.log" 2>&1 & echo $! > "$PID_DIR/frontend.pid")
   info "started — health: http://localhost:8000/api/health"
   info "the plan needs the backend's CORS to allow :$FRONTEND_PORT (it does by default)"
 }
 
 cmd_clean() {
-  rm -rf "$FRONTEND/dist" "$FRONTEND/node_modules/.vite"
-  info "pruned frontend build + vite caches"
+  info "frontend-native ships no build output — nothing to prune"
   if [[ -f "$BACKEND/data/cache.db" ]]; then
     info "cache at $BACKEND/data/cache.db kept (delete manually to reset)"
   fi
@@ -162,8 +148,8 @@ cmd_verify() {
   local backend_status=0 frontend_status=0
   info "backend tests (rule chain, cited figures, sizing, verdict, refresh)…"
   (cd "$BACKEND" && .venv/bin/python -m pytest tests -q) || backend_status=$?
-  info "frontend typecheck…"
-  (cd "$FRONTEND" && npx --no-install tsc --noEmit) || frontend_status=$?
+  info "frontend syntax check (node --check over frontend-native/js)..."
+  for f in "$FRONTEND"/js/*.js; do node --check "$f" || frontend_status=$?; done
   if [[ "$backend_status" -eq 0 && "$frontend_status" -eq 0 ]]; then
     info "all clean"
     return 0

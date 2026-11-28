@@ -6,17 +6,17 @@
 "use strict";
 
 import { api } from "./api.js";
-import { esc, idr, pct, pctRaw, setHTML } from "./format.js";
+import { esc, fmtIdr, idr, pct, pctRaw, setHTML } from "./format.js";
 import { bandCopy, screenCopy, TERMS } from "./present.js";
 import { REFRESH_EVENT } from "./refresh.js";
 import { section } from "./tonight.js";
 
 const SORTS = [
-  ["closest", "Terkait aturan"],
+  ["closest", "Paling dekat lolos"],
   ["momentum", "Momentum terkuat"],
-  ["breakout", "Paling menembus 40 hari"],
+  ["breakout", "Paling dekat high 40 sesi"],
   ["quiet", "Paling tenang"],
-  ["turnover", "Nilai transaksi terbesar"],
+  ["turnover", "Likuiditas 60 sesi terbesar"],
   ["ticker", "A–Z"],
 ];
 
@@ -33,14 +33,6 @@ const SAVED_PRESETS = [
 ];
 
 const state = { payload: null, failed: null, filter: "all", query: "", sort: "closest", preset: "ringkas" };
-
-function compactIdr(v) {
-  if (v == null || !Number.isFinite(v)) return "—";
-  if (v >= 1e12) return `Rp ${(v / 1e12).toFixed(1)} T`;
-  if (v >= 1e9) return `Rp ${(v / 1e9).toFixed(1)} B`;
-  if (v >= 1e6) return `Rp ${(v / 1e6).toFixed(0)} M`;
-  return `Rp ${Math.round(v).toLocaleString("id-ID")}`;
-}
 
 function visibleRows() {
   const p = state.payload;
@@ -73,16 +65,19 @@ function screenNote() {
   const screen = p.screens.find((s) => s.key === state.filter) ?? null;
   if (!screen) {
     return `<div class="card soft" style="margin-bottom:16px;padding:12px 16px">
-      <p class="fine dim">Setiap filter dan artinya. Hanya <b class="k">Lolos semua aturan</b> yang punya hasil terukur sendiri; sisanya adalah syarat yang menjelaskan posisi sebuah saham.</p>
-      <dl style="margin:12px 0 0;display:flex;flex-direction:column;gap:6px">
-        ${p.screens.map((s) => {
-          const plain = screenCopy(s.key, s);
-          return `<div style="display:flex;flex-wrap:wrap;gap:4px 12px;font-size:11px;line-height:1.6">
-            <dt class="mono" style="width:158px;flex-shrink:0;font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text)">${esc(plain.label)} <span style="color:var(--text-ghost)">(${idr(s.count)})</span></dt>
-            <dd style="margin:0;max-width:82ch;color:var(--text-faint)">${esc(plain.meaning)} ${!s.active ? `<i style="color:var(--gold)">Tidak aktif di pita ini.</i>` : ""}</dd>
-          </div>`;
-        }).join("")}
-      </dl></div>`;
+      <p class="fine dim">Hanya <b class="k">Lolos semua aturan</b> yang punya hasil terukur sendiri; sisanya adalah syarat yang menjelaskan posisi sebuah saham.</p>
+      <details class="fold" style="margin-top:6px">
+        <summary style="font-size:11px">Apa arti setiap filter</summary>
+        <dl style="margin:12px 0 0;display:flex;flex-direction:column;gap:6px">
+          ${p.screens.map((s) => {
+            const plain = screenCopy(s.key, s);
+            return `<div style="display:flex;flex-wrap:wrap;gap:4px 12px;font-size:11px;line-height:1.6">
+              <dt class="mono" style="width:158px;flex-shrink:0;font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text)">${esc(plain.label)} <span style="color:var(--text-ghost)">(${idr(s.count)})</span></dt>
+              <dd style="margin:0;max-width:82ch;color:var(--text-faint)">${esc(plain.meaning)} ${!s.active ? `<i style="color:var(--gold)">Tidak aktif di pita ini.</i>` : ""}</dd>
+            </div>`;
+          }).join("")}
+        </dl>
+      </details></div>`;
   }
   const plain = screenCopy(screen.key, screen);
   return `<div class="card soft" style="margin-bottom:16px;padding:12px 16px">
@@ -118,8 +113,8 @@ function rowHtml(row, showTech, showPerf) {
     <td class="tabular" style="padding:6px 8px;text-align:right"><span style="color:${(row.change_pct ?? 0) >= 0 ? "var(--up)" : "var(--down)"}">${pctRaw(row.change_pct, 1)}</span></td>
     ${showTech ? `<td class="tabular" style="padding:6px 8px;text-align:right"><span style="color:${row.conditions.breakout ? "var(--up)" : "var(--text-faint)"}">${(row.breakout_pct >= 0 ? "+" : "") + row.breakout_pct.toFixed(2) + "%"}</span></td>` : ""}
     ${showTech ? `<td class="tabular" style="padding:6px 8px;text-align:right"><span style="color:${row.conditions.relative_strength ? "var(--text)" : "var(--text-faint)"}">${row.rs_rating.toFixed(0)}</span></td>` : ""}
-    ${showTech ? `<td class="tabular" style="padding:6px 8px;text-align:right"><span style="color:${row.conditions.quiet_vol ? "var(--up)" : "var(--text-faint)"}">${row.vol20.toFixed(1)}</span> <span style="font-size:9px;color:var(--text-ghost)">maks ${row.vol20_threshold.toFixed(1)}</span></td>` : ""}
-    ${showPerf ? `<td class="tabular" style="padding:6px 8px;text-align:right;color:var(--text-faint)">${compactIdr(row.turnover_idr)}</td>` : ""}
+    ${showTech ? `<td class="tabular" style="padding:6px 8px;text-align:right"><span style="color:${row.conditions.quiet_vol ? "var(--up)" : "var(--text-faint)"}">${row.vol20.toFixed(1)}%</span> <span style="font-size:9px;color:var(--text-ghost)">maks ${row.vol20_threshold.toFixed(1)}%</span></td>` : ""}
+    ${showPerf ? `<td class="tabular" style="padding:6px 8px;text-align:right;color:var(--text-faint)">${fmtIdr(row.turnover_idr, true)}</td>` : ""}
     <td style="padding:6px 8px;text-align:center">${levelCell(row)}</td>
     <td style="padding:6px 8px">${badges.length === 0 ? `<span style="color:var(--text-ghost)">—</span>` : `<span style="display:flex;flex-wrap:wrap;gap:4px">${badges.map((k) => `<span class="pill" style="font-size:9px;color:${k === "tier1" ? "var(--up)" : "var(--gold)"};background:${k === "tier1" ? "color-mix(in srgb, var(--up) 10%, transparent)" : "color-mix(in srgb, var(--gold) 10%, transparent)"}">${k === "tier1" ? "lolos" : k === "capitulation" ? "pantau" : "hampir"}</span>`).join("")}</span>`}</td>
     <td style="padding:6px 12px"><a href="deep.html?ticker=${esc(row.ticker)}" style="font-size:9px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-faint);text-decoration:underline dotted">Periksa →</a></td>
@@ -133,7 +128,7 @@ function tapeHtml(p) {
   return `<div class="card" style="margin-bottom:20px;display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;padding:10px 16px;border-left:3px solid ${f?.stale ? "var(--gold)" : "var(--border)"}">
     <span class="fine dim" style="font-size:13px">Kondisi pasar: <b class="k" style="color:${band.tone}">${esc(band.label)}</b> → ${esc(band.advice)}</span>
     <a href="index.html" style="font-size:12px;color:var(--text-faint)">lihat Hari ini →</a>
-    ${f ? `<span class="mono" style="margin-left:auto;font-size:10px;color:var(--text-ghost)" title="${f.stale ? `Data bar berakhir ${f.bars_session}; sesi terakhir bursa ${f.expected_session}. Muat ulang data sebelum bertindak.` : `Data bar berakhir ${f.bars_session}; sesuai jam bursa.`}">data per ${esc(f.bars_session)}${f.stale ? " · perbarui dulu" : ""}</span>` : ""}
+    ${f ? `<span class="mono" style="margin-left:auto;font-size:10px;color:var(--text-ghost)" title="${f.stale ? `Data bar berakhir ${f.bars_session}; sesi terakhir bursa ${f.expected_session}. Muat ulang data sebelum bertindak.` : `Data bar berakhir ${f.bars_session}; sesuai jam bursa.`}">data sesi ${esc(f.bars_session)}${f.stale ? " · perbarui dulu" : ""}</span>` : ""}
   </div>`;
 }
 
@@ -145,10 +140,10 @@ function renderTable() {
   const rows = visibleRows();
   const cols = showTech ? 10 : showPerf ? 7 : 6;
   setHTML(host, `<div class="tbl-scroll card" style="max-height:72vh;overflow:auto"><table class="tbl tbl-sticky" style="min-width:${showTech ? "960px" : showPerf ? "800px" : "640px"}">
-    <thead><tr><th>Saham</th><th class="num">Harga</th><th class="num">Hari ini</th>${showTech ? `<th class="num">40 hari</th><th class="num">Momentum</th><th class="num">Volatilitas</th>` : ""}${showPerf ? `<th class="num">Nilai transaksi</th>` : ""}<th style="text-align:center">Support / Resistance</th><th>Status</th><th>Periksa</th></tr></thead>
+    <thead><tr><th>Saham</th><th class="num">Harga (Rp)</th><th class="num" title="Perubahan harga pada sesi data, bukan pergerakan intraday.">Perubahan sesi</th>${showTech ? `<th class="num" title="Jarak harga tutup ke tertinggi 40 sesi; positif berarti sudah menembus.">Vs high 40 sesi</th><th class="num" title="Peringkat kekuatan relatif 0–100; syarat metode adalah 10% teratas.">RS</th><th class="num" title="Volatilitas realisasi 20 sesi dan ambang tenangnya.">Vol 20 sesi</th>` : ""}${showPerf ? `<th class="num" title="Median nilai transaksi harian selama 60 sesi terakhir, bukan nilai transaksi satu sesi.">Likuiditas 60 sesi</th>` : ""}<th style="text-align:center">Support / Resistance</th><th>Status</th><th>Periksa</th></tr></thead>
     <tbody class="mono" style="font-size:11px">
       ${rows.map((r) => rowHtml(r, showTech, showPerf)).join("")}
-      ${rows.length === 0 ? `<tr><td colspan="${cols}" style="padding:32px 16px;text-align:center;font-size:13px;color:var(--text-faint)">Tidak ada saham yang lolos filter ini malam ini.</td></tr>` : ""}
+      ${rows.length === 0 ? `<tr><td colspan="${cols}" style="padding:32px 16px;text-align:center;font-size:13px;color:var(--text-faint)">Tidak ada saham yang lolos filter ini pada sesi data.</td></tr>` : ""}
     </tbody></table></div>
     <p class="fine" style="margin-top:8px;max-width:90ch;font-size:11px">Support = ${esc(TERMS.support)}. Resistance = ${esc(TERMS.resistance)}. Angka ×N setelah harga level = sudah N kali harga berbalik arah di area itu dalam satu tahun terakhir.</p>`);
 }
@@ -161,7 +156,7 @@ function renderControls() {
   setHTML(host, `${tapeHtml(p)}
   ${section({
     title: `${idr(rows.length)} dari ${idr(p.rows.length)} saham`,
-    subtitle: `Per ${p.session_label}. ${idr(p.universe.tradable)} dari ${idr(p.universe.codes)} kode lolos syarat dasar riset; sisanya tidak dihitung.`,
+    subtitle: `Data sesi ${p.session_label}. ${idr(p.universe.tradable)} dari ${idr(p.universe.codes)} kode lolos syarat dasar riset; sisanya tidak dihitung.`,
     body: `<div style="margin-bottom:12px;display:flex;flex-wrap:wrap;align-items:center;gap:8px">
       ${chip("all", "Semua saham", p.rows.length, state.filter === "all", false, null)}
       ${p.screens.map((s) => {
@@ -175,11 +170,9 @@ function renderControls() {
         <select id="scan-sort">${SORTS.map(([v, l]) => `<option value="${v}"${v === state.sort ? " selected" : ""}>${esc(l)}</option>`).join("")}</select></label>
       <div style="display:flex;align-items:center;gap:4px" role="group" aria-label="Kolom tampilan">
         ${COLUMN_PRESETS.map(([v, l]) => `<button type="button" class="preset" data-preset="${v}" aria-pressed="${state.preset === v}">${esc(l)}</button>`).join("")}</div>
-      <span class="mono" style="margin-left:auto;font-size:10px;color:var(--text-ghost)">Klik saham untuk periksa lengkap</span>
-    </div>
-    <div style="margin-bottom:16px;display:flex;flex-wrap:wrap;align-items:center;gap:8px">
       <span class="mono" style="font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-ghost)">Cepat:</span>
       ${SAVED_PRESETS.map((it) => `<button type="button" class="preset" data-saved="${it.key}">${esc(it.label)}</button>`).join("")}
+      <span class="mono" style="margin-left:auto;font-size:10px;color:var(--text-ghost)">Klik saham untuk periksa lengkap</span>
     </div>
     <div id="scan-note"></div>`,
   })}`);

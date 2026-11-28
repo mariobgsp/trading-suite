@@ -13,10 +13,9 @@ import { api } from "./api.js";
 import { esc, idr, pctRaw, setHTML, fmtIdrShort } from "./format.js";
 import { GATE_LABEL } from "./format.js";
 import { createCandleChart } from "./chart.js";
-import { renderInvestCase } from "./invest.js";
 import { flowSvg } from "./flow.js";
 
-const PERIODS = ["3mo", "6mo", "1y", "2y"];
+const PERIODS = [["3mo", "3 bln"], ["6mo", "6 bln"], ["1y", "1 thn"], ["2y", "2 thn"]];
 
 const TONE = {
   supportive: "var(--up)",
@@ -26,6 +25,16 @@ const TONE = {
   against: "var(--down)",
   weak: "var(--down)",
   unknown: "var(--text-ghost)",
+};
+
+const STATE_LABEL = {
+  supportive: "mendukung",
+  calibrated: "mendukung",
+  caution: "hati-hati",
+  mixed: "campuran",
+  against: "melawan",
+  weak: "lemah",
+  unknown: "belum terukur",
 };
 
 function changeBadge(value) {
@@ -72,21 +81,28 @@ function wireSearch(root, ranked) {
   });
 }
 
-function deepHeader(code, profile, changeFromHistory) {
-  const price = profile?.price ?? null;
-  const change = profile?.change_percent ?? changeFromHistory ?? null;
+function deepHeader(code, profile, detail) {
+  const hasQuote = profile?.quote_live === true && profile?.price != null;
+  const price = hasQuote ? profile.price : detail?.close ?? profile?.price ?? null;
+  const change = hasQuote ? profile?.change_percent ?? null : null;
+  const priceLabel = hasQuote ? "kuotasi terkini" : detail?.as_of ? `tutup ${detail.as_of}` : "harga tersedia";
   const chips = [
     profile?.sector ? "Sektor: " + profile.sector : null,
     profile?.industry ? "Industri: " + profile.industry : null,
     profile?.market_cap != null ? "Kap. pasar " + fmtIdrShort(profile.market_cap) : null,
-    profile?.quote_live ? null : "pondasi dari scan harian",
+    detail?.as_of ? "Data harian " + detail.as_of : null,
   ].filter(Boolean);
   return `<header style="border-bottom:1px solid var(--border);padding-bottom:24px">
-    <div style="display:flex;flex-wrap:wrap;align-items:baseline;gap:8px 20px">
+    <div style="display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px 20px">
       <h1 class="font-display" style="font-size:44px;line-height:1;letter-spacing:-0.02em;margin:0">${esc(code)}</h1>
       ${profile?.name ? `<span class="mono" style="max-width:34ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:var(--text-faint)">${esc(profile.name)}</span>` : ""}
-      <span class="tabular font-display" style="margin-left:auto;font-size:24px;color:var(--text)">${price != null ? idr(price) : "—"}</span>
-      ${changeBadge(change)}
+      <div style="margin-left:auto;min-width:0;text-align:right">
+        <span class="mono" style="display:block;font-size:9px;text-transform:uppercase;letter-spacing:0.12em;color:var(--text-ghost)">${esc(priceLabel)}</span>
+        <div style="display:flex;flex-wrap:wrap;align-items:baseline;justify-content:flex-end;gap:8px;margin-top:2px">
+          <span class="tabular font-display" style="font-size:24px;color:var(--text)">${price != null ? idr(price) : "—"}</span>
+          ${change != null ? changeBadge(change) : ""}
+        </div>
+      </div>
     </div>
     <div class="mono" style="margin-top:12px;display:flex;flex-wrap:wrap;gap:4px 12px;font-size:10px;color:var(--text-ghost)">
       ${chips.map((c) => `<span style="border:1px solid var(--border);background:var(--panel-2);padding:2px 8px">${esc(c)}</span>`).join("")}
@@ -125,15 +141,15 @@ function ownershipStrip(s) {
 function fundamentalVerdict(report) {
   const pillar = report?.fundamental ?? null;
   if (!report || !pillar) {
-    return verdictFrame("Layak secara fundamental?", "mengukur…", "unknown",
+    return verdictFrame("Kasus fundamental", "membaca…", TONE.unknown,
       `<p class="mono" style="margin:0;padding:12px;font-size:12px;color:var(--text-faint)">Kas investasi sedang dirakit (profil, kepemilikan, pengungkapan).</p>`);
   }
   const v = pillar.verdict;
   const sentence = v.measured < 3 ? "Terlalu sedikit yang terukur untuk bilang apa-apa"
     : v.state === "supportive" ? `${v.supportive} kriteria mendukung, tidak ada yang melawan`
     : v.state === "weak" ? `${v.against} kriteria melawan — kasus lemah menurut pita yang tertulis`
-    : v.state === "mixed" ? `bauran: ${v.supportive} mendukung, ${v.against} melawan` : "kaum terukur";
-  return verdictFrame("Layak trade secara fundamental?", v.state, TONE[v.state] ?? "unknown",
+    : v.state === "mixed" ? `bauran: ${v.supportive} mendukung, ${v.against} melawan` : "belum terukur";
+  return verdictFrame("Kasus fundamental", STATE_LABEL[v.state] ?? v.state, TONE[v.state] ?? TONE.unknown,
     `<p class="mono" style="margin:0;padding:4px 16px 4px;font-size:11px;color:var(--text-faint)">${esc(sentence)} · ${v.measured}/${v.total} kriteria terukur</p>
     ${criteriaList(pillar.criteria)}
     ${pillar.warnings.length ? `<ul class="mono" style="list-style:none;margin:0 12px 12px;padding:8px 0 0;border-top:1px solid var(--border);font-size:10px;line-height:1.7;color:var(--text-ghost)">${pillar.warnings.map((w) => `<li>· ${esc(w)}</li>`).join("")}</ul>` : ""}
@@ -149,14 +165,14 @@ function gateMiniList(gates, required) {
         <span style="display:flex;min-width:0;align-items:baseline;gap:8px">
           <span class="mono" style="font-size:11px;color:${g.passed ? "var(--up)" : "var(--text-ghost)"}">${g.passed ? "✓" : need ? "✕" : "–"}</span>
           <span class="mono" style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:var(--text-dim)">${esc(g.label || GATE_LABEL[g.key] || g.key)}</span></span>
-        <span class="mono" style="flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;color:var(--text-ghost)">${esc(g.text)}</span></li>`;
+        <span class="mono" style="flex-shrink:0;max-width:55%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right;font-size:10px;color:var(--text-ghost)">${esc(g.text)}</span></li>`;
     }).join("")}</ul>`;
 }
 
 function technicalVerdict(detail, requiredGates, technicalCriteria) {
   if (!detail) {
-    return verdictFrame("Layak trade secara teknikal?", "mengukur…", "unknown",
-      `<p class="mono" style="margin:0;padding:12px;font-size:12px;color:var(--text-faint)">Chain kondisi diukur pada bar terakhir yang utuh.</p>`);
+    return verdictFrame("Kondisi teknikal metode", "membaca…", TONE.unknown,
+      `<p class="mono" style="margin:0;padding:12px;font-size:12px;color:var(--text-faint)">Rantai kondisi diukur pada bar terakhir yang utuh.</p>`);
   }
   const passed = detail.gates.filter((g) => g.passed).length;
   const applies = requiredGates ? new Set(requiredGates) : null;
@@ -164,8 +180,9 @@ function technicalVerdict(detail, requiredGates, technicalCriteria) {
   const passingMost = detail.gates.length > 0 && detail.gates.filter((g) => !g.passed).length <= Math.floor(detail.gates.length / 2);
   const st = detail.in_plan ? "supportive" : failingRequired > 0 ? (passingMost ? "caution" : "against") : "caution";
   const tone = st === "supportive" ? "var(--up)" : st === "caution" ? "var(--gold)" : "var(--down)";
-  return verdictFrame("Layak trade secara teknikal?", detail.in_plan ? "buyable" : "belum", tone,
-    `<p class="mono" style="margin:0;padding:4px 16px 4px;font-size:11px;color:var(--text-faint)">${passed}/${detail.gates.length} kondisi metode terpenuhi${detail.in_plan ? " — rantai penuh terbuka malam ini" : " — " + esc(detail.distance_text ?? failingRequired + " kondisi belum lolos")}</p>
+  const distance = detail.distance_text === "Not close to firing yet." ? "Belum dekat dengan pemicu." : detail.distance_text;
+  return verdictFrame("Kondisi teknikal metode", detail.in_plan ? "bisa dibeli" : "belum lolos", tone,
+    `<p class="mono" style="margin:0;padding:4px 16px 4px;font-size:11px;color:var(--text-faint)">${passed}/${detail.gates.length} kondisi metode terpenuhi${detail.in_plan ? " — rantai penuh terbuka pada sesi ini" : " — " + esc(distance ?? failingRequired + " kondisi belum lolos")}</p>
     ${technicalCriteria.length ? `<div style="margin:0 12px 8px;display:flex;flex-wrap:wrap;gap:6px;border-bottom:1px solid var(--border);padding-bottom:8px">
       ${technicalCriteria.map((c) => `<span title="${esc(c.detail)}" class="mono" style="border:1px solid var(--border);background:var(--panel-2);padding:2px 6px;font-size:10px;color:${TONE[c.state] ?? "var(--text-dim)"}">${esc(c.label)} ${esc(c.display)}</span>`).join("")}</div>` : ""}
     ${detail.gates.length ? gateMiniList(detail.gates, requiredGates)
@@ -181,16 +198,17 @@ function technicalVerdict(detail, requiredGates, technicalCriteria) {
     </div>` : ""}`);
 }
 
-function rangeBar(high, low, price) {
+function rangeBar(high, low, price, asOf) {
   if (high == null || low == null || price == null || high <= low) return "";
-  const pctPos = ((price - low) / (high - low)) * 100;
-  return `<div class="card" style="padding:16px">
-    <div class="mono" style="display:flex;align-items:baseline;justify-content:space-between;font-size:9px;text-transform:uppercase;letter-spacing:0.12em;color:var(--text-ghost)">
-      <span>rentang 52 minggu</span><span class="tabular">${idr(low)} — ${idr(high)}</span></div>
+  const pctPos = Math.max(0, Math.min(100, ((price - low) / (high - low)) * 100));
+  const position = `${pctPos.toFixed(0)}% dari rentang`;
+  return `<div class="card" role="img" aria-label="Rentang 52 minggu ${idr(low)} sampai ${idr(high)}; harga ${idr(price)} berada di ${position}" style="padding:16px">
+    <div class="mono" style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;font-size:9px;text-transform:uppercase;letter-spacing:0.12em;color:var(--text-ghost)">
+      <span>Rentang 52 minggu${asOf ? ` · sampai ${esc(asOf)}` : ""}</span><span class="tabular">${idr(low)} — ${idr(high)}</span></div>
     <div style="position:relative;margin-top:8px;height:8px;border-radius:999px;background:var(--panel-3)">
-      <div style="position:absolute;top:0;bottom:0;left:0;border-radius:999px;width:${pctPos}%;background:var(--accent-dim)"></div>
+      <div style="position:absolute;top:0;bottom:0;left:0;border-radius:999px;width:${pctPos}%;background:var(--border-strong)"></div>
       <div style="position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--text);left:calc(${pctPos}% - 1px)"></div></div>
-    <div class="mono" style="margin-top:4px;text-align:right;font-size:10px;color:var(--text-dim)">kini ${idr(price)}</div>
+    <div class="mono" style="margin-top:4px;display:flex;justify-content:space-between;gap:8px;font-size:10px;color:var(--text-dim)"><span>${position}</span><span>tutup ${idr(price)}</span></div>
   </div>`;
 }
 
@@ -300,7 +318,7 @@ export async function initDeep(root) {
   }
 
   setHTML(body, `
-    ${deepHeader(code, profile, null)}
+    ${deepHeader(code, profile, detail)}
     <section class="grid half" style="margin-top:32px;align-items:start">
       ${fundamentalVerdict(caseReport)}
       ${technicalVerdict(detail, plan?.required_gates, caseReport?.technical?.criteria ?? [])}
@@ -309,13 +327,13 @@ export async function initDeep(root) {
     <section style="margin-top:32px">
       <div style="margin-bottom:12px;display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:12px">
         <h2 style="margin:0;font-size:17px;font-weight:600;letter-spacing:-0.01em">Perjalanan harga</h2>
-        <div style="display:flex;gap:4px" id="deep-periods">${PERIODS.map((p) => `<button type="button" class="preset" data-period="${p}" aria-pressed="${p === "1y"}">${p}</button>`).join("")}</div>
+        <div style="display:flex;gap:4px" id="deep-periods">${PERIODS.map(([value, label]) => `<button type="button" class="preset" data-period="${value}" aria-pressed="${value === "1y"}">${label}</button>`).join("")}</div>
       </div>
       <div class="card" style="padding:8px"><div id="deep-chart"><p class="mono" style="margin:0;padding:40px;text-align:center;font-size:12px;color:var(--text-faint)">Memuat lilin…</p></div></div>
       <p class="mono" style="margin-top:8px;font-size:10px;line-height:1.7;color:var(--text-ghost)">Garis putus-putus: level breakout yang harus dilampaui metode. Garis tebal: target dan stop yang meminta trade melipir ke sana.</p>
     </section>
     <section style="margin-top:32px">
-      <h2 style="margin:0 0 12px;display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px;font-size:15px;font-weight:600;letter-spacing:-0.01em">Backtest satu tahun terakhir
+      <h2 style="margin:0 0 12px;display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px;font-size:15px;font-weight:600;letter-spacing:-0.01em">Uji aturan satu tahun terakhir
         <span class="mono" id="deep-patbars" style="font-size:10px;font-weight:400;color:var(--text-ghost)">aturan tetap · — bar disimulasikan</span></h2>
       <div id="deep-patterns"><p class="card mono" style="padding:16px;font-size:12px;color:var(--text-faint)">Menjalankan simulasi…</p></div>
     </section>
@@ -325,8 +343,7 @@ export async function initDeep(root) {
         <div id="deep-flow"></div>
       </div>
       <div class="grid" style="gap:16px" id="deep-feeds"></div>
-    </section>
-    <div id="deep-invest"></div>`);
+    </section>`);
   const rail = body.querySelector("[data-deep-rail]");
   if (rail && window.matchMedia("(min-width: 1024px)").matches) {
     rail.style.gridTemplateColumns = "1.2fr 1fr";
@@ -335,7 +352,9 @@ export async function initDeep(root) {
 
   /* chart (period-switchable) */
   const chartHost = body.querySelector("#deep-chart");
+  let chartSeq = 0;
   const loadHistory = async (period) => {
+    const seq = ++chartSeq;
     if (candleHandle) {
       candleHandle.dispose();
       candleHandle = null;
@@ -343,6 +362,7 @@ export async function initDeep(root) {
     if (chartHost) setHTML(chartHost, `<p class="mono" style="margin:0;padding:40px;text-align:center;font-size:12px;color:var(--text-faint)">Memuat lilin…</p>`);
     try {
       const h = await api.getCached(`/api/market/history/${code}?period=${period}`, { ttl: 120_000 });
+      if (seq !== chartSeq) return;
       const bars = h.history ?? [];
       if (!bars.length) {
         if (chartHost) setHTML(chartHost, `<p class="mono" style="margin:0;padding:40px;text-align:center;font-size:12px;color:var(--text-faint)">Riwayat harga tidak tersedia untuk ${esc(code)}.</p>`);
@@ -361,7 +381,7 @@ export async function initDeep(root) {
         });
       }
     } catch (e) {
-      if (chartHost) setHTML(chartHost, `<p class="mono" style="margin:0;padding:24px;font-size:12px;color:var(--text-faint)">Riwayat harga tidak tersedia untuk ${esc(code)} (${esc(e instanceof Error ? e.message : String(e))}).</p>`);
+      if (seq === chartSeq && chartHost) setHTML(chartHost, `<p class="mono" style="margin:0;padding:24px;font-size:12px;color:var(--text-faint)">Riwayat harga tidak tersedia untuk ${esc(code)} (${esc(e instanceof Error ? e.message : String(e))}).</p>`);
     }
   };
   body.querySelectorAll("#deep-periods [data-period]").forEach((b) =>
@@ -387,53 +407,35 @@ export async function initDeep(root) {
   const flowHost = body.querySelector("#deep-flow");
   if (flowHost) {
     if (flow) {
-      setHTML(flowHost, `<div class="card" style="padding:12px"><div id="deep-flow-chart"></div>
-      <div class="card" style="margin-top:12px;padding:16px">
+      setHTML(flowHost, `<div class="card" style="padding:16px">
         <div style="margin-bottom:12px;display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px">
-          <div><span class="eyebrow">Flow pressure (proxy)</span>
-            <p class="fine" style="margin-top:4px;max-width:68ch;font-size:12px">Dimensionless score in [-1, 1], from Chaikin Money Flow and (where available) IDX foreign flow. Not Bandarmetrics LPM. Direction is the 5-session change; bars below are volume intensity.</p></div>
+          <div><span class="eyebrow">Tekanan arus dana (proksi)</span>
+            <p class="fine" style="margin-top:4px;max-width:68ch;font-size:12px">Skor tanpa dimensi dalam [-1, 1] dari Chaikin Money Flow dan, bila tersedia, arus asing IDX. Ini bukan LPM vendor. Arah adalah perubahan lima sesi; bar di bawah menunjukkan intensitas volume.</p></div>
           <span class="mono" style="font-size:10px;color:var(--text-ghost)">${esc(flow.source.flow)}</span>
         </div>
         ${flowSvg(flow)}
-      </div>
-        ${flow.warnings.length ? `<ul class="mono" style="list-style:none;margin:8px 0 0;padding:0;font-size:10px;color:var(--text-ghost)">${flow.warnings.map((w) => `<li>· ${esc(w)}</li>`).join("")}</ul>` : ""}</div>`);
-      const fch = flowHost.querySelector("#deep-flow-chart");
-      try {
-        const h = await api.getCached(`/api/market/history/${code}?period=1y`, { ttl: 120_000 });
-        if (fch && (h.history ?? []).length) {
-          candleHandle = null;
-          const second = createCandleChart(fch, h.history, { height: 320, showVolume: true });
-          void second;
-        } else if (fch) {
-          setHTML(fch, `<p class="mono" style="padding:16px;font-size:12px;color:var(--text-faint)">Seri proksi tidak tersedia untuk ${esc(code)} — rail mundur dengan rapi; halaman tetap berdiri.</p>`);
-        }
-      } catch {
-        if (fch) setHTML(fch, `<p class="mono" style="padding:16px;font-size:12px;color:var(--text-faint)">Seri proksi tidak tersedia untuk ${esc(code)} — rail mundur dengan rapi; halaman tetap berdiri.</p>`);
-      }
+        ${flow.warnings.length ? `<ul class="mono" style="list-style:none;margin:8px 0 0;padding:0;font-size:10px;color:var(--text-ghost)">${flow.warnings.map((w) => `<li>· ${esc(w)}</li>`).join("")}</ul>` : ""}
+      </div>`);
     } else {
-      setHTML(flowHost, `<p class="card mono" style="padding:16px;font-size:12px;color:var(--text-faint)">Seri proksi tidak tersedia untuk ${esc(code)} — rail mundur dengan rapi; halaman tetap berdiri.</p>`);
+      setHTML(flowHost, `<p class="card mono" style="padding:16px;font-size:12px;color:var(--text-faint)">Seri proksi tidak tersedia untuk ${esc(code)} — panel ini tidak mengarang data.</p>`);
     }
   }
   const feedsHost = body.querySelector("#deep-feeds");
   if (feedsHost) {
-    const price = profile?.price ?? null;
     setHTML(feedsHost, `
       <div id="deep-range"></div>
       ${feedSection("Pengungkapan KI (IDX)", (caseReport?.disclosures.items ?? []).map((i) => ({ title: i.title, date: i.date, note: i.category, link: i.link })), caseReport?.disclosures.available ? null : (caseReport?.disclosures.warnings[0] ?? "sumber KI tidak menjawab"))}
       ${feedSection("Berita saham ini", (caseReport?.news.items ?? []).map((i) => ({ title: i.title, date: i.date_str, note: i.source, link: i.link })), caseReport?.news.available ? null : (caseReport?.news.warnings[0] ?? "sumber berita tidak menjawab"))}`);
     try {
-      const h = await api.getCached(`/api/market/history/${code}?period=2y`, { ttl: 120_000 }).catch(() => null);
-      const bars = h?.history ?? [];
+      const h = await api.getCached(`/api/market/history/${code}?period=1y`, { ttl: 120_000 }).catch(() => null);
+      const bars = (h?.history ?? []).slice(-252);
       const rh = body.querySelector("#deep-range");
       if (rh && bars.length) {
         const hi = Math.max(...bars.map((b) => b.high));
         const lo = Math.min(...bars.map((b) => b.low));
-        setHTML(rh, rangeBar(hi, lo, price));
+        const last = bars[bars.length - 1];
+        setHTML(rh, rangeBar(hi, lo, last.close ?? detail?.close, last.date ?? detail?.as_of));
       }
     } catch { /* range bar stays empty */ }
   }
-
-  /* invest case */
-  const investHost = body.querySelector("#deep-invest");
-  if (investHost) void renderInvestCase(investHost, code);
 }

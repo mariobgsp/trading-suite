@@ -48,7 +48,7 @@ export const GATE_LABEL = {
 /* Percent-scale formatters (backtest/flow/invest-case numbers arrive as
  * "1.85" meaning 1.85%, NOT fractions). Port of lib/api/format.ts. */
 export const fmtIdr = (v, compact = false) => {
-  if (v == null || Number.isNaN(v)) return "—";
+  if (v == null || !Number.isFinite(Number(v))) return "—";
   if (compact) {
     if (Math.abs(v) >= 1e12) return `Rp ${(v / 1e12).toFixed(2)} T`;
     if (Math.abs(v) >= 1e9) return `Rp ${(v / 1e9).toFixed(1)} M`;
@@ -62,10 +62,10 @@ export const fmtNum = (v, digits = 2) => {
   return v.toLocaleString("id-ID", { maximumFractionDigits: digits });
 };
 
-export const fmtPct = (v) => {
-  if (v == null || Number.isNaN(v)) return "—";
-  const sign = v > 0 ? "+" : "";
-  return `${sign}${v.toFixed(2)}%`;
+export const fmtPct = (v, digits = 2) => {
+  if (v == null || !Number.isFinite(Number(v))) return "—";
+  const sign = Number(v) > 0 ? "+" : "";
+  return `${sign}${Number(v).toFixed(digits)}%`;
 };
 
 export const fmtIdrShort = (v) => {

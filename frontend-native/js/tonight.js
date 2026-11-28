@@ -12,7 +12,7 @@
 "use strict";
 
 import { api } from "./api.js";
-import { esc, idr, pct, pctRaw, GATE_LABEL, setHTML } from "./format.js";
+import { esc, fmtPct, idr, pct, pctRaw, GATE_LABEL, setHTML } from "./format.js";
 import { bandCopy, verdictCopy } from "./present.js";
 import { REFRESH_EVENT } from "./refresh.js";
 
@@ -78,32 +78,31 @@ function standDownPanel(verdict) {
   if (!c) return "";
   const side = c.sideways;
   const book = c.book;
-  const signed = (v) => (v == null ? "—" : `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`);
   return `<div class="card soft pad">
-    <p class="eyebrow">Why flat is the finding</p>
+    <p class="eyebrow">Kenapa menunggu adalah hasilnya</p>
     ${
       side && side.win_rate != null && side.avg_ret_pct != null
-        ? `<p class="fine dim" style="margin-top:8px">The study ran these same rules in the flat band anyway:
-           <span style="color:var(--text)">${pct(side.win_rate, 1)} win</span> at
-           <span style="color:var(--text)">${signed(side.avg_ret_pct)}</span> a trade. That band
-           drifts ${signed(side.drift_5s_pct)} per five sessions while a round trip costs
-           ${pctRaw(c.round_trip_pct, 2)}, so it would have to capture
-           ${side.capture_needed_x ?? "—"}× the drift to pay for itself.</p>`
+        ? `<p class="fine dim" style="margin-top:8px">Studi menjalankan aturan yang sama di pita menyamping:
+           <span style="color:var(--text)">${pct(side.win_rate, 1)} menang</span> dengan
+           <span style="color:var(--text)">${fmtPct(side.avg_ret_pct)}</span> per transaksi. Pita itu
+           bergerak ${fmtPct(side.drift_5s_pct)} per lima sesi, sementara satu putaran transaksi berbiaya
+           ${pctRaw(c.round_trip_pct, 2)}; untuk menutup biaya, pergerakan itu harus tertangkap
+           ${side.capture_needed_x ?? "—"}× pergerakan itu.</p>`
         : ""
     }
     ${
       book && book.trend_only && book.trend_only.available && book.with_sideways && book.with_sideways.available
-        ? `<p class="fine dim" style="margin-top:8px">Same screen, same period, ${idr(book.slots)} slots: with the flat band skipped it books
-           <span style="color:var(--up)">${signed(book.trend_only.total_pct)}</span> at a
-           ${book.trend_only.max_drawdown_pct != null ? book.trend_only.max_drawdown_pct.toFixed(1) : "—"}% drawdown. With the band traded,
-           <span style="color:var(--down)">${signed(book.with_sideways.total_pct)}</span> at
+        ? `<p class="fine dim" style="margin-top:8px">Pemindaian dan periode yang sama, ${idr(book.slots)} slot: bila pita menyamping dilewati, buku menghasilkan
+           <span style="color:var(--up)">${fmtPct(book.trend_only.total_pct)}</span> dengan penurunan terdalam
+           ${book.trend_only.max_drawdown_pct != null ? book.trend_only.max_drawdown_pct.toFixed(1) : "—"}%. Bila pita itu diperdagangkan,
+           hasilnya <span style="color:var(--down)">${fmtPct(book.with_sideways.total_pct)}</span> dengan penurunan terdalam
            ${book.with_sideways.max_drawdown_pct != null ? book.with_sideways.max_drawdown_pct.toFixed(1) : "—"}%.</p>`
         : ""
     }
     <p class="mono rule" style="font-size:11px;color:var(--text-ghost)">
-      This band is ${pct(c.bands && c.bands.sideways, 0)} of
-      ${c.sessions_measured != null ? idr(c.sessions_measured) : "—"} measured sessions. Long-run
-      median breadth ${pct(c.long_run_median, 0)}.</p>
+      Pita ini mencakup ${pct(c.bands && c.bands.sideways, 0)} dari
+      ${c.sessions_measured != null ? idr(c.sessions_measured) : "—"} sesi terukur. Median breadth jangka panjang
+      ${pct(c.long_run_median, 0)}.</p>
   </div>`;
 }
 
@@ -111,12 +110,12 @@ export function evidenceBadge(evidence, roundTripPct) {
   const ok = evidence.clears_bar;
   const roleLabel =
     evidence.role === "searched_census"
-      ? "Best of the configurations searched"
+      ? "Hasil terbaik dari konfigurasi yang dicari"
       : evidence.role === "walk_forward_corrected"
-        ? "The corrected result"
+        ? "Hasil walk-forward terkoreksi"
         : evidence.role === "replay"
-          ? "One-window replay, not a walk-forward"
-          : "Measured on this method";
+          ? "Replay satu jendela, bukan walk-forward"
+          : "Diukur pada metode ini";
   const cell = (label, value) => `
     <div>
       <div class="tabular" style="font-size:24px;font-weight:700;line-height:1;color:${ok ? "var(--up)" : "var(--text)"}">${value}</div>
@@ -125,24 +124,24 @@ export function evidenceBadge(evidence, roundTripPct) {
   return `<div class="card soft pad" style="width:100%">
     <p class="eyebrow">${esc(roleLabel)}</p>
     <div class="grid cols3" style="margin-top:12px">
-      ${cell("win rate", pct(evidence.win_rate, 1))}
-      ${cell("avg / trade", evidence.avg_ret_pct != null ? `+${evidence.avg_ret_pct.toFixed(1)}%` : "—")}
-      ${cell("out-of-sample", evidence.oos_trades != null ? idr(evidence.oos_trades) : "—")}
+      ${cell("menang", pct(evidence.win_rate, 1))}
+      ${cell("rata-rata / transaksi", fmtPct(evidence.avg_ret_pct, 1))}
+      ${cell("sampel uji", evidence.oos_trades != null ? idr(evidence.oos_trades) : "—")}
     </div>
     <p class="fine rule">
       ${
         evidence.measured
           ? `${
               roundTripPct != null
-                ? `Costs of ${pctRaw(roundTripPct, 2)} a round trip are inside every trade. `
-                : "Fees and slippage are inside every measured trade. "
-            }<a href="method.html#holdout" style="text-decoration:underline;text-underline-offset:2px">What it did on unseen data</a>`
-          : "No measured results are available yet — read the rules without a number."
+                ? `Biaya ${pctRaw(roundTripPct, 2)} per putaran transaksi sudah masuk ke setiap transaksi. `
+                : "Fee dan slippage sudah masuk ke setiap transaksi terukur. "
+            }<a href="method.html#holdout" style="text-decoration:underline;text-underline-offset:2px">Hasil pada data yang tidak dilihat</a>`
+          : "Belum ada hasil terukur — baca aturannya tanpa angka."
       }
     </p>
     ${
       evidence.role === "searched_census"
-        ? `<p class="fine" style="margin-top:8px;color:var(--text-ghost)">A searched figure, not a forecast. This row is one of the configurations the study ranked; the holdout is the expectation.</p>`
+        ? `<p class="fine" style="margin-top:8px;color:var(--text-ghost)">Angka hasil pencarian, bukan ramalan. Baris ini salah satu konfigurasi yang diperingkat studi; holdout adalah ekspektasinya.</p>`
         : ""
     }
   </div>`;
@@ -166,9 +165,9 @@ export function correctedEvidenceCard(evidence) {
     </div>
     <div class="grid cols4" style="margin-top:16px">
       ${evStat("Win rate", pct(evidence.win_rate, 1), evidence.win_rate_lo != null && evidence.win_rate_hi != null ? `Wilson ${pct(evidence.win_rate_lo, 0)}–${pct(evidence.win_rate_hi, 0)}` : undefined)}
-      ${evStat("Avg per trade", evidence.avg_ret_pct != null ? `+${evidence.avg_ret_pct.toFixed(2)}%` : "—", evidence.profit_factor != null ? `profit factor ${evidence.profit_factor.toFixed(2)}` : undefined)}
+      ${evStat("Avg per trade", fmtPct(evidence.avg_ret_pct), evidence.profit_factor != null ? `profit factor ${evidence.profit_factor.toFixed(2)}` : undefined)}
       ${evStat("Out-of-sample trades", idr(evidence.oos_trades), evidence.n_specs != null ? `pooled over ${evidence.n_specs} donchian variants` : undefined)}
-      ${evStat("Max drawdown", evidence.max_drawdown_pct != null ? `−${evidence.max_drawdown_pct.toFixed(1)}%` : "—", evidence.book_return_pct != null ? `10M book +${evidence.book_return_pct.toFixed(1)}%` : undefined)}
+      ${evStat("Max drawdown", evidence.max_drawdown_pct != null ? `−${Math.abs(evidence.max_drawdown_pct).toFixed(1)}%` : "—", evidence.book_return_pct != null ? `10M book ${fmtPct(evidence.book_return_pct, 1)}` : undefined)}
     </div>
     <p class="fine dim" style="margin-top:16px;max-width:86ch">${esc(evidence.caveat)}</p>
     ${
@@ -180,8 +179,8 @@ export function correctedEvidenceCard(evidence) {
     ${
       survivorship != null || holdout != null
         ? `<p class="fine dim rule" style="max-width:86ch">
-           ${survivorship != null ? `Dropping the best 20% of tickers leaves <span style="color:var(--text)">+${survivorship.toFixed(2)}%</span> per trade. ` : ""}
-           ${holdout != null ? `On folds no search saw, the same family reads <span style="color:var(--text)">+${holdout.toFixed(2)}%</span>. ` : ""}
+           ${survivorship != null ? `Dropping the best 20% of tickers leaves <span style="color:var(--text)">${fmtPct(survivorship)}</span> per trade. ` : ""}
+           ${holdout != null ? `On folds no search saw, the same family reads <span style="color:var(--text)">${fmtPct(holdout)}</span>. ` : ""}
            Both say the same thing: a high hit rate on a thin, concentrated sample.</p>`
         : ""
     }
@@ -196,7 +195,7 @@ function verdictHero(plan) {
   return `<section class="card hero accent-left" style="border-left-color:${tone}" aria-live="polite">
     <div class="hero-in">
       <div style="min-width:0">
-        <p class="eyebrow">Data per ${esc(plan.session_label)} · rencana untuk ${esc(plan.horizon)}</p>
+        <p class="eyebrow">Data sesi ${esc(plan.session_label)} · rencana untuk ${esc(plan.horizon)}</p>
         <div style="margin-top:8px;display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px">
           <span class="dot" style="background:${tone}" aria-hidden></span>
           <span class="font-display hero-title" style="color:${tone}">${esc(copy.title)}</span>
@@ -226,22 +225,17 @@ function verdictHero(plan) {
         </details>
         ${v.state === "DATA_UNSAFE" ? integrityList(v.integrity) : ""}
       </div>
-      <div class="hero-side">
-        ${v.state === "ENTER" && plan.corrected ? correctedEvidenceCard(plan.corrected) : ""}
-        ${v.state !== "ENTER" ? standDownPanel(v) : ""}
-      </div>
+      ${
+        v.state !== "ENTER" && v.stand_down_case
+          ? `<div class="hero-side">${standDownPanel(v)}</div>`
+          : ""
+      }
     </div>
   </section>`;
 }
 
 /* ── alert book ──────────────────────────────────────────────────── */
 
-const STATE_WORD = {
-  ENTER: "Entry",
-  WAIT: "Tunggu",
-  NO_TRADE: "Tidak trade",
-  DATA_UNSAFE: "Data tidak aman",
-};
 const STATE_TONE = {
   ENTER: "var(--up)",
   WAIT: "var(--gold)",
@@ -257,7 +251,7 @@ function entryCard(e) {
         <a class="font-display entry-tk" href="deep.html?ticker=${esc(e.ticker)}">${esc(e.ticker)}</a>
         <span class="entry-name">${esc(e.name)}</span>
       </div>
-      <span class="entry-size">${e.position_idr != null ? `size ${idr(e.position_idr)}` : ""}</span>
+      <span class="entry-size">${e.position_idr != null ? `ukuran ${idr(e.position_idr)}` : ""}</span>
     </div>
     <p class="entry-why">${esc(e.why)}</p>
     <div class="entry-grid">
@@ -272,40 +266,29 @@ function entryCard(e) {
 function alertBook(feed, failed) {
   if (failed) {
     return `<section class="card pad accent-left" style="border-left-color:var(--down)">
-      <p class="eyebrow">Alert · gagal memuat</p>
+      <p class="eyebrow">Rencana sesi gagal dimuat</p>
       <p class="fine dim" style="margin-top:4px;font-size:13px">${esc(failed)}</p>
       <button type="button" class="btn" data-retry-feed style="margin-top:12px">Coba lagi</button>
     </section>`;
   }
   if (!feed) {
-    return `<section class="card pad"><p class="eyebrow" style="text-transform:uppercase;letter-spacing:0.14em">Alert · memuat…</p></section>`;
+    return `<section class="card pad"><p class="eyebrow">Rencana sesi berikutnya · memuat…</p></section>`;
   }
   const tone = STATE_TONE[feed.state] ?? "var(--gold)";
   const hasEntries = feed.entries.length > 0;
-  // NOTE: feed.study.win_rate is a fraction (0.76) while avg_ret_pct is
-  // already percent-scale (1.85). The React app rounds win_rate raw ("1%");
-  // the fraction form below matches the Method page.
-  const studyLine =
-    feed.study.win_rate != null
-      ? `<p class="mono" style="margin-top:16px;font-size:11px;line-height:1.7;color:var(--text-ghost)">Ekspektasi studi (bukan malam ini): ${pct(feed.study.win_rate, 0)} win · ${feed.study.avg_ret_pct != null ? `${feed.study.avg_ret_pct > 0 ? "+" : ""}${feed.study.avg_ret_pct}%/trade` : "—"} · ${feed.study.oos_trades ?? "?"} trade out-of-sample</p>`
-      : "";
-  return `<section class="card hero accent-left" style="border-left-color:${tone}" aria-live="polite">
+  return `<section class="card accent-left" style="border-left-color:${tone}" aria-live="polite">
     <div class="pad" style="padding:20px">
-      <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px">
-        <p class="eyebrow">Alert · ${esc(feed.session_label)} · entry di open ${esc(feed.next_session ?? "—")}</p>
-        ${feed.stale ? `<span class="badge" style="border-color:var(--gold);color:var(--gold)">data ${feed.data_age_days ?? "?"} hari — periksa dulu</span>` : ""}
+      <div style="display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:4px 12px">
+        <p class="eyebrow">Rencana sesi berikutnya · data ${esc(feed.session_label)}</p>
+        <span class="mono" style="font-size:10px;color:var(--text-ghost)">entry di pembukaan ${esc(feed.next_session ?? "—")} · ${hasEntries ? `${feed.entries.length} kandidat` : "tanpa tiket"}</span>
       </div>
-      <div style="margin-top:8px;display:flex;align-items:baseline;gap:12px">
-        <span class="dot" style="background:${tone}" aria-hidden></span>
-        <span class="font-display" style="font-size:26px;line-height:1;letter-spacing:-0.01em;color:${tone}">${esc(STATE_WORD[feed.state] ?? feed.state)}</span>
-        <span class="mono" style="font-size:11px;text-transform:uppercase;letter-spacing:0.14em;color:var(--text-ghost)">breadth ${feed.regime.breadth != null ? Math.round(feed.regime.breadth * 100) : "—"}%</span>
-      </div>
+      ${feed.stale ? `<span class="badge" style="margin-top:8px;border-color:var(--gold);color:var(--gold)">data ${feed.data_age_days ?? "?"} hari — periksa dulu</span>` : ""}
       ${
         hasEntries
-          ? `<ul style="list-style:none;margin:16px 0 0;padding:0;display:flex;flex-direction:column;gap:12px">${feed.entries.map(entryCard).join("")}</ul>
-             ${feed.book_overflow.length > 0 || feed.watchlist_count > 0 ? `<p class="fine" style="margin-top:12px">+${feed.book_overflow.length + feed.watchlist_count} kandidat lain masuk watchlist — maksimal 5 posisi terbuka sesuai aturan risiko.</p>` : ""}`
-          : `<div style="margin-top:12px">
-               <p style="font-size:14px;line-height:1.65;color:var(--text)">${esc(feed.headline ?? "Kondisi tidak terpenuhi — tidak ada yang layak entry malam ini.")}</p>
+          ? `<ul style="list-style:none;margin:12px 0 0;padding:0;display:flex;flex-direction:column;gap:12px">${feed.entries.map(entryCard).join("")}</ul>
+             ${feed.book_overflow.length > 0 || feed.watchlist_count > 0 ? `<p class="fine" style="margin-top:12px">+${feed.book_overflow.length + feed.watchlist_count} kandidat lain masuk daftar pantau — maksimal 5 posisi terbuka sesuai aturan risiko.</p>` : ""}`
+          : `<div style="margin-top:8px">
+               <p style="font-size:14px;line-height:1.65;color:var(--text)">${esc(feed.headline ?? "Kondisi tidak terpenuhi — tidak ada yang layak entry pada sesi berikutnya.")}</p>
                ${
                  feed.no_trade_reasons.length > 0
                    ? `<ul style="list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:4px">${feed.no_trade_reasons.map((r) => `<li style="border-left:2px solid var(--gold);padding-left:12px;font-size:13px;color:var(--text-dim)">${esc(r)}</li>`).join("")}</ul>`
@@ -313,7 +296,6 @@ function alertBook(feed, failed) {
                }
              </div>`
       }
-      ${studyLine}
     </div>
   </section>`;
 }
@@ -325,7 +307,7 @@ function watchRow(w) {
     <div class="watchrow">
       <a class="font-display tk" href="deep.html?ticker=${esc(w.ticker)}">${esc(w.ticker)}</a>
       <span class="px tabular">${idr(w.close)}</span>
-      <span class="blk">blocked by ${esc(GATE_LABEL[w.blocked_by] ?? w.blocked_by)}</span>
+      <span class="blk">tertahan oleh ${esc(GATE_LABEL[w.blocked_by] ?? w.blocked_by)}</span>
       <span class="dist">${esc(w.distance_text)}</span>
     </div>
   </li>`;
@@ -342,10 +324,10 @@ function capitulationWatch(plan) {
       <div style="margin-top:2px;font-size:11px;line-height:1.4;color:var(--text-faint)">${esc(sub)}</div>
     </div>`;
   return section({
-    title: "Tier-3 capitulation watch",
+    title: "Pantauan capitulation tier 3",
     subtitle:
-      "Names the study's capitulation-bounce rule would have flagged tonight. This is a lead, not a result: every measured cell of the sweep failed the 80% win / +5% per trade bar, and the rule broke on quarterly windows and under the survivorship haircut. Nothing here is an order.",
-    right: `${items.length} name${items.length === 1 ? "" : "s"}`,
+      "Saham yang akan ditandai aturan capitulation-bounce studi pada sesi ini. Ini petunjuk, bukan hasil: setiap sel sapuan gagal pada batas 80% menang dan +5% per transaksi, dan aturan itu patah pada jendela kuartalan serta setelah koreksi survivorship. Tidak ada order di sini.",
+    right: `${items.length} saham`,
     body: `
       <ul class="rows card">
         ${items
@@ -355,10 +337,10 @@ function capitulationWatch(plan) {
                 <span class="font-display" style="font-size:18px;line-height:1;color:var(--text)">${esc(t.ticker)}</span>
                 <span class="px tabular">${t.close != null ? t.close.toFixed(0) : "—"}</span>
                 <span class="mono" style="font-size:11px;color:var(--text-ghost)">rsi2 ${t.rsi2 != null ? t.rsi2.toFixed(1) : "—"}</span>
-                <span class="mono" style="font-size:11px;color:var(--text-ghost)">5-session ${pctRaw(t.ret5, 2)}</span>
-                <span class="mono" style="font-size:11px;color:var(--text-ghost)">${pctRaw(t.dist_200_pct, 1)} vs its 200-day</span>
-                <span class="mono" style="font-size:11px;color:var(--text-ghost)">atr ${pctRaw(t.atr14_pct, 1)}</span>
-                <span class="pill" style="margin-left:auto;color:var(--gold);background:color-mix(in srgb, var(--gold) 14%, transparent)">watch only</span>
+                <span class="mono" style="font-size:11px;color:var(--text-ghost)">5 sesi ${pctRaw(t.ret5, 2)}</span>
+                <span class="mono" style="font-size:11px;color:var(--text-ghost)">${pctRaw(t.dist_200_pct, 1)} terhadap MA 200</span>
+                <span class="mono" style="font-size:11px;color:var(--text-ghost)">ATR ${pctRaw(t.atr14_pct, 1)}</span>
+                <span class="pill" style="margin-left:auto;color:var(--gold);background:color-mix(in srgb, var(--gold) 14%, transparent)">pantau saja</span>
               </div>
             </li>`,
           )
@@ -369,10 +351,10 @@ function capitulationWatch(plan) {
           ? `<div class="card pad accent-left" style="margin-top:16px;border-left-color:var(--gold)">
                <p class="fine dim" style="max-width:80ch;font-size:13px">${esc(ev.why)}</p>
                <dl class="cells c4" style="margin-top:16px">
-                 ${ev.sweep.illiquid ? cell("Illiquid sweep, cfg 6", `${pctRaw(ev.sweep.illiquid.t3_win_rate, 1)} / +${ev.sweep.illiquid.t3_avg_ret_pct.toFixed(2)}%`, `${ev.sweep.illiquid.t3_n} trades, ${ev.sweep.illiquid.t3_folds} folds, HIT=${String(ev.sweep.illiquid.hit)}`) : ""}
-                 ${ev.sweep.liquid_control ? cell("Liquid control", `${pctRaw(ev.sweep.liquid_control.t3_win_rate, 1)} / +${ev.sweep.liquid_control.t3_avg_ret_pct.toFixed(2)}%`, `${ev.sweep.liquid_control.t3_n} trades, HIT=${String(ev.sweep.liquid_control.hit)}`) : ""}
-                 ${ev.clean_universe.win_rate != null ? cell("Clean universe", `${pctRaw(ev.clean_universe.win_rate, 2)} / ${(ev.clean_universe.avg_ret_pct ?? 0).toFixed(2)}%`, "the study abandoned the tier after the price-frozen repair") : ""}
-                 ${ev.quarterly ? cell("Quarterly stress", `${pctRaw(ev.quarterly.win_rate, 1)} / +${ev.quarterly.avg_ret_pct.toFixed(2)}%`, `${ev.quarterly.n} trades, pf ${ev.quarterly.profit_factor.toFixed(2)}`) : ""}
+                 ${ev.sweep.illiquid ? cell("Sapuan saham tipis, cfg 6", `${pctRaw(ev.sweep.illiquid.t3_win_rate, 1)} / ${fmtPct(ev.sweep.illiquid.t3_avg_ret_pct)}`, `${ev.sweep.illiquid.t3_n} transaksi, ${ev.sweep.illiquid.t3_folds} fold, lolos=${String(ev.sweep.illiquid.hit)}`) : ""}
+                 ${ev.sweep.liquid_control ? cell("Kontrol likuid", `${pctRaw(ev.sweep.liquid_control.t3_win_rate, 1)} / ${fmtPct(ev.sweep.liquid_control.t3_avg_ret_pct)}`, `${ev.sweep.liquid_control.t3_n} transaksi, lolos=${String(ev.sweep.liquid_control.hit)}`) : ""}
+                 ${ev.clean_universe.win_rate != null ? cell("Universe bersih", `${pctRaw(ev.clean_universe.win_rate, 2)} / ${fmtPct(ev.clean_universe.avg_ret_pct)}`, "studi meninggalkan tier ini setelah perbaikan harga beku") : ""}
+                 ${ev.quarterly ? cell("Stres kuartalan", `${pctRaw(ev.quarterly.win_rate, 1)} / ${fmtPct(ev.quarterly.avg_ret_pct)}`, `${ev.quarterly.n} transaksi, pf ${ev.quarterly.profit_factor.toFixed(2)}`) : ""}
                </dl>
              </div>`
           : ""
@@ -404,9 +386,9 @@ function driftStrip(regime) {
   const positive = drift.mean_drift_5s_pct >= 0;
   const sessions = drift.sessions != null ? idr(drift.sessions) : "—";
   return `<div class="card soft" style="margin-bottom:16px;display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 16px;padding:12px 16px">
-    <span class="stat-label">Measured 5-session drift in this band</span>
-    <span class="mono tabular" style="font-size:15px;font-weight:600;color:${positive ? "var(--up)" : "var(--down)"}">${drift.mean_drift_5s_pct >= 0 ? "+" : ""}${drift.mean_drift_5s_pct.toFixed(2)}%</span>
-    <span class="mono" style="font-size:11px;color:var(--text-dim)">over ${esc(sessions)} sessions</span>
+    <span class="stat-label">Rata-rata pergerakan 5 sesi di pita ini</span>
+    <span class="mono tabular" style="font-size:15px;font-weight:600;color:${positive ? "var(--up)" : "var(--down)"}">${fmtPct(drift.mean_drift_5s_pct)}</span>
+    <span class="mono" style="font-size:11px;color:var(--text-dim)">dari ${esc(sessions)} sesi</span>
   </div>`;
 }
 
@@ -422,41 +404,42 @@ function limitsPanel(plan) {
   const survivorship = cited("tier1_survivorship_avg_ret_pct");
   const holdout = cited("tier1_holdout_avg_ret_pct");
   const li = (inner) => (inner ? `<li>${inner}</li>` : "");
+  const dd = (v) => (v == null ? "—" : `−${Math.abs(v).toFixed(1)}%`);
   return section({
-    title: "What would hurt you",
+    title: "Risiko yang perlu dipahami",
     subtitle:
-      "Read this before the first trade, not after the first loss. Everything below is measured on this method, and every row is a reason to size smaller than the headline suggests.",
+      "Baca ini sebelum transaksi pertama, bukan setelah kerugian pertama. Semua angka di bawah diukur pada metode ini, dan setiap baris adalah alasan untuk memakai ukuran posisi lebih kecil daripada yang disarankan headline.",
     body: `<div class="grid half">
       <div class="card pad">
-        <p class="eyebrow">Drawdown, by window</p>
+        <p class="eyebrow">Drawdown menurut jendela</p>
         <ul class="fine dim" style="list-style:none;margin:12px 0 0;padding:0;display:flex;flex-direction:column;gap:8px">
-          ${li(corrected && corrected.max_drawdown_pct != null ? `Walk-forward folds, corrected universe: <span style="color:var(--text)">−${corrected.max_drawdown_pct.toFixed(1)}%</span> max drawdown${corrected.book_return_pct != null ? `, on a book that returned <span style="color:var(--up)">+${corrected.book_return_pct.toFixed(1)}%</span>` : ""}.` : "")}
-          ${li(tier1 ? `Five-year replay, ten slots: <span style="color:var(--down)">−${tier1.book_max_drawdown_pct != null ? tier1.book_max_drawdown_pct.toFixed(1) : "—"}%</span> max drawdown for <span style="color:var(--up)">${tier1.book_total_pct != null ? tier1.book_total_pct.toFixed(1) : "—"}%</span>. One window, universe fixed at the final date — survivorship runs through it.` : "")}
-          ${li(pooled ? `The same replay with every tier traded: <span style="color:var(--down)">${pooled.book_total_pct != null ? pooled.book_total_pct.toFixed(1) : "—"}%</span>, from a ${pooled.book_max_drawdown_pct != null ? pooled.book_max_drawdown_pct.toFixed(1) : "—"}% drawdown. That is what "trade every signal" costs.` : "")}
-          ${li(book && book.with_sideways && book.with_sideways.available ? `The flat band traded rather than skipped: <span style="color:var(--down)">${book.with_sideways.total_pct != null ? book.with_sideways.total_pct.toFixed(1) : "—"}%</span> at a ${book.with_sideways.max_drawdown_pct != null ? book.with_sideways.max_drawdown_pct.toFixed(1) : "—"}% drawdown, against <span style="color:var(--up)">+${book.trend_only.total_pct != null ? book.trend_only.total_pct.toFixed(1) : "—"}%</span> at ${book.trend_only.max_drawdown_pct != null ? book.trend_only.max_drawdown_pct.toFixed(1) : "—"}% with it skipped.` : "")}
+          ${li(corrected && corrected.max_drawdown_pct != null ? `Fold walk-forward, universe terkoreksi: <span style="color:var(--text)">${dd(corrected.max_drawdown_pct)}</span> penurunan terdalam${corrected.book_return_pct != null ? `, pada buku yang menghasilkan <span style="color:var(--up)">${fmtPct(corrected.book_return_pct, 1)}</span>` : ""}.` : "")}
+          ${li(tier1 ? `Replay lima tahun, sepuluh slot: <span style="color:var(--down)">${dd(tier1.book_max_drawdown_pct)}</span> penurunan terdalam untuk <span style="color:var(--up)">${fmtPct(tier1.book_total_pct, 1)}</span>. Satu jendela, universe dikunci pada tanggal akhir — survivorship ikut masuk.` : "")}
+          ${li(pooled ? `Replay yang sama dengan semua tier diperdagangkan: <span style="color:var(--down)">${fmtPct(pooled.book_total_pct, 1)}</span>, dari penurunan terdalam ${dd(pooled.book_max_drawdown_pct)}. Itulah biaya "perdagangkan setiap sinyal".` : "")}
+          ${li(book && book.with_sideways && book.with_sideways.available ? `Pita menyamping diperdagangkan, bukan dilewati: <span style="color:var(--down)">${fmtPct(book.with_sideways.total_pct, 1)}</span> dengan penurunan terdalam ${dd(book.with_sideways.max_drawdown_pct)}, dibanding <span style="color:var(--up)">${fmtPct(book.trend_only.total_pct, 1)}</span> dengan penurunan terdalam ${dd(book.trend_only.max_drawdown_pct)} bila dilewati.` : "")}
         </ul>
-        <p class="fine rule">Leverage is not modelled anywhere in this study, and the one row that does model it puts three times gearing at −98.29%. If a broker offers you leverage on this method, the honest reading is that nobody has measured it.</p>
+        <p class="fine rule">Leverage tidak dimodelkan di mana pun dalam studi ini, dan satu baris yang memodelkannya menempatkan gearing tiga kali pada −98.29%. Bila broker menawarkan leverage untuk metode ini, bacaan jujurnya adalah belum ada yang mengukurnya.</p>
       </div>
       <div class="card pad">
-        <p class="eyebrow">The two haircuts</p>
+        <p class="eyebrow">Dua haircut</p>
         <ul class="fine dim" style="list-style:none;margin:12px 0 0;padding:0;display:flex;flex-direction:column;gap:8px">
-          ${li(survivorship != null ? `Drop the best 20% of tickers and the corrected edge is <span style="color:var(--text)">+${survivorship.toFixed(2)}%</span> a trade — statistically nothing. The profit lives in a minority of names.` : "")}
-          ${li(holdout != null ? `On folds no search ever saw, the same family reads <span style="color:var(--text)">+${holdout.toFixed(2)}%</span> a trade.` : "")}
-          ${li(plan.holdout ? `The study searched ${plan.holdout.search_cells ?? "—"} configurations; ${plan.holdout.search_cells_clearing ?? 0} cleared both of its bars on their own data and ${plan.holdout.winners_surviving ?? 0} of the ${plan.holdout.winners_tested ?? 0} best survived unseen folds.` : "")}
-          ${li(`The stop is −${plan.candidates[0] && plan.candidates[0].geometry ? plan.candidates[0].geometry.stop_pct.toFixed(0) : "35"}% on purpose, and a session that opens beyond it fills at that open — worse than the stop. That is measured, not hypothetical.`)}
+          ${li(survivorship != null ? `Buang 20% ticker terbaik dan edge terkoreksi menjadi <span style="color:var(--text)">${fmtPct(survivorship)}</span> per transaksi — secara statistik tidak berarti. Labanya hidup di sedikit nama.` : "")}
+          ${li(holdout != null ? `Pada fold yang tidak pernah dilihat pencarian, keluarga aturan yang sama membaca <span style="color:var(--text)">${fmtPct(holdout)}</span> per transaksi.` : "")}
+          ${li(plan.holdout ? `Studi mencari ${plan.holdout.search_cells ?? "—"} kombinasi; ${plan.holdout.search_cells_clearing ?? 0} lolos kedua batasnya pada data sendiri dan ${plan.holdout.winners_surviving ?? 0} dari ${plan.holdout.winners_tested ?? 0} yang terbaik bertahan di fold yang tidak dilihat.` : "")}
+          ${li(`Stop sebesar −${plan.candidates[0] && plan.candidates[0].geometry ? Math.abs(plan.candidates[0].geometry.stop_pct).toFixed(0) : "35"}% memang disengaja, dan sesi yang membuka di luar stop terisi pada harga pembukaan itu — lebih buruk daripada stop. Itu terukur, bukan hipotetis.`)}
         </ul>
-        <p class="fine rule">None of this is a reason to skip the method. It is the reason to take a position the size of the loss you are willing to book, and to have that number ready before the order.</p>
+        <p class="fine rule">Semua ini bukan alasan melewati metode. Ini alasan mengambil posisi seukuran kerugian yang siap Anda catat, dan menyiapkan angka itu sebelum order.</p>
       </div>
     </div>
     <div class="card soft pad accent-left" style="margin-top:20px;border-left-color:var(--gold)">
-      <p class="eyebrow">Before you place it · discipline, not a measurement</p>
+      <p class="eyebrow">Sebelum memasang order · disiplin, bukan pengukuran</p>
       <ul class="fine dim" style="list-style:none;margin:12px 0 0;padding:0;display:grid;gap:8px">
-        <li>· One position per name; at most ten open at once.</li>
-        <li>· Size from the ticket, not from conviction: 2% of the name&rsquo;s turnover.</li>
-        <li>· Never add to a loser, and never average a position down.</li>
-        <li>· No new entries when the verdict is not ENTER.</li>
-        <li>· Write the exit down before the entry: target, stop, holding cap.</li>
-        <li>· No leverage, and no shorting — neither was measured here.</li>
+        <li>· Satu posisi per nama; maksimal sepuluh posisi terbuka sekaligus.</li>
+        <li>· Ukuran dari tiket, bukan keyakinan: 2% dari median nilai transaksi 60 sesi nama itu.</li>
+        <li>· Jangan menambah posisi yang rugi, dan jangan merata-ratakan posisi ke bawah.</li>
+        <li>· Tidak ada entry baru bila verdict bukan ENTER.</li>
+        <li>· Tulis exit sebelum entry: target, stop, dan batas waktu holding.</li>
+        <li>· Tanpa leverage dan tanpa short — keduanya tidak diukur di sini.</li>
       </ul>
     </div>`,
   });
@@ -482,7 +465,7 @@ function renderTonight(root, plan, feedState) {
         ? `<div class="card pad accent-left" style="margin-top:24px;border-left-color:var(--gold)">
              <p class="fine dim" style="font-size:13px"><span style="font-weight:600;color:var(--text)">Sebelum menindaklanjuti kandidat:</span>
              dari ${idr(holdout.search_cells)} kombinasi aturan yang dicoba riset, hanya ${holdout.search_cells_clearing} yang lolos batas 80% menang dan +5% per transaksi sekaligus — dan ${holdout.winners_surviving} dari ${holdout.winners_tested} yang di bawa ke depan tetap bertahan di data uji. Hasil terbaik yang pernah dicapai:
-             <span style="color:var(--text)">${pct(holdout.best_holdout_win_rate, 1)} menang dan +${(holdout.best_holdout_avg_ret_pct ?? 0).toFixed(2)}% per transaksi</span>.
+             <span style="color:var(--text)">${pct(holdout.best_holdout_win_rate, 1)} menang dan ${fmtPct(holdout.best_holdout_avg_ret_pct)} per transaksi</span>.
              <a href="method.html#holdout" style="text-decoration:underline;text-underline-offset:2px">Baca catatan holdout</a></p>
            </div>`
         : ""
@@ -493,7 +476,7 @@ function renderTonight(root, plan, feedState) {
         ? section({
             title: "Hampir lolos: daftar pantau",
             subtitle:
-              "Belum bisa dibeli. Setiap saham di sini unggul di momentum dan sedang berada tepat di bawah batas harganya — ini daftar yang menunggu sesi berikutnya.",
+              "Belum bisa dibeli. Saham di sini lolos sebagian besar syarat tetapi masih tertahan pada sesi ini. Daftar ini bukan order; klik satu nama untuk melihat syarat yang belum terbuka.",
             right: `${watchlist.length} saham`,
             body: `<ul class="rows card">${watchlist.map(watchRow).join("")}</ul>`,
           })
@@ -502,17 +485,10 @@ function renderTonight(root, plan, feedState) {
     ${capitulationWatch(plan)}
     ${section({
       title: "Seberapa andal metodenya",
-      subtitle: "Angka di atas nyata, dan batasnya juga. Baca ini sebelum transaksi pertama, bukan setelahnya.",
-      body: `<div class="grid side320">
-        <div class="card pad">
-          <p class="fine dim" style="max-width:78ch;font-size:13px">Diukur pada data yang tidak dilihat saat aturannya dicari:
-          ${idr(evidence.oos_trades)} transaksi selesai, dengan biaya dan slippage di dalam setiap transaksinya. Gabungannya ${pct(evidence.win_rate, 1)} transaksi untung,
-          rata-rata ${evidence.avg_ret_pct != null ? `+${evidence.avg_ret_pct.toFixed(2)}%` : "—"} tiap transaksi. Hasilnya tidak rata — fold demi fold:
-          <span class="mono" style="font-size:12px;color:var(--text)">${esc(evidence.fold_detail || "—")}</span></p>
-          <p class="fine rule">${esc(evidence.caveat)}</p>
-        </div>
-        ${evidenceBadge(evidence, plan.costs.round_trip)}
-      </div>`,
+      subtitle: "Angka out-of-sample dengan biaya di dalam setiap transaksi. Batasnya sama pentingnya dengan hasilnya.",
+      body: `${evidenceBadge(evidence, plan.costs.round_trip)}
+        <p class="fine" style="max-width:86ch;margin-top:12px">Rincian per fold:
+          <span class="mono" style="font-size:12px;color:var(--text-dim)">${esc(evidence.fold_detail || "—")}</span></p>`,
     })}
     <details class="fold">
       <summary>Lihat angka dan cara perhitungannya</summary>
